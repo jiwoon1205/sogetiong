@@ -176,15 +176,15 @@
 
           <div class="match-card">
             <div class="match-head">
-              <div class="mini-avatar">K</div>
+              <div class="mini-avatar" id="candidate-avatar">K</div>
               <div>
-                <strong>커피한모금</strong>
-                <small>23 · 서울캠퍼스 · 심리학</small>
+                <strong id="candidate-nickname">추천 후보를 불러오는 중</strong>
+                <small id="candidate-summary">서버에서 승인된 프로필을 확인하고 있습니다.</small>
               </div>
             </div>
-            <div class="match-score">추천도 92%</div>
+            <div class="match-score" id="candidate-score">추천 후보</div>
             <p class="match-note" id="match-status">서로 좋아요를 보내면 매칭되고 대화가 시작됩니다.</p>
-            <div class="match-tags">
+            <div class="match-tags" id="candidate-tags">
               <span>공통 취미 4개</span>
               <span>MBTI 궁합</span>
               <span>캠퍼스 일치</span>
@@ -230,6 +230,7 @@
       </section>
     </div>
 
+    <script src="config.js"></script>
     <script src="script.js"></script>
   </body>
 </html>

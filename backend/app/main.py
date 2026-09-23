@@ -13,6 +13,7 @@ app = FastAPI(
 )
 
 settings = get_settings()
+settings.validate_for_production()
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[origin.strip() for origin in settings.cors_origins.split(",") if origin.strip()],

@@ -24,6 +24,7 @@ const chatRooms = document.querySelector('#chat-rooms');
 const chatEmpty = document.querySelector('#chat-empty');
 const chatCount = document.querySelector('#chat-count');
 const apiBaseUrl = window.HUFS_MATCH_API_URL || 'http://127.0.0.1:8000/api/v1';
+let candidateUserId = null;
 const signupForm = document.querySelector('#signup-form');
 const signupEmail = document.querySelector('#signup-email');
 const verificationCode = document.querySelector('#verification-code');
@@ -66,6 +67,36 @@ function showDashboard() {
   showScreen('discover');
   headerLoginButton.textContent = '서비스 이용 중';
   headerLoginButton.disabled = true;
+  loadDiscoverProfiles();
+}
+
+async function loadDiscoverProfiles() {
+  const token = window.localStorage.getItem('hufs_match_access_token');
+  if (!token) return;
+  try {
+    const result = await requestJson('/discover', {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const candidate = result.profiles?.[0];
+    if (!candidate) {
+      candidateUserId = null;
+      document.querySelector('#candidate-nickname').textContent = '추천 후보가 없습니다';
+      document.querySelector('#candidate-summary').textContent = '매칭 조건을 넓히면 새로운 후보를 만날 수 있어요.';
+      document.querySelector('#candidate-score').textContent = '추천 대기 중';
+      likeButton.disabled = true;
+      passButton.disabled = true;
+      return;
+    }
+    candidateUserId = candidate.user_id;
+    document.querySelector('#candidate-avatar').textContent = candidate.nickname.slice(0, 1);
+    document.querySelector('#candidate-nickname').textContent = candidate.nickname;
+    document.querySelector('#candidate-summary').textContent = `${candidate.age ?? ''} · ${candidate.campus_id ?? '캠퍼스 미공개'}`;
+    document.querySelector('#candidate-score').textContent = '추천 후보';
+    likeButton.disabled = false;
+    passButton.disabled = false;
+  } catch (error) {
+    matchStatus.textContent = error.message;
+  }
 }
 
 function showScreen(screenName) {
@@ -191,6 +222,12 @@ likeButton.addEventListener('click', async () => {
   if (!token) {
     return;
   }
+  if (!candidateUserId) {
+    likeButton.disabled = false;
+    likeButton.textContent = '좋아요';
+    matchStatus.textContent = '추천 후보를 불러오는 중입니다.';
+    return;
+  }
 
   try {
     const result = await requestJson('/likes', {
@@ -199,7 +236,7 @@ likeButton.addEventListener('click', async () => {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${token}`,
       },
-      body: JSON.stringify({ to_user_id: 'candidate-demo-id' }),
+      body: JSON.stringify({ to_user_id: candidateUserId }),
     });
     if (result.matched) {
       openChat(result.chat_room_id || result.match_id);
@@ -218,7 +255,8 @@ passButton.addEventListener('click', async () => {
   const token = window.localStorage.getItem('hufs_match_access_token');
   if (token) {
     try {
-      await requestJson('/likes/candidate-demo-id', {
+      if (!candidateUserId) return;
+      await requestJson(`/likes/${candidateUserId}`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token}` },
       });
