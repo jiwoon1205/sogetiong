@@ -101,6 +101,36 @@ button {
   font-size: 0.94rem;
 }
 
+.app-nav {
+  display: none;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  background: rgba(245, 243, 255, 0.9);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+}
+
+.app-nav.visible {
+  display: flex;
+}
+
+.app-nav-button {
+  border: 0;
+  border-radius: 10px;
+  padding: 0.6rem 0.82rem;
+  background: transparent;
+  color: var(--muted);
+  font-weight: 700;
+  font-size: 0.8rem;
+}
+
+.app-nav-button.active {
+  background: white;
+  color: var(--primary-strong);
+  box-shadow: 0 4px 12px rgba(70, 58, 120, 0.1);
+}
+
 .btn {
   border: 0;
   border-radius: 14px;
@@ -363,6 +393,14 @@ button {
 .dashboard-heading p {
   margin: 0;
   color: var(--muted);
+}
+
+.screen-panel {
+  display: none;
+}
+
+.screen-panel.active {
+  display: block;
 }
 
 .profile-card,

@@ -24,6 +24,11 @@
           <a href="#">결과</a>
           <a href="#">보안</a>
         </nav>
+        <nav class="app-nav" id="app-nav" aria-label="서비스 화면 이동">
+          <button class="app-nav-button" data-screen-target="profile" type="button">프로필</button>
+          <button class="app-nav-button active" data-screen-target="discover" type="button">추천</button>
+          <button class="app-nav-button" data-screen-target="chat" type="button">채팅</button>
+        </nav>
         <button class="btn btn-light" id="header-login-button">로그인</button>
       </header>
 
@@ -128,7 +133,7 @@
           <p>프로필을 확인하고 나에게 맞는 연결을 찾아보세요.</p>
         </div>
         <section class="dashboard-grid">
-        <article class="card-panel profile-card">
+        <article class="card-panel profile-card screen-panel" data-screen="profile">
           <div class="section-title-row">
             <h2>프로필 미리보기</h2>
             <span class="chip success">승인 대기</span>
@@ -152,7 +157,7 @@
           </div>
         </article>
 
-        <article class="card-panel matching-card">
+        <article class="card-panel matching-card screen-panel active" data-screen="discover">
           <div class="section-title-row">
             <h2>추천 후보</h2>
             <span class="chip neutral">매칭 우선순위</span>
@@ -181,7 +186,7 @@
         </article>
 
         </section>
-        <section class="chat-panel card-panel" id="chat-panel" aria-hidden="true">
+        <section class="chat-panel card-panel screen-panel" id="chat-panel" data-screen="chat" aria-hidden="true">
           <div class="section-title-row">
             <div>
               <h2 id="chat-title">개인 채팅방</h2>

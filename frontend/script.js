@@ -4,6 +4,9 @@ const authPanel = document.querySelector('.auth-panel');
 const heroGrid = document.querySelector('.hero-grid');
 const dashboardView = document.querySelector('#dashboard-view');
 const headerLoginButton = document.querySelector('#header-login-button');
+const appNav = document.querySelector('#app-nav');
+const appNavButtons = document.querySelectorAll('.app-nav-button');
+const screenPanels = document.querySelectorAll('.screen-panel');
 const likeButton = document.querySelector('#like-button');
 const passButton = document.querySelector('#pass-button');
 const matchStatus = document.querySelector('#match-status');
@@ -27,10 +30,19 @@ function showDashboard() {
   authPanel.classList.add('authenticated');
   dashboardView.classList.add('visible');
   dashboardView.setAttribute('aria-hidden', 'false');
-  chatPanel.classList.add('preview');
-  chatPanel.setAttribute('aria-hidden', 'false');
+  appNav.classList.add('visible');
+  showScreen('discover');
   headerLoginButton.textContent = '서비스 이용 중';
   headerLoginButton.disabled = true;
+}
+
+function showScreen(screenName) {
+  screenPanels.forEach((panel) => {
+    panel.classList.toggle('active', panel.dataset.screen === screenName);
+  });
+  appNavButtons.forEach((button) => {
+    button.classList.toggle('active', button.dataset.screenTarget === screenName);
+  });
 }
 
 tabs.forEach((tab) => {
@@ -53,6 +65,10 @@ document.querySelector('#signup-form').addEventListener('submit', (event) => {
 });
 
 headerLoginButton.addEventListener('click', showLoginForm);
+
+appNavButtons.forEach((button) => {
+  button.addEventListener('click', () => showScreen(button.dataset.screenTarget));
+});
 
 likeButton.addEventListener('click', async () => {
   likeButton.disabled = true;
@@ -100,6 +116,7 @@ function openChat(chatRoomId) {
   messageInput.disabled = false;
   sendButton.disabled = false;
   messageInput.placeholder = '메시지를 입력하세요';
+  showScreen('chat');
 }
 
 messageForm.addEventListener('submit', (event) => {
