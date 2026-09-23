@@ -30,7 +30,17 @@ async def get_current_user(
     return user
 
 
-def require_admin(current_user: dict):
-    if current_user.get("role") != "SUPER_ADMIN":
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="admin access required")
+def require_role(current_user: dict, allowed_roles: str | set[str]):
+    user_role = str(current_user.get("role", "")).upper()
+    if isinstance(allowed_roles, str):
+        allowed = {allowed_roles.upper()}
+    else:
+        allowed = {role.upper() for role in allowed_roles}
+
+    if user_role not in allowed:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="insufficient role permissions")
     return current_user
+
+
+def require_admin(current_user: dict):
+    return require_role(current_user, {"SUPER_ADMIN", "PHOTO_REVIEWER", "MODERATOR"})

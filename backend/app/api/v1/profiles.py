@@ -1,10 +1,12 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.deps import get_current_user
-from app.models.profile import PublicProfile
+from app.models.matching import PhotoReview
+from app.models.profile import PrivateProfile, PublicProfile
 from app.schemas.profile import ProfileUpdateRequest, PublicProfileResponse
+from app.services.storage_service import StorageService
 
 router = APIRouter()
 
@@ -48,6 +50,40 @@ def update_current_user_profile(
     db.commit()
     db.refresh(profile)
     return {"updated": True, "data": PublicProfileResponse.model_validate(profile).model_dump()}
+
+
+@router.post("/me/photo")
+def upload_profile_photo(
+    file: UploadFile = File(...),
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    try:
+        storage_key = StorageService.save_uploaded_file(file, current_user["id"])
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    private_profile = db.query(PrivateProfile).filter(PrivateProfile.user_id == current_user["id"]).first()
+    if not private_profile:
+        private_profile = PrivateProfile(user_id=current_user["id"], original_photo_storage_key=storage_key)
+        db.add(private_profile)
+    else:
+        private_profile.original_photo_storage_key = storage_key
+
+    review = PhotoReview(
+        user_id=current_user["id"],
+        storage_key=storage_key,
+        status="PENDING",
+    )
+    db.add(review)
+    db.commit()
+
+    return {
+        "stored_path": storage_key,
+        "review_id": str(review.id),
+        "status": "PENDING",
+        "message": "photo saved in private storage and queued for admin review",
+    }
 
 
 @router.get("/profiles/{profile_id}", response_model=PublicProfileResponse)
