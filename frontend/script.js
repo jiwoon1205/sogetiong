@@ -23,7 +23,7 @@ const sendButton = messageForm.querySelector('button');
 const chatRooms = document.querySelector('#chat-rooms');
 const chatEmpty = document.querySelector('#chat-empty');
 const chatCount = document.querySelector('#chat-count');
-const apiBaseUrl = window.HUFS_MATCH_API_URL || '/api/v1';
+const apiBaseUrl = window.HUFS_MATCH_API_URL || 'http://127.0.0.1:8000/api/v1';
 const signupForm = document.querySelector('#signup-form');
 const signupEmail = document.querySelector('#signup-email');
 const verificationCode = document.querySelector('#verification-code');
@@ -35,9 +35,18 @@ let emailVerified = false;
 
 async function requestJson(path, options) {
   const response = await fetch(`${apiBaseUrl}${path}`, options);
-  const body = await response.json();
+  const rawBody = await response.text();
+  let body;
+  try {
+    body = rawBody ? JSON.parse(rawBody) : {};
+  } catch {
+    throw new Error(`서버 오류 (${response.status})`);
+  }
   if (!response.ok) {
-    throw new Error(body.detail || body.error?.message || '요청을 처리하지 못했습니다.');
+    const detail = Array.isArray(body.detail)
+      ? body.detail.map((item) => item.msg).join(', ')
+      : body.detail;
+    throw new Error(detail || body.error?.message || '요청을 처리하지 못했습니다.');
   }
   return body;
 }
@@ -77,9 +86,28 @@ tabs.forEach((tab) => {
   });
 });
 
-document.querySelector('#login-form').addEventListener('submit', (event) => {
+document.querySelector('#login-form').addEventListener('submit', async (event) => {
   event.preventDefault();
-  showDashboard();
+  const loginForm = event.currentTarget;
+  const submitButton = loginForm.querySelector('button[type="submit"]');
+  submitButton.disabled = true;
+  try {
+    const result = await requestJson('/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: loginForm.querySelector('input[type="email"]').value,
+        password: loginForm.querySelector('input[type="password"]').value,
+      }),
+    });
+    window.localStorage.setItem('hufs_match_access_token', result.access_token);
+    showDashboard();
+  } catch (error) {
+    loginForm.querySelector('input[type="password"]').setCustomValidity(error.message);
+    loginForm.querySelector('input[type="password"]').reportValidity();
+  } finally {
+    submitButton.disabled = false;
+  }
 });
 
 signupForm.addEventListener('submit', async (event) => {
@@ -164,24 +192,40 @@ likeButton.addEventListener('click', async () => {
     return;
   }
 
-  const response = await fetch('/api/v1/likes', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
-    },
-    body: JSON.stringify({ to_user_id: 'candidate-demo-id' }),
-  });
-  const result = await response.json();
-  if (result.matched) {
-    openChat(result.chat_room_id || result.match_id);
+  try {
+    const result = await requestJson('/likes', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ to_user_id: 'candidate-demo-id' }),
+    });
+    if (result.matched) {
+      openChat(result.chat_room_id || result.match_id);
+    }
+  } catch (error) {
+    likeButton.disabled = false;
+    likeButton.textContent = '좋아요';
+    matchStatus.textContent = error.message;
   }
 });
 
-passButton.addEventListener('click', () => {
+passButton.addEventListener('click', async () => {
   passButton.disabled = true;
   likeButton.disabled = true;
   matchStatus.textContent = '이 후보를 건너뛰었습니다.';
+  const token = window.localStorage.getItem('hufs_match_access_token');
+  if (token) {
+    try {
+      await requestJson('/likes/candidate-demo-id', {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+    } catch (error) {
+      matchStatus.textContent = error.message;
+    }
+  }
 });
 
 function openChat(chatRoomId) {
@@ -189,6 +233,7 @@ function openChat(chatRoomId) {
   likeButton.textContent = '매칭 완료';
   chatDetailPanel.setAttribute('aria-hidden', 'false');
   chatPanel.dataset.chatRoomId = chatRoomId;
+  chatDetailPanel.dataset.chatRoomId = chatRoomId;
   chatEmpty.remove();
   const roomButton = document.createElement('button');
   roomButton.className = 'chat-room-item active';
@@ -218,16 +263,38 @@ function selectChatRoom(roomButton) {
 
 chatBackButton.addEventListener('click', () => showScreen('chat-list'));
 
-messageForm.addEventListener('submit', (event) => {
+async function sendChatMessage(body) {
+  const token = window.localStorage.getItem('hufs_match_access_token');
+  const chatRoomId = chatDetailPanel.dataset.chatRoomId;
+  if (!token || !chatRoomId) {
+    return;
+  }
+  await requestJson(`/matches/${chatRoomId}/messages`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ body }),
+  });
+}
+
+messageForm.addEventListener('submit', async (event) => {
   event.preventDefault();
   const body = messageInput.value.trim();
   if (!body || !chatDetailPanel.classList.contains('active')) {
     return;
   }
 
-  const message = document.createElement('div');
-  message.className = 'message sent';
-  message.textContent = body;
-  messageList.appendChild(message);
-  messageInput.value = '';
+  try {
+    await sendChatMessage(body);
+    const message = document.createElement('div');
+    message.className = 'message sent';
+    message.textContent = body;
+    messageList.appendChild(message);
+    messageInput.value = '';
+  } catch (error) {
+    messageInput.setCustomValidity(error.message);
+    messageInput.reportValidity();
+  }
 });

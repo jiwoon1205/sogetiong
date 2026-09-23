@@ -5,6 +5,7 @@ from app.db.session import get_db
 from app.deps import get_current_user
 from app.models.matching import PhotoReview
 from app.models.profile import PrivateProfile, PublicProfile
+from app.models.user import User
 from app.schemas.profile import ProfileUpdateRequest, PublicProfileResponse
 from app.services.storage_service import StorageService
 
@@ -79,16 +80,28 @@ def upload_profile_photo(
     db.commit()
 
     return {
-        "stored_path": storage_key,
         "review_id": str(review.id),
         "status": "PENDING",
-        "message": "photo saved in private storage and queued for admin review",
+        "message": "photo saved privately and queued for admin review",
     }
 
 
 @router.get("/profiles/{profile_id}", response_model=PublicProfileResponse)
-def get_profile_by_id(profile_id: str, db: Session = Depends(get_db)):
-    profile = db.query(PublicProfile).filter(PublicProfile.id == profile_id).first()
+def get_profile_by_id(
+    profile_id: str,
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    profile = (
+        db.query(PublicProfile)
+        .join(User, PublicProfile.user_id == User.id)
+        .filter(
+            PublicProfile.id == profile_id,
+            PublicProfile.profile_status == "ACTIVE",
+            User.status == "ACTIVE",
+        )
+        .first()
+    )
     if not profile:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="profile not found")
     return PublicProfileResponse.model_validate(profile)

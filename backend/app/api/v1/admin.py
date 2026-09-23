@@ -3,23 +3,24 @@ from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
-from app.deps import get_current_user, require_role
-from app.models.matching import AppearanceEvaluation, PhotoReview
+from app.deps import get_current_admin, require_role
+from app.models.matching import AppearanceEvaluation, PhotoReview, Report
 from app.models.profile import PublicProfile
 from app.schemas.admin import PhotoReviewRequest
 from app.services.storage_service import StorageService
+from app.services.audit_service import AuditService
 
 router = APIRouter()
 
 
 @router.get("/users")
-def list_users(current_user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+def list_users(current_user: dict = Depends(get_current_admin), db: Session = Depends(get_db)):
     require_role(current_user, {"SUPER_ADMIN", "MODERATOR"})
     return {"users": []}
 
 
 @router.get("/photo-reviews")
-def list_photo_reviews(current_user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+def list_photo_reviews(current_user: dict = Depends(get_current_admin), db: Session = Depends(get_db)):
     require_role(current_user, {"SUPER_ADMIN", "PHOTO_REVIEWER"})
     reviews = db.query(PhotoReview).order_by(PhotoReview.created_at.desc()).all()
     return {
@@ -36,7 +37,7 @@ def list_photo_reviews(current_user: dict = Depends(get_current_user), db: Sessi
 
 
 @router.get("/photo-reviews/{review_id}")
-def get_photo_review(review_id: str, current_user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+def get_photo_review(review_id: str, current_user: dict = Depends(get_current_admin), db: Session = Depends(get_db)):
     require_role(current_user, {"SUPER_ADMIN", "PHOTO_REVIEWER"})
     review = db.query(PhotoReview).filter(PhotoReview.id == review_id).first()
     if not review:
@@ -51,7 +52,7 @@ def get_photo_review(review_id: str, current_user: dict = Depends(get_current_us
 @router.get("/photo-reviews/{review_id}/image")
 def get_photo_review_image(
     review_id: str,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(get_current_admin),
     db: Session = Depends(get_db),
 ):
     require_role(current_user, {"SUPER_ADMIN", "PHOTO_REVIEWER"})
@@ -63,6 +64,14 @@ def get_photo_review_image(
     if not file_path.is_file():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="photo file not found")
 
+    AuditService.record(
+        db,
+        admin_id=current_user["id"],
+        action="PHOTO_VIEW",
+        target_type="PHOTO_REVIEW",
+        target_id=review_id,
+    )
+    db.commit()
     return FileResponse(file_path)
 
 
@@ -70,7 +79,7 @@ def get_photo_review_image(
 def review_photo(
     review_id: str,
     payload: PhotoReviewRequest,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(get_current_admin),
     db: Session = Depends(get_db),
 ):
     require_role(current_user, {"SUPER_ADMIN", "PHOTO_REVIEWER"})
@@ -94,6 +103,14 @@ def review_photo(
     review.status = decision
     review.reviewed_by_admin_id = current_user["id"]
     review.reviewed_at = __import__("datetime").datetime.utcnow()
+    AuditService.record(
+        db,
+        admin_id=current_user["id"],
+        action="PHOTO_REVIEW",
+        target_type="PHOTO_REVIEW",
+        target_id=review_id,
+        metadata={"decision": decision},
+    )
 
     if decision == "APPROVED":
         evaluation = AppearanceEvaluation(
@@ -125,12 +142,40 @@ def review_photo(
 
 
 @router.get("/reports")
-def list_reports(current_user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+def list_reports(current_user: dict = Depends(get_current_admin), db: Session = Depends(get_db)):
     require_role(current_user, {"SUPER_ADMIN", "MODERATOR"})
-    return {"reports": []}
+    reports = db.query(Report).order_by(Report.created_at.desc()).all()
+    return {
+        "reports": [
+            {
+                "id": str(report.id),
+                "reporter_user_id": str(report.reporter_user_id),
+                "reported_user_id": str(report.reported_user_id),
+                "reason": report.reason,
+                "description": report.description,
+                "status": report.status,
+            }
+            for report in reports
+        ]
+    }
 
 
 @router.patch("/reports/{report_id}")
-def resolve_report(report_id: str, current_user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+def resolve_report(report_id: str, current_user: dict = Depends(get_current_admin), db: Session = Depends(get_db)):
     require_role(current_user, {"SUPER_ADMIN", "MODERATOR"})
-    return {"report_id": report_id, "status": "RESOLVED"}
+    report = db.query(Report).filter(Report.id == report_id).first()
+    if not report:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="report not found")
+    report.status = "RESOLVED"
+    report.reviewed_by_admin_id = current_user["id"]
+    report.resolved_at = __import__("datetime").datetime.utcnow()
+    AuditService.record(
+        db,
+        admin_id=current_user["id"],
+        action="REPORT_RESOLVE",
+        target_type="REPORT",
+        target_id=report_id,
+        metadata={"status": report.status},
+    )
+    db.commit()
+    return {"report_id": report_id, "status": report.status}

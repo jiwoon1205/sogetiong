@@ -1,7 +1,10 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+import smtplib
+
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from app.core.security import create_access_token, hash_password, verify_password
+from app.core.rate_limit import enforce_rate_limit
 from app.db.session import get_db
 from app.models.matching import VerificationToken
 from app.models.user import User
@@ -13,7 +16,8 @@ router = APIRouter()
 
 
 @router.post("/send-verification")
-def send_verification(payload: VerificationRequest, db: Session = Depends(get_db)):
+def send_verification(payload: VerificationRequest, request: Request, db: Session = Depends(get_db)):
+    enforce_rate_limit(f"verify-send:{request.client.host if request.client else 'unknown'}:{payload.email}", 3, 3600)
     if not AuthService.is_valid_school_email(str(payload.email)):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="only @hufs.ac.kr email addresses are allowed")
 
@@ -25,13 +29,14 @@ def send_verification(payload: VerificationRequest, db: Session = Depends(get_db
     AuthService.store_verification_code(db, str(payload.email), code)
     try:
         EmailService.send_verification_code(str(payload.email), code)
-    except RuntimeError as exc:
+    except (OSError, RuntimeError, smtplib.SMTPException) as exc:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="email delivery is unavailable") from exc
     return {"message": "verification email sent", "email": str(payload.email)}
 
 
 @router.post("/verify")
-def verify_code(payload: VerifyCodeRequest, db: Session = Depends(get_db)):
+def verify_code(payload: VerifyCodeRequest, request: Request, db: Session = Depends(get_db)):
+    enforce_rate_limit(f"verify-check:{request.client.host if request.client else 'unknown'}:{payload.email}", 10, 600)
     if not AuthService.is_valid_school_email(str(payload.email)):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="only @hufs.ac.kr email addresses are allowed")
     if not payload.code or len(payload.code) < 4:
@@ -79,10 +84,13 @@ def register_user(payload: RegisterRequest, db: Session = Depends(get_db)):
 
 
 @router.post("/login", response_model=TokenResponse)
-def login_user(payload: LoginRequest, db: Session = Depends(get_db)):
+def login_user(payload: LoginRequest, request: Request, db: Session = Depends(get_db)):
+    enforce_rate_limit(f"login:{request.client.host if request.client else 'unknown'}:{payload.email}", 10, 900)
     user = db.query(User).filter(User.email == payload.email).first()
     if not user or not verify_password(payload.password, user.password_hash):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid credentials")
+    if user.status != "ACTIVE":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="account is not active")
 
     access_token = create_access_token(str(user.id), role="USER")
     return TokenResponse(access_token=access_token)
