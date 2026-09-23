@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>HUFS Match</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="topbar">
+        <div class="brand-wrap">
+          <div class="brand-mark">H</div>
+          <div>
+            <div class="brand-name">HUFS Match</div>
+            <div class="brand-sub">campus connection</div>
+          </div>
+        </div>
+        <nav class="main-nav">
+          <a href="#">소개</a>
+          <a href="#">결과</a>
+          <a href="#">보안</a>
+        </nav>
+        <button class="btn btn-light" id="header-login-button">로그인</button>
+      </header>
+
+      <main class="hero-grid">
+        <section class="hero-copy">
+          <span class="eyebrow">우리 학교만의 안전한 만남</span>
+          <h1>학생들 사이의 연결을 <span>더 정직하게</span></h1>
+          <p>
+            HUFS 메일 인증을 기반으로, 공개 프로필과 비공개 정보를 분리해
+            안전하고 자연스러운 만남을 제공합니다.
+          </p>
+
+          <div class="cta-row">
+            <button class="btn btn-primary">가입 시작</button>
+            <button class="btn btn-ghost">서비스 소개</button>
+          </div>
+
+          <div class="stats-row">
+            <div>
+              <strong>2.4k</strong>
+              <span>활성 사용자</span>
+            </div>
+            <div>
+              <strong>86%</strong>
+              <span>프로필 승인률</span>
+            </div>
+            <div>
+              <strong>4.8/5</strong>
+              <span>사용자 만족도</span>
+            </div>
+          </div>
+        </section>
+
+        <section class="auth-panel card-panel">
+          <div class="panel-header">
+            <button class="tab active" data-tab="signup">회원가입</button>
+            <button class="tab" data-tab="login">로그인</button>
+          </div>
+
+          <form id="signup-form" class="auth-form active">
+            <label>
+              <span>학교 이메일</span>
+              <input type="email" value="student@hufs.ac.kr" />
+            </label>
+            <label>
+              <span>비밀번호</span>
+              <input type="password" value="password123!" />
+            </label>
+            <label>
+              <span>닉네임</span>
+              <input type="text" value="설레는기린" />
+            </label>
+            <div class="form-row two-col">
+              <label>
+                <span>캠퍼스</span>
+                <select>
+                  <option>서울캠퍼스</option>
+                  <option>글로벌캠퍼스</option>
+                </select>
+              </label>
+              <label>
+                <span>나이</span>
+                <input type="number" value="22" />
+              </label>
+            </div>
+            <label>
+              <span>성별</span>
+              <select>
+                <option>여성</option>
+                <option>남성</option>
+                <option>비공개</option>
+              </select>
+            </label>
+            <button class="btn btn-primary full" type="submit">회원가입</button>
+          </form>
+
+          <form id="login-form" class="auth-form">
+            <label>
+              <span>학교 이메일</span>
+              <input type="email" value="student@hufs.ac.kr" />
+            </label>
+            <label>
+              <span>비밀번호</span>
+              <input type="password" value="password123!" />
+            </label>
+            <div class="inline-row">
+              <label class="check-wrap">
+                <input type="checkbox" checked />
+                <span>로그인 상태 유지</span>
+              </label>
+              <a href="#">비밀번호 찾기</a>
+            </div>
+            <button class="btn btn-primary full" type="submit">로그인</button>
+          </form>
+        </section>
+      </main>
+
+      <section class="dashboard-view" id="dashboard-view" aria-hidden="true">
+        <div class="dashboard-heading">
+          <span class="eyebrow">로그인 완료</span>
+          <h2>오늘의 HUFS Match</h2>
+          <p>프로필을 확인하고 나에게 맞는 연결을 찾아보세요.</p>
+        </div>
+        <section class="dashboard-grid">
+        <article class="card-panel profile-card">
+          <div class="section-title-row">
+            <h2>프로필 미리보기</h2>
+            <span class="chip success">승인 대기</span>
+          </div>
+          <div class="profile-summary">
+            <div class="avatar">S</div>
+            <div>
+              <h3>설레는기린</h3>
+              <p>22 · 서울캠퍼스 · 경영학과</p>
+            </div>
+          </div>
+          <div class="tags">
+            <span>MBTI: ENFP</span>
+            <span>맛집 탐방</span>
+            <span>영화</span>
+            <span>산책</span>
+          </div>
+          <div class="bio-box">
+            조용하지만 편한 분위기를 좋아해요. 같이 카페 가고, 산책하며 대화하는
+            걸 좋아합니다.
+          </div>
+        </article>
+
+        <article class="card-panel matching-card">
+          <div class="section-title-row">
+            <h2>추천 후보</h2>
+            <span class="chip neutral">매칭 우선순위</span>
+          </div>
+
+          <div class="match-card">
+            <div class="match-head">
+              <div class="mini-avatar">K</div>
+              <div>
+                <strong>커피한모금</strong>
+                <small>23 · 서울캠퍼스 · 심리학</small>
+              </div>
+            </div>
+            <div class="match-score">추천도 92%</div>
+            <p class="match-note" id="match-status">서로 좋아요를 보내면 매칭되고 대화가 시작됩니다.</p>
+            <div class="match-tags">
+              <span>공통 취미 4개</span>
+              <span>MBTI 궁합</span>
+              <span>캠퍼스 일치</span>
+            </div>
+            <div class="match-actions">
+              <button class="btn ghost-small" id="pass-button" type="button">패스</button>
+              <button class="btn primary-small" id="like-button" type="button">좋아요</button>
+            </div>
+          </div>
+        </article>
+
+        </section>
+        <section class="chat-panel card-panel" id="chat-panel" aria-hidden="true">
+          <div class="section-title-row">
+            <div>
+              <h2 id="chat-title">개인 채팅방</h2>
+              <p class="chat-subtitle" id="chat-subtitle">상호 좋아요가 되면 이곳에서 대화할 수 있어요.</p>
+            </div>
+            <span class="chip neutral" id="chat-state">잠금</span>
+          </div>
+          <div class="message-list" id="message-list">
+            <div class="chat-lock">서로 좋아요를 보내면 개인 채팅방이 열립니다.</div>
+          </div>
+          <form class="message-form" id="message-form">
+            <input id="message-input" type="text" placeholder="매칭 후 메시지를 입력하세요" autocomplete="off" disabled />
+            <button class="btn primary-small" type="submit" disabled>보내기</button>
+          </form>
+        </section>
+      </section>
+    </div>
+
+    <script src="script.js"></script>
+  </body>
+</html>

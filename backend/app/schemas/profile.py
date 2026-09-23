@@ -16,6 +16,7 @@ class PublicProfileResponse(BaseModel):
     gender: str | None = None
     mbti: str | None = None
     bio: str | None = None
+    appearance_summary_json: dict | None = None
     profile_status: str = "ACTIVE"
 
     model_config = {"from_attributes": True}

@@ -153,18 +153,60 @@ class MatchingServiceTests(unittest.TestCase):
         self.assertFalse(AuthService.authenticate_user(hashed, "wrong-pass"))
 
     def test_storage_service_saves_photo_to_private_storage(self):
+        from PIL import Image
+
         user_id = f"user-{uuid.uuid4().hex[:8]}"
-        upload_file = UploadFile(filename="avatar.png", file=BytesIO(b"test-image-data"), headers={"content-type": "image/png"})
+        image = Image.new("RGB", (12, 12), color="blue")
+        image_bytes = BytesIO()
+        image.save(image_bytes, format="PNG")
+        image_bytes.seek(0)
+
+        upload_file = UploadFile(filename="avatar.png", file=image_bytes, headers={"content-type": "image/png"})
 
         storage_key = StorageService.save_uploaded_file(upload_file, user_id)
         saved_path = StorageService.STORAGE_ROOT / storage_key
 
         self.assertTrue(saved_path.exists())
-        self.assertEqual(saved_path.read_bytes(), b"test-image-data")
+        with Image.open(saved_path) as saved_image:
+            self.assertEqual(saved_image.size, (12, 12))
         self.assertTrue(storage_key.startswith(f"private/{user_id}/"))
 
         saved_path.unlink()
         shutil.rmtree(saved_path.parent.parent, ignore_errors=True)
+
+    def test_storage_service_rejects_unsupported_mime_and_strips_exif(self):
+        from PIL import Image
+
+        user_id = f"user-{uuid.uuid4().hex[:8]}"
+        image = Image.new("RGB", (20, 20), color="red")
+        exif_bytes = BytesIO()
+        image.save(exif_bytes, format="JPEG", exif=b"fake-exif-data")
+        exif_bytes.seek(0)
+
+        upload_file = UploadFile(
+            filename="profile.jpg",
+            file=exif_bytes,
+            headers={"content-type": "image/jpeg"},
+        )
+
+        storage_key = StorageService.save_uploaded_file(upload_file, user_id)
+        saved_path = StorageService.STORAGE_ROOT / storage_key
+
+        self.assertTrue(saved_path.exists())
+        self.assertTrue(storage_key.startswith(f"private/{user_id}/"))
+        self.assertTrue(saved_path.suffix.lower() in {".jpg", ".jpeg"})
+
+        with Image.open(saved_path) as loaded:
+            self.assertEqual(loaded.getexif(), {})
+
+        saved_path.unlink()
+        shutil.rmtree(saved_path.parent.parent, ignore_errors=True)
+
+        with self.assertRaises(ValueError):
+            StorageService.save_uploaded_file(
+                UploadFile(filename="bad.txt", file=BytesIO(b"hello"), headers={"content-type": "text/plain"}),
+                user_id,
+            )
 
 
 if __name__ == "__main__":

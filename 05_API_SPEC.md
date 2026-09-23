@@ -193,10 +193,16 @@ Response
 {
   "data": {
     "liked": true,
-    "matched": false
+    "matched": false,
+    "match_id": null,
+    "chat_room_id": null
   }
 }
 ```
+
+When both users have liked each other, `matched` is `true` and `match_id` is
+returned. The `match_id` is also the private chat room identifier. Messages
+can only be read or sent by the two users in that match.
 
 ### DELETE /likes/{id}
 Auth: required
