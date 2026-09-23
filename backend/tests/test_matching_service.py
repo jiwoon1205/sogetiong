@@ -1,5 +1,10 @@
 import unittest
 
+from fastapi import HTTPException
+
+from app.core.security import create_access_token, decode_token
+from app.deps import require_admin
+from app.services.auth_service import AuthService
 from app.services.matching_service import MatchingService
 
 
@@ -102,6 +107,25 @@ class MatchingServiceTests(unittest.TestCase):
         score_b = MatchingService.calculate_score(current_user, candidate_b)
 
         self.assertGreater(score_a, score_b)
+
+    def test_create_access_token_includes_role_claim(self):
+        token = create_access_token("user-1", role="USER")
+        payload = decode_token(token)
+
+        self.assertEqual(payload["sub"], "user-1")
+        self.assertEqual(payload["role"], "USER")
+
+    def test_require_admin_rejects_non_admin_user(self):
+        user = {"id": "user-1", "role": "USER"}
+
+        with self.assertRaises(HTTPException):
+            require_admin(user)
+
+    def test_auth_service_verifies_password_hash(self):
+        hashed = AuthService.register_user("user@example.com", "secret123")["password_hash"]
+
+        self.assertTrue(AuthService.authenticate_user(hashed, "secret123"))
+        self.assertFalse(AuthService.authenticate_user(hashed, "wrong-pass"))
 
 
 if __name__ == "__main__":

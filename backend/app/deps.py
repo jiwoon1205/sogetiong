@@ -26,10 +26,11 @@ async def get_current_user(
     if not user_id:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="token missing subject")
 
-    return {"id": user_id}
+    user = {"id": user_id, "role": payload.get("role", "USER")}
+    return user
 
 
-async def require_admin(current_user=Depends(get_current_user)):
+def require_admin(current_user: dict):
     if current_user.get("role") != "SUPER_ADMIN":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="admin access required")
     return current_user
