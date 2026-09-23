@@ -27,7 +27,7 @@
         <nav class="app-nav" id="app-nav" aria-label="서비스 화면 이동">
           <button class="app-nav-button" data-screen-target="profile" type="button">프로필</button>
           <button class="app-nav-button active" data-screen-target="discover" type="button">추천</button>
-          <button class="app-nav-button" data-screen-target="chat" type="button">채팅</button>
+          <button class="app-nav-button" data-screen-target="chat-list" type="button">채팅</button>
         </nav>
         <button class="btn btn-light" id="header-login-button">로그인</button>
       </header>
@@ -71,7 +71,18 @@
           <form id="signup-form" class="auth-form active">
             <label>
               <span>학교 이메일</span>
-              <input type="email" value="student@hufs.ac.kr" />
+              <div class="verification-row">
+                <input id="signup-email" type="email" value="student@hufs.ac.kr" />
+                <button class="btn verify-button" id="send-verification-button" type="button">인증 메일</button>
+              </div>
+            </label>
+            <label>
+              <span>인증 코드</span>
+              <div class="verification-row">
+                <input id="verification-code" type="text" placeholder="메일로 받은 코드" autocomplete="one-time-code" />
+                <button class="btn verify-button" id="verify-code-button" type="button">인증 확인</button>
+              </div>
+              <small class="verification-status" id="verification-status">학교 이메일 인증 후 가입할 수 있어요.</small>
             </label>
             <label>
               <span>비밀번호</span>
@@ -102,7 +113,7 @@
                 <option>비공개</option>
               </select>
             </label>
-            <button class="btn btn-primary full" type="submit">회원가입</button>
+            <button class="btn btn-primary full" id="signup-submit-button" type="submit" disabled>회원가입</button>
           </form>
 
           <form id="login-form" class="auth-form">
@@ -186,19 +197,33 @@
         </article>
 
         </section>
-        <section class="chat-panel card-panel screen-panel" id="chat-panel" data-screen="chat" aria-hidden="true">
+        <section class="chat-panel card-panel screen-panel" id="chat-panel" data-screen="chat-list" aria-hidden="true">
+          <div class="chat-list-heading">
+            <div>
+              <span class="eyebrow">MATCHES</span>
+              <h2>개인 채팅방</h2>
+            </div>
+            <span class="chat-count" id="chat-count">0</span>
+          </div>
+          <div class="chat-rooms" id="chat-rooms">
+            <div class="chat-empty" id="chat-empty">상호 매칭된 채팅방이 여기에 표시됩니다.</div>
+          </div>
+        </section>
+
+        <section class="chat-detail-panel card-panel screen-panel" id="chat-detail-panel" data-screen="chat-detail" aria-hidden="true">
+          <button class="chat-back-button" id="chat-back-button" type="button">← 채팅방 목록</button>
           <div class="section-title-row">
             <div>
-              <h2 id="chat-title">개인 채팅방</h2>
-              <p class="chat-subtitle" id="chat-subtitle">상호 좋아요가 되면 이곳에서 대화할 수 있어요.</p>
+              <h2 id="chat-title">채팅방을 선택하세요</h2>
+              <p class="chat-subtitle" id="chat-subtitle">매칭된 상대를 선택하면 1:1 대화를 시작할 수 있어요.</p>
             </div>
-            <span class="chip neutral" id="chat-state">잠금</span>
+            <span class="chip neutral" id="chat-state">대기 중</span>
           </div>
           <div class="message-list" id="message-list">
-            <div class="chat-lock">서로 좋아요를 보내면 개인 채팅방이 열립니다.</div>
+            <div class="chat-lock">서로 좋아요가 성립된 뒤 채팅방을 선택할 수 있습니다.</div>
           </div>
           <form class="message-form" id="message-form">
-            <input id="message-input" type="text" placeholder="매칭 후 메시지를 입력하세요" autocomplete="off" disabled />
+            <input id="message-input" type="text" placeholder="채팅방을 선택하세요" autocomplete="off" disabled />
             <button class="btn primary-small" type="submit" disabled>보내기</button>
           </form>
         </section>

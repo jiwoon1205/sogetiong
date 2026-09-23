@@ -7,6 +7,7 @@ from app.models.matching import VerificationToken
 from app.models.user import User
 from app.schemas.auth import LoginRequest, RegisterRequest, TokenResponse, VerificationRequest, VerifyCodeRequest
 from app.services.auth_service import AuthService
+from app.services.email_service import EmailService
 
 router = APIRouter()
 
@@ -22,7 +23,11 @@ def send_verification(payload: VerificationRequest, db: Session = Depends(get_db
 
     code = AuthService.create_verification_code()
     AuthService.store_verification_code(db, str(payload.email), code)
-    return {"message": "verification email sent", "email": str(payload.email), "code": code}
+    try:
+        EmailService.send_verification_code(str(payload.email), code)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="email delivery is unavailable") from exc
+    return {"message": "verification email sent", "email": str(payload.email)}
 
 
 @router.post("/verify")
@@ -61,10 +66,13 @@ def register_user(payload: RegisterRequest, db: Session = Depends(get_db)):
         email=str(payload.email).lower(),
         password_hash=hash_password(payload.password),
         status="ACTIVE",
+        email_verified_at=verification.used_at,
     )
     db.add(user)
     db.commit()
     db.refresh(user)
+    verification.user_id = user.id
+    db.commit()
 
     access_token = create_access_token(str(user.id), role="USER")
     return TokenResponse(access_token=access_token)
