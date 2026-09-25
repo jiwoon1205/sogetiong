@@ -33,6 +33,20 @@ uvicorn app.main:app --reload
 - 실제 메일을 보내려면 `EMAIL_BACKEND=smtp`와 SMTP 값을 채운다. SMTP 계정에는 앱 비밀번호를 사용한다.
 - `/docs`에서 로그인 후 API를 눌러보려면: 로그인 요청에 헤더 `X-Client-Type: app`을 넣어 `session_token`을 받고, 오른쪽 위 **Authorize**에 입력한다.
 
+## 프론트엔드 실행 (web 폴더, Next.js)
+
+[Node.js](https://nodejs.org) 20 이상이 필요합니다 (`node -v`로 확인). **백엔드를 먼저 켜둔 상태**에서 새 PowerShell 창을 열고:
+
+```powershell
+cd web
+npm install      # 처음 한 번
+npm run dev
+```
+
+- 사용자 화면: http://localhost:3000
+- 관리자 화면: http://localhost:3000/admin/login (인증 앱의 6자리 코드 필요)
+- 화면의 `/api/...` 요청은 Next.js가 백엔드(http://127.0.0.1:8000)로 넘겨줍니다. 백엔드 주소가 다르면 `BACKEND_URL` 환경변수로 바꿉니다.
+
 ## 테스트
 
 ```powershell
@@ -66,5 +80,5 @@ tests/         자동 테스트
 
 ## 참고
 
-- `frontend/`의 HTML/JS는 예전 API 기준이라 새 백엔드와 연결되지 않는다. Next.js로 새로 만들 예정 (결정 사항 문서 참고).
+- 새 화면은 `web/`(Next.js)에 있다. 예전 `frontend/`(HTML/JS)는 더 이상 쓰지 않으므로 지워도 된다.
 - 사진은 개발 중에는 `backend/private_storage/`에 저장된다 (Git 제외). 운영 전에 R2/S3 private bucket으로 바꿔야 한다.

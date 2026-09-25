@@ -1,0 +1,59 @@
+"use client";
+
+import Link from "next/link";
+import { useEffect, useState } from "react";
+import { PageTitle, Spinner } from "@/components/ui";
+import { adminApi } from "@/lib/admin";
+import { cn, timeAgo } from "@/lib/format";
+
+type PhotoItem = { photo_id: string; subject_code: string; review_status: string; uploaded_at: string; reviewed_at: string | null };
+
+const TABS = [
+  { value: "PENDING", label: "대기" },
+  { value: "IN_REVIEW", label: "확인 중" },
+  { value: "APPROVED", label: "승인" },
+  { value: "REJECTED", label: "반려" },
+];
+
+export default function PhotoQueue() {
+  const [status, setStatus] = useState("PENDING");
+  const [items, setItems] = useState<PhotoItem[] | null>(null);
+
+  useEffect(() => {
+    setItems(null);
+    adminApi<{ photos: PhotoItem[] }>(`/photo-reviews?status=${status}`).then((r) => setItems(r.photos));
+  }, [status]);
+
+  return (
+    <>
+      <PageTitle eyebrow="사진 검수" title="검수 대기열" desc="먼저 올라온 순서대로 보여요. 검수자는 사진과 가명 코드만 볼 수 있어요." />
+      <div className="mb-6 flex gap-6 border-b border-line text-[14px]">
+        {TABS.map((t) => (
+          <button key={t.value} onClick={() => setStatus(t.value)} className={status === t.value ? "-mb-px border-b-2 border-ink pb-3 font-semibold" : "pb-3 text-ink-faint hover:text-ink"}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+      {!items ? (
+        <Spinner />
+      ) : items.length === 0 ? (
+        <p className="py-12 text-center text-[14px] text-ink-faint">비어 있어요.</p>
+      ) : (
+        <ul className="divide-y divide-line rounded-card border border-line bg-paper-card">
+          {items.map((p, i) => (
+            <li key={p.photo_id}>
+              <Link href={`/admin/photos/${p.photo_id}`} className="grid grid-cols-[2.5rem_1fr_auto] items-center gap-4 px-5 py-4 hover:bg-paper-deep/60">
+                <span className="num text-[13px] text-ink-faint">{String(i + 1).padStart(2, "0")}</span>
+                <span>
+                  <span className="font-mono text-[14.5px] font-semibold tracking-wide">{p.subject_code}</span>
+                  <span className="ml-3 text-[13px] text-ink-faint">{timeAgo(p.uploaded_at)} 제출</span>
+                </span>
+                <span className={cn("text-[13px]", status === "PENDING" ? "text-brick" : "text-ink-soft")}>{status === "PENDING" || status === "IN_REVIEW" ? "평가하기 →" : "보기 →"}</span>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
+    </>
+  );
+}

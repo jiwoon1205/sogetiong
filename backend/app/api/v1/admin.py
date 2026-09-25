@@ -5,7 +5,7 @@ from io import BytesIO
 
 import pyotp
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFont
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -169,10 +169,11 @@ def _watermark(data: bytes, text: str) -> bytes:
     with Image.open(BytesIO(data)) as image:
         image = image.convert("RGB")
         draw = ImageDraw.Draw(image)
+        font = ImageFont.load_default(size=max(14, image.width // 28))
         step = max(image.height // 6, 40)
         for y in range(10, image.height, step):
-            draw.text((10, y), text, fill=(255, 255, 255))
-            draw.text((11, y + 1), text, fill=(0, 0, 0))
+            draw.text((13, y + 2), text, fill=(0, 0, 0), font=font)
+            draw.text((12, y), text, fill=(255, 255, 255), font=font)
         out = BytesIO()
         image.save(out, format="JPEG", quality=85)
         return out.getvalue()

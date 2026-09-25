@@ -51,6 +51,7 @@ def get_me(current: CurrentUser = Depends(get_current_user), db: Session = Depen
     return {
         "email": current.user.email,
         "status": current.user.status,
+        "university_id": str(current.user.university_id),
         "onboarding": {
             "profile_done": db.query(PublicProfile.id).filter(PublicProfile.user_id == current.id).first() is not None,
             "photo_status": latest_photo.review_status if latest_photo else "NOT_SUBMITTED",
@@ -103,6 +104,7 @@ def get_my_profile(current: CurrentUser = Depends(get_current_user), db: Session
     """다른 사람에게 보이는 내 카드 + 편집에 필요한 값."""
     profile = _my_profile(db, current)
     card = profile_service.build_card(db, profile)
+    card["campus_id"] = str(profile.campus_id)
     card["department_id"] = str(profile.department_id) if profile.department_id else None
     card["show_department"] = profile.show_department
     return card

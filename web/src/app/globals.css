@@ -1,0 +1,38 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    @apply bg-paper text-ink font-sans antialiased;
+    font-feature-settings: "tnum" 0;
+    word-break: keep-all;
+  }
+  ::selection {
+    @apply bg-brick-wash text-ink;
+  }
+  :focus-visible {
+    outline: 2px solid theme("colors.ink.DEFAULT");
+    outline-offset: 2px;
+  }
+}
+
+@layer components {
+  /* 작은 대문자 라벨 — 섹션 머리말 */
+  .eyebrow {
+    @apply text-[11px] font-semibold uppercase tracking-label text-ink-faint;
+  }
+  .rule {
+    @apply border-t border-line;
+  }
+  .field {
+    @apply w-full rounded-md border border-line bg-paper-card px-3.5 py-3 text-[15px] text-ink
+      placeholder:text-ink-faint transition-colors focus:border-ink focus:outline-none;
+  }
+  .num {
+    font-variant-numeric: tabular-nums;
+  }
+}
