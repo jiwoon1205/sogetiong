@@ -375,3 +375,38 @@ campuses
 - Public/private split increases complexity but drastically reduces privacy risk.
 - Using JSON for evaluation metadata is acceptable for flexible scoring, but schema validation should be enforced.
 - Matching preferences should remain detachable from public profile to prevent accidental exposure.
+
+## 9. 변경 사항 (2026-09-25, 코드 기준)
+
+실제 테이블 정의는 `backend/app/models/`와 `backend/migrations/versions/0001_initial_schema.py`가 기준이다.
+
+### 추가된 테이블
+| 테이블 | 용도 |
+|---|---|
+| user_sessions | 사용자 로그인 세션 (토큰·CSRF 해시, 만료 시각) |
+| admin_sessions | 관리자 세션 (2단계 인증 완료 시각 포함) |
+| user_photos | 원본 사진 메타데이터 (설계도 §7). 기존 photo_reviews를 대체 |
+| preferred_campuses | 매칭 조건 campus_mode=SELECTED 일 때 고른 캠퍼스 |
+
+### 바뀐 점
+- 모든 ID는 UUID. PostgreSQL/SQLite 공통 `Uuid` 타입 사용
+- 외래키 추가: public_profiles.campus_id·department_id, excluded/preferred_departments.department_id 등
+- universities.email_domain 추가 (가입 가능한 학교 도메인)
+- users.university_id 추가
+- public_profiles: age 컬럼 삭제 → private_profiles.birth_date로 매번 계산. show_department(학과 공개 여부) 추가
+- private_profiles: 학교/캠퍼스/사진 경로 중복 컬럼 삭제
+- appearance_evaluations: photo_id 추가, 수정 시 새 행 추가(이력), 가장 최근 행이 현재 점수. 1~10 CHECK 제약
+- public_profiles.appearance_summary_json 삭제 (평가 테이블 하나만 기준)
+- likes: like_value(boolean) → action(`LIKE`/`PASS`)
+- matches.status: `ACTIVE` / `UNMATCHED` / `BLOCKED`, ended_at 추가
+- reports: match_id, admin_note 추가
+- verification_tokens: 가입용 1회 티켓(ticket_hash) 추가
+- admin_users: totp_secret(2단계 인증) 추가
+- 사진 상태에 `SUPERSEDED`(새 사진으로 대체됨) 추가
+
+### DB 구조 변경 방법
+직접 테이블을 만들지 않고 Alembic을 쓴다.
+```bash
+alembic revision --autogenerate -m "변경 내용"   # 모델 수정 후 변경 파일 생성
+alembic upgrade head                              # DB에 적용
+```

@@ -1,12 +1,70 @@
 # sogetiong
 
-## 학교 이메일 인증 설정
+대학생 전용 익명 데이팅 서비스. 설계 문서는 `01_` ~ `13_` 파일, API 목록은 `05_API_SPEC.md`, 로그인 방식은 `06_AUTH_DESIGN.md`.
 
-회원가입은 `@hufs.ac.kr` 이메일 인증이 완료된 경우에만 허용됩니다. 실제 인증 메일을 보내려면 `backend/.env.example`을 복사해 `backend/.env`를 만들고 SMTP 제공자의 값을 입력하세요.
+## 백엔드 처음 실행하기 (Windows PowerShell 기준)
 
 ```powershell
-Copy-Item backend/.env.example backend/.env
+cd backend
+
+# 1) 가상환경 만들고 패키지 설치
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+pip install -r requirements-dev.txt
+
+# 2) 설정 파일 만들기 (처음 한 번)
+Copy-Item .env.example .env
+#   → .env 안의 SECRET_KEY를 무작위 값으로 바꾼다
+#     python -c "import secrets; print(secrets.token_urlsafe(48))"
+
+# 3) DB 테이블 만들기 + 기본 데이터(학교·캠퍼스·학과·관심사·관리자 역할) 넣기
+alembic upgrade head
+python -m app.scripts.seed
+
+# 4) 관리자 계정 만들기 (2단계 인증 비밀키가 출력됨 → Google Authenticator 등에 등록)
+python -m app.scripts.create_admin --email admin@example.com --role SUPER_ADMIN
+
+# 5) 서버 실행
+uvicorn app.main:app --reload
 ```
 
-SMTP 계정에는 일반 비밀번호 대신 제공자가 발급한 앱 비밀번호를 사용하세요. 설정이 없으면 `/auth/send-verification`이 성공으로 처리되지 않고 이메일 발송 불가 오류를 반환합니다.
+- API 문서/테스트 화면: http://localhost:8000/docs
+- `.env`에서 `EMAIL_BACKEND=console`이면 인증번호가 메일 대신 **서버 콘솔에 출력**된다 (개발용).
+- 실제 메일을 보내려면 `EMAIL_BACKEND=smtp`와 SMTP 값을 채운다. SMTP 계정에는 앱 비밀번호를 사용한다.
+- `/docs`에서 로그인 후 API를 눌러보려면: 로그인 요청에 헤더 `X-Client-Type: app`을 넣어 `session_token`을 받고, 오른쪽 위 **Authorize**에 입력한다.
 
+## 테스트
+
+```powershell
+cd backend
+pytest
+```
+
+가입 → 사진 → 관리자 평가 → 추천 → 매칭 → 채팅 전체 흐름과, 설계도 §65의 보안 테스트 8개가 포함돼 있다.
+
+## DB 구조를 바꿀 때
+
+`app/models/`를 수정한 뒤:
+```powershell
+alembic revision --autogenerate -m "무엇을 바꿨는지"
+alembic upgrade head
+```
+
+## 폴더 구조 (backend)
+
+```text
+app/
+  api/v1/      API 주소별 코드 (auth, profiles(/me), catalog, matching, safety, admin)
+  core/        설정, 보안(비밀번호·토큰), 요청 횟수 제한
+  models/      DB 테이블 정의
+  schemas/     요청 형식 검사
+  services/    핵심 로직 (매칭 엔진, 사진 처리, 세션 등)
+  scripts/     seed, create_admin 명령어
+migrations/    Alembic DB 변경 이력
+tests/         자동 테스트
+```
+
+## 참고
+
+- `frontend/`의 HTML/JS는 예전 API 기준이라 새 백엔드와 연결되지 않는다. Next.js로 새로 만들 예정 (결정 사항 문서 참고).
+- 사진은 개발 중에는 `backend/private_storage/`에 저장된다 (Git 제외). 운영 전에 R2/S3 private bucket으로 바꿔야 한다.

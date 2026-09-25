@@ -1,24 +1,20 @@
-"""SQLAlchemy models package."""
+"""SQLAlchemy 모델 모음. Alembic이 모든 테이블을 알 수 있도록 여기서 한 번에 import 한다."""
 
+from app.models.admin import ROLE_PERMISSIONS, AdminRole, AdminSession, AdminUser, AuditLog
 from app.models.matching import (
-    AdminRole,
-    AdminUser,
-    AppearanceEvaluation,
-    AuditLog,
+    REPORT_REASONS,
     Block,
     ExcludedDepartment,
-    Interest,
     Like,
     Match,
     MatchingPreference,
     Message,
     Notification,
-    PhotoReview,
+    PreferredCampus,
     PreferredDepartment,
     Report,
-    UserInterest,
-    VerificationToken,
 )
-from app.models.profile import PrivateProfile, PublicProfile
+from app.models.photo import AppearanceEvaluation, UserPhoto
+from app.models.profile import Interest, PrivateProfile, PublicProfile, UserInterest
 from app.models.university import Campus, Department, University
-from app.models.user import User
+from app.models.user import User, UserSession, VerificationToken

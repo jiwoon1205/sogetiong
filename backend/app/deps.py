@@ -1,74 +1,139 @@
-from fastapi import Depends, HTTPException, status
+"""로그인 확인·권한 확인 의존성.
+
+모든 보호된 API는 여기의 함수를 거친다:
+Authentication(누구인가) + Authorization(권한이 있는가). 자원 소유 확인은 각 API에서 한다.
+"""
+
+import uuid
+from dataclasses import dataclass
+from datetime import timedelta
+
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from jose import JWTError
 from sqlalchemy.orm import Session
 
-from app.core.security import decode_token
+from app.core.config import get_settings
+from app.core.security import hash_token, tokens_match
+from app.core.time import as_utc, utcnow
 from app.db.session import get_db
-from app.models.matching import AdminRole, AdminUser
-from app.models.user import User
+from app.models.admin import AdminSession, AdminUser
+from app.models.user import User, UserSession
+from app.services.session_service import CSRF_HEADER
 
-bearer_scheme = HTTPBearer(auto_error=False)
+SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
+
+# /docs 화면에 Authorize 버튼을 띄우기 위한 선언 (실제 토큰 읽기는 _read_token에서)
+_bearer_docs = HTTPBearer(auto_error=False)
 
 
-async def get_current_user(
-    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
+@dataclass
+class CurrentUser:
+    id: uuid.UUID
+    user: User
+    session: UserSession
+
+
+@dataclass
+class CurrentAdmin:
+    id: uuid.UUID
+    admin: AdminUser
+    role: str
+    permissions: set[str]
+    session: AdminSession
+
+
+def _unauthorized(detail: str = "로그인이 필요합니다.") -> HTTPException:
+    return HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=detail)
+
+
+def _read_token(request: Request, cookie_name: str) -> tuple[str | None, bool]:
+    """(토큰, 쿠키로 왔는지)"""
+    auth = request.headers.get("authorization", "")
+    if auth.lower().startswith("bearer "):
+        return auth[7:].strip() or None, False
+    return request.cookies.get(cookie_name), True
+
+
+def _check_csrf(request: Request, from_cookie: bool, csrf_hash: str) -> None:
+    """쿠키로 로그인한 경우, 데이터를 바꾸는 요청에는 CSRF 헤더가 필요하다."""
+    if not from_cookie or request.method in SAFE_METHODS:
+        return
+    if not tokens_match(request.headers.get(CSRF_HEADER), csrf_hash):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="CSRF 토큰이 올바르지 않습니다.")
+
+
+def get_current_user(
+    request: Request,
     db: Session = Depends(get_db),
-):
-    if credentials is None:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="missing token")
+    _docs: HTTPAuthorizationCredentials | None = Depends(_bearer_docs),
+) -> CurrentUser:
+    settings = get_settings()
+    token, from_cookie = _read_token(request, settings.session_cookie_name)
+    if not token:
+        raise _unauthorized()
 
-    token = credentials.credentials
-    try:
-        payload = decode_token(token)
-    except JWTError as exc:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid token") from exc
+    session = db.query(UserSession).filter(UserSession.token_hash == hash_token(token)).first()
+    now = utcnow()
+    if session is None or as_utc(session.expires_at) <= now:
+        raise _unauthorized("로그인이 만료되었습니다. 다시 로그인해주세요.")
 
-    user_id = payload.get("sub")
-    if not user_id:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="token missing subject")
+    _check_csrf(request, from_cookie, session.csrf_hash)
 
-    user = db.query(User).filter(User.id == user_id).first()
-    if user is None:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="user not found")
-    if user.status != "ACTIVE":
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="account is not active")
+    user = db.get(User, session.user_id)
+    if user is None or user.status != "ACTIVE":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="이용할 수 없는 계정입니다.")
 
-    return {"id": str(user.id), "role": payload.get("role", "USER"), "status": user.status}
+    # 사용할 때마다 만료 연장 (1시간에 한 번만 DB에 기록)
+    if now - as_utc(session.last_used_at) > timedelta(hours=1):
+        session.last_used_at = now
+        session.expires_at = now + timedelta(days=settings.session_days)
+        db.commit()
 
-
-def require_role(current_user: dict, allowed_roles: str | set[str]):
-    user_role = str(current_user.get("role", "")).upper()
-    if isinstance(allowed_roles, str):
-        allowed = {allowed_roles.upper()}
-    else:
-        allowed = {role.upper() for role in allowed_roles}
-
-    if user_role not in allowed:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="insufficient role permissions")
-    return current_user
+    return CurrentUser(id=user.id, user=user, session=session)
 
 
-def require_admin(current_user: dict):
-    return require_role(current_user, {"SUPER_ADMIN", "PHOTO_REVIEWER", "MODERATOR"})
+def _load_admin(request: Request, db: Session, require_mfa: bool) -> CurrentAdmin:
+    settings = get_settings()
+    token, from_cookie = _read_token(request, settings.admin_session_cookie_name)
+    if not token:
+        raise _unauthorized("관리자 로그인이 필요합니다.")
+
+    session = db.query(AdminSession).filter(AdminSession.token_hash == hash_token(token)).first()
+    if session is None or as_utc(session.expires_at) <= utcnow():
+        raise _unauthorized("관리자 로그인이 만료되었습니다.")
+    if require_mfa and session.mfa_verified_at is None:
+        raise _unauthorized("2단계 인증이 필요합니다.")
+
+    _check_csrf(request, from_cookie, session.csrf_hash)
+
+    admin = db.get(AdminUser, session.admin_id)
+    if admin is None or admin.status != "ACTIVE" or admin.role is None:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="비활성화된 관리자 계정입니다.")
+
+    return CurrentAdmin(
+        id=admin.id,
+        admin=admin,
+        role=admin.role.name,
+        permissions=set(admin.role.permissions_json or []),
+        session=session,
+    )
 
 
-async def get_current_admin(
-    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
-    db: Session = Depends(get_db),
-):
-    if credentials is None:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="missing admin token")
-    try:
-        payload = decode_token(credentials.credentials)
-    except JWTError as exc:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid admin token") from exc
+def get_admin_pending_mfa(request: Request, db: Session = Depends(get_db)) -> CurrentAdmin:
+    """비밀번호만 확인된 상태 (2단계 인증 API 전용)."""
+    return _load_admin(request, db, require_mfa=False)
 
-    admin_id = payload.get("sub")
-    admin = db.query(AdminUser).filter(AdminUser.id == admin_id, AdminUser.status == "ACTIVE").first()
-    if admin is None:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="admin account is not active")
-    role = db.query(AdminRole).filter(AdminRole.id == admin.role_id).first()
-    if role is None:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="admin role is not configured")
-    return {"id": str(admin.id), "role": role.name, "status": admin.status}
+
+def get_current_admin(request: Request, db: Session = Depends(get_db)) -> CurrentAdmin:
+    return _load_admin(request, db, require_mfa=True)
+
+
+def require_permission(permission: str):
+    """사용 예: admin: CurrentAdmin = Depends(require_permission("photos:read"))"""
+
+    def dependency(admin: CurrentAdmin = Depends(get_current_admin)) -> CurrentAdmin:
+        if permission not in admin.permissions:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="권한이 없습니다.")
+        return admin
+
+    return dependency

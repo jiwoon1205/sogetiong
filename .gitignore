@@ -16,6 +16,8 @@ venv/
 *.sqlite3
 backend/app/storage/
 backend/storage/
+backend/private_storage/
+.pytest_cache/
 
 # Frontend dependencies and build output
 node_modules/

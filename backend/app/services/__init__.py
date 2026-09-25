@@ -1,1 +1,1 @@
-"""Service layer for business operations."""
+"""비즈니스 로직 모음."""
