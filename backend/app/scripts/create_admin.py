@@ -11,6 +11,7 @@ import getpass
 import pyotp
 
 from app.core.config import get_settings
+from app.core.dev_bootstrap import prepare_dev_database
 from app.core.security import hash_password
 from app.db.session import SessionLocal
 from app.models.admin import ROLE_PERMISSIONS, AdminRole, AdminUser
@@ -27,6 +28,8 @@ def main() -> None:
         raise SystemExit("관리자 비밀번호는 12자 이상이어야 합니다.")
     if password != getpass.getpass("비밀번호 확인: "):
         raise SystemExit("비밀번호가 일치하지 않습니다.")
+
+    prepare_dev_database()  # 개발 환경이면 DB가 비어 있어도 먼저 준비
 
     db = SessionLocal()
     try:

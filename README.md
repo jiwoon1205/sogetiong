@@ -17,9 +17,7 @@ Copy-Item .env.example .env
 #   → .env 안의 SECRET_KEY를 무작위 값으로 바꾼다
 #     python -c "import secrets; print(secrets.token_urlsafe(48))"
 
-# 3) DB 테이블 만들기 + 기본 데이터(학교·캠퍼스·학과·관심사·관리자 역할) 넣기
-alembic upgrade head
-python -m app.scripts.seed
+# 3) DB 준비는 자동입니다 (APP_ENV=dev 이면 서버가 켜질 때 테이블 생성 + 기본 데이터 입력)
 
 # 4) 관리자 계정 만들기 (2단계 인증 비밀키가 출력됨 → Google Authenticator 등에 등록)
 python -m app.scripts.create_admin --email admin@example.com --role SUPER_ADMIN

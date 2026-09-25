@@ -3,9 +3,11 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1 import admin_router, auth_router, catalog_router, matching_router, me_router, safety_router
 from app.core.config import get_settings
+from app.core.dev_bootstrap import prepare_dev_database
 
 settings = get_settings()
 settings.validate_settings()
+prepare_dev_database()  # 개발 환경이면 DB 테이블·기본 데이터 자동 준비
 
 app = FastAPI(
     title="Sogetiong API",
