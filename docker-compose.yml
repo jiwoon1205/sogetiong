@@ -1,0 +1,46 @@
+# 운영 서버에서: docker compose up -d --build
+# 데이터(DB·사진·백업)는 서버의 ./data 폴더에 저장된다 → 이 폴더가 백업 대상
+services:
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    env_file: deploy/backend.env
+    environment:
+      APP_ENV: prod
+      DATABASE_URL: sqlite:////data/sogetiong.db
+      LOCAL_STORAGE_DIR: /data/photos
+    volumes:
+      - ./data:/data
+    expose:
+      - "8000"
+    logging: &logs
+      driver: json-file
+      options: { max-size: "10m", max-file: "5" }
+
+  web:
+    build:
+      context: ./web
+      args:
+        BACKEND_URL: http://backend:8000
+    restart: unless-stopped
+    depends_on: [backend]
+    expose:
+      - "3000"
+    logging: *logs
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on: [backend, web]
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    logging: *logs
+
+volumes:
+  caddy_data:
+  caddy_config:

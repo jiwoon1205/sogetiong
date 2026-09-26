@@ -2,6 +2,7 @@
 .env
 .env.*
 !.env.example
+deploy/backend.env
 
 # Python
 __pycache__/
@@ -11,6 +12,7 @@ __pycache__/
 venv/
 
 # Local databases and runtime data
+/data/
 *.db
 *.sqlite
 *.sqlite3

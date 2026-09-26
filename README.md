@@ -79,4 +79,5 @@ tests/         자동 테스트
 ## 참고
 
 - 새 화면은 `web/`(Next.js)에 있다. 예전 `frontend/`(HTML/JS)는 더 이상 쓰지 않으므로 지워도 된다.
-- 사진은 개발 중에는 `backend/private_storage/`에 저장된다 (Git 제외). 운영 전에 R2/S3 private bucket으로 바꿔야 한다.
+- 사진은 개발 중에는 `backend/private_storage/`에 저장된다 (Git 제외).
+- **운영 서버 배포·백업 방법은 `12_DEPLOYMENT.md`** (베타: 서버 1대 + SQLite + 구글 드라이브 암호화 백업).

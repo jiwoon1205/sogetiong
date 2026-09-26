@@ -92,10 +92,12 @@ class Settings(BaseSettings):
             )
         if len(self.secret_key) < 32:
             raise ValueError("운영 환경에서는 32자 이상의 SECRET_KEY가 필요합니다")
-        if self.database_url.startswith("sqlite"):
-            raise ValueError("운영 환경에서는 PostgreSQL을 사용해야 합니다")
-        if self.storage_backend == "local":
-            raise ValueError("운영 환경에서는 로컬 디스크 대신 private object storage를 사용해야 합니다 (설계도 §50)")
+        # 베타(사용자 500명 이하) 결정: DB는 SQLite, 사진은 서버 디스크에 저장하고 구글 드라이브로 매일 백업한다.
+        # 다만 서버를 다시 만들면 사라지는 컨테이너 내부 경로가 아니라, 절대 경로(볼륨)여야 한다.
+        if self.database_url.startswith("sqlite") and not self.database_url.startswith("sqlite:////"):
+            raise ValueError("운영 환경의 SQLite 경로는 절대 경로여야 합니다 (예: sqlite:////data/sogetiong.db)")
+        if self.storage_backend == "local" and not self.local_storage_dir.startswith("/"):
+            raise ValueError("운영 환경의 LOCAL_STORAGE_DIR는 절대 경로여야 합니다 (예: /data/photos)")
         if self.email_backend != "smtp":
             raise ValueError("운영 환경에서는 EMAIL_BACKEND=smtp 이어야 합니다")
         if not self.cookies_secure:

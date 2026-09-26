@@ -1,0 +1,34 @@
+# Caddy: HTTPS 인증서 자동 발급·갱신 + 요청을 백엔드/화면으로 나눠 보내기
+# 도메인의 DNS(A 레코드)가 이 서버 IP를 가리키고 있어야 인증서가 발급된다.
+
+private-matching.com {
+	encode zstd gzip
+
+	# 사진 업로드(최대 5MB)보다 넉넉하게
+	request_body {
+		max_size 10MB
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+		-Server
+	}
+
+	# /api/* 는 백엔드(FastAPI)로, 나머지는 화면(Next.js)으로
+	handle /api/* {
+		reverse_proxy backend:8000
+	}
+	handle /health {
+		reverse_proxy backend:8000
+	}
+	handle {
+		reverse_proxy web:3000
+	}
+}
+
+# www 로 들어오면 기본 주소로 보낸다
+www.private-matching.com {
+	redir https://private-matching.com{uri} permanent
+}

@@ -15,9 +15,12 @@ engine = create_engine(
 
 if _is_sqlite:
     @event.listens_for(engine, "connect")
-    def _enable_sqlite_foreign_keys(dbapi_connection, _record):
+    def _configure_sqlite(dbapi_connection, _record):
         cursor = dbapi_connection.cursor()
         cursor.execute("PRAGMA foreign_keys=ON")
+        # WAL: 읽는 중에도 쓸 수 있어 동시 접속에 강하다. busy_timeout: 잠깐 잠겨 있으면 5초까지 기다린다.
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute("PRAGMA busy_timeout=5000")
         cursor.close()
 
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
