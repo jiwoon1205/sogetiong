@@ -46,6 +46,11 @@ export default function LoginPage() {
         <Field label="비밀번호" htmlFor="password">
           <Input id="password" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required />
         </Field>
+        <div className="-mt-2 text-right">
+          <Link href="/forgot-password" className="text-[13px] text-ink-soft underline underline-offset-4">
+            비밀번호를 잊으셨나요?
+          </Link>
+        </div>
         {error && <Notice tone="error">{error}</Notice>}
         <Button type="submit" size="lg" className="w-full" loading={loading}>
           로그인

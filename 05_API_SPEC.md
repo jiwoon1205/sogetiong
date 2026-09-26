@@ -35,6 +35,8 @@
 | POST | /auth/register | 가입 + 자동 로그인 |
 | POST | /auth/login | 로그인 |
 | POST | /auth/logout | 로그아웃 (로그인 필요) |
+| POST | /auth/password/reset-request | 비밀번호 재설정 인증번호 발송 |
+| POST | /auth/password/reset | 인증번호 + 새 비밀번호로 변경 |
 
 **send-code** `{ "email": "student@hufs.ac.kr" }` → `202 { "message": "..." }`
 - 등록된 학교 도메인이 아니면 400.
@@ -64,6 +66,16 @@
 
 **login** `{ "email", "password" }` → `{ "message", "csrf_token" }` + 로그인 쿠키
 - 모바일 앱은 헤더 `X-Client-Type: app` → 쿠키 대신 body에 `session_token`.
+
+**password/reset-request** `{ "email": "student@hufs.ac.kr" }` → `202 { "message": "..." }`
+- 등록된 학교 도메인이 아니면 400.
+- 가입 여부·계정 상태와 상관없이 **똑같은 응답**. 실제 메일은 이용 가능(ACTIVE)한 계정에만 보낸다.
+- 메일은 응답을 보낸 뒤 발송한다 (응답 시간 차이로 가입 여부를 알 수 없게). 발송 실패도 서버 로그에만 남긴다.
+
+**password/reset** `{ "email", "code": "123456", "new_password": "8자 이상, 영문+숫자/기호" }` → `{ "message": "..." }`
+- 코드가 틀리거나 만료되면 400 (이유는 구분하지 않음). 5번 틀리면 해당 코드 폐기.
+- 성공하면: 비밀번호 변경 → **모든 기기 로그아웃** → "비밀번호 변경됨" 안내 메일. 자동 로그인은 하지 않는다.
+- 가입용 인증번호와 재설정 인증번호는 서로 바꿔 쓸 수 없다 (`verification_tokens.purpose`).
 
 ## 3. 학교 정보 — 로그인 불필요
 
@@ -243,6 +255,8 @@ MVP는 폴링(몇 초마다 조회) 방식. 사용자 증가 후 WebSocket 검�
 | 인증번호 확인 | IP당 20회/10분, 코드당 5회 오답 |
 | 가입 | IP당 10회/시간 |
 | 로그인 | 이메일당 10회/15분, IP당 30회/15분 |
+| 비밀번호 재설정 코드 발송 | 이메일당 3회/시간, IP당 10회/시간 |
+| 비밀번호 재설정 | IP당 20회/10분, 코드당 5회 오답 |
 | 관리자 로그인 / 2FA | IP당 10회/15분 / 5회/5분 |
 | 사진 업로드 | 5회/시간 |
 | 추천 | 60회/분 |

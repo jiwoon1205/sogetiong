@@ -44,12 +44,18 @@ class UserSession(Base):
 
 
 class VerificationToken(Base):
-    """학교 이메일 인증. 인증번호 확인 후 가입용 1회 티켓을 발급한다."""
+    """이메일 인증번호.
+
+    purpose=SIGNUP: 학교 이메일 인증 → 가입용 1회 티켓 발급
+    purpose=PASSWORD_RESET: 비밀번호 재설정 코드
+    용도가 다른 코드는 서로 쓸 수 없다.
+    """
 
     __tablename__ = "verification_tokens"
 
     id: Mapped[uuid.UUID] = pk()
     email: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    purpose: Mapped[str] = mapped_column(String(20), default="SIGNUP", server_default="SIGNUP", nullable=False)
     code_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     attempt_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)

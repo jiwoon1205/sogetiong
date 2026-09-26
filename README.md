@@ -33,11 +33,11 @@ uvicorn app.main:app --reload
 
 ## 프론트엔드 실행 (web 폴더, Next.js)
 
-[Node.js](https://nodejs.org) 20 이상이 필요합니다 (`node -v`로 확인). **백엔드를 먼저 켜둔 상태**에서 새 PowerShell 창을 열고:
+[Node.js](https://nodejs.org) **20.9 이상**이 필요합니다 (Next.js 16 기준. 22 이상 권장) (`node -v`로 확인). **백엔드를 먼저 켜둔 상태**에서 새 PowerShell 창을 열고:
 
 ```powershell
 cd web
-npm install      # 처음 한 번
+npm install      # 처음 한 번 (Next.js를 올린 뒤에도 한 번 다시 실행)
 npm run dev
 ```
 

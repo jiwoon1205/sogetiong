@@ -32,6 +32,7 @@ function readCookie(name: string): string | undefined {
 const FIELD_NAMES: Record<string, string> = {
   email: "이메일",
   password: "비밀번호",
+  new_password: "새 비밀번호",
   nickname: "닉네임",
   code: "인증번호",
   birth_date: "생년월일",

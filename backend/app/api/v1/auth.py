@@ -1,6 +1,8 @@
-"""/api/v1/auth — 학교 이메일 인증, 가입, 로그인, 로그아웃."""
+"""/api/v1/auth — 학교 이메일 인증, 가입, 로그인, 로그아웃, 비밀번호 재설정."""
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+import logging
+
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response, status
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
@@ -12,7 +14,15 @@ from app.deps import CurrentUser, get_current_user
 from app.models.profile import PrivateProfile, PublicProfile
 from app.models.university import Campus
 from app.models.user import User, UserSession
-from app.schemas.auth import LoginRequest, RegisterRequest, SendCodeRequest, VerifyCodeRequest, VerifyCodeResponse
+from app.schemas.auth import (
+    LoginRequest,
+    PasswordResetConfirm,
+    PasswordResetRequest,
+    RegisterRequest,
+    SendCodeRequest,
+    VerifyCodeRequest,
+    VerifyCodeResponse,
+)
 from app.services import auth_service
 from app.services.email_service import EmailDeliveryError, EmailService
 from app.services.session_service import (
@@ -20,9 +30,11 @@ from app.services.session_service import (
     clear_user_cookies,
     create_user_session,
     is_app_client,
+    revoke_all_user_sessions,
     set_user_cookies,
 )
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 CODE_SENT_MESSAGE = "입력한 주소로 인증번호를 보냈습니다. 메일함을 확인해주세요."
@@ -147,3 +159,73 @@ def logout(response: Response, current: CurrentUser = Depends(get_current_user),
     db.commit()
     clear_user_cookies(response)
     return {"message": "로그아웃되었습니다."}
+
+
+# ---------- 비밀번호 재설정 ----------
+# 1) reset-request: 이메일로 6자리 코드 발송
+# 2) reset: 코드 + 새 비밀번호 → 변경, 모든 기기 로그아웃, 변경 안내 메일
+
+RESET_SENT_MESSAGE = "가입된 주소라면 비밀번호 재설정 인증번호를 보냈습니다. 메일함을 확인해주세요."
+RESET_INVALID_MESSAGE = "인증번호가 올바르지 않거나 만료되었습니다."
+
+
+def _send_in_background(send, *args) -> None:
+    """메일은 응답을 보낸 뒤에 발송한다.
+
+    가입된 주소일 때만 발송 시간만큼 응답이 늦어지면, 응답 시간으로 가입 여부를 알아낼 수 있다.
+    발송 실패도 사용자에게 알리지 않는다 (실패 여부도 가입 여부를 드러내므로). 서버 로그에만 남긴다.
+    """
+    try:
+        send(*args)
+    except EmailDeliveryError:
+        logger.error("password reset email failed")
+
+
+@router.post("/password/reset-request", status_code=status.HTTP_202_ACCEPTED)
+def password_reset_request(
+    payload: PasswordResetRequest,
+    request: Request,
+    background: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
+    email = auth_service.normalize_email(payload.email)
+    enforce_rate_limit(f"reset-request:ip:{client_ip(request)}", 10, 3600)
+    enforce_rate_limit(f"reset-request:email:{email}", 3, 3600)
+
+    if auth_service.find_university_for_email(db, email) is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="등록된 학교 이메일만 사용할 수 있습니다.")
+
+    # 가입 여부·계정 상태와 상관없이 항상 같은 응답 (계정 존재 노출 방지)
+    user = db.query(User).filter(User.email == email).first()
+    if user is not None and user.status == "ACTIVE":
+        code = auth_service.issue_verification_code(db, email, auth_service.PURPOSE_PASSWORD_RESET)
+        background.add_task(_send_in_background, EmailService.send_password_reset_code, email, code)
+    return {"message": RESET_SENT_MESSAGE}
+
+
+@router.post("/password/reset")
+def password_reset(
+    payload: PasswordResetConfirm,
+    request: Request,
+    response: Response,
+    background: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
+    email = auth_service.normalize_email(payload.email)
+    enforce_rate_limit(f"reset:ip:{client_ip(request)}", 20, 600)
+
+    if not auth_service.use_password_reset_code(db, email, payload.code):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=RESET_INVALID_MESSAGE)
+    user = db.query(User).filter(User.email == email).first()
+    if user is None or user.status != "ACTIVE":
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=RESET_INVALID_MESSAGE)
+
+    user.password_hash = hash_password(payload.new_password)
+    # 비밀번호가 바뀌면 모든 기기에서 로그아웃 (누군가 로그인해 있었다면 쫓아냄)
+    revoke_all_user_sessions(db, user.id)
+    db.commit()
+
+    clear_user_cookies(response)
+    background.add_task(_send_in_background, EmailService.send_password_changed_notice, email)
+    return {"message": "비밀번호가 변경되었습니다. 새 비밀번호로 로그인해주세요."}

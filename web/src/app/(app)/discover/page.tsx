@@ -169,26 +169,30 @@ function EmptyState({ title, body, children }: { title: string; body: string; ch
 function SwipeCard({ children, onSwipe, disabled }: { children: React.ReactNode; onSwipe: (a: "like" | "pass") => void; disabled?: boolean }) {
   const start = useRef<number | null>(null);
   const [dx, setDx] = useState(0);
+  const [dragging, setDragging] = useState(false); // 손가락으로 끄는 중인지 (화면 표시용)
   const THRESHOLD = 110;
 
   return (
     <div
       className="relative touch-pan-y select-none"
-      style={{ transform: `translateX(${dx}px) rotate(${dx / 40}deg)`, transition: start.current === null ? "transform 200ms ease" : "none" }}
+      style={{ transform: `translateX(${dx}px) rotate(${dx / 40}deg)`, transition: dragging ? "none" : "transform 200ms ease" }}
       onPointerDown={(e) => {
         if (disabled || e.pointerType === "mouse") return;
         start.current = e.clientX;
+        setDragging(true);
       }}
       onPointerMove={(e) => start.current !== null && setDx(e.clientX - start.current)}
       onPointerUp={() => {
         if (start.current === null) return;
         start.current = null;
+        setDragging(false);
         if (dx > THRESHOLD) onSwipe("like");
         else if (dx < -THRESHOLD) onSwipe("pass");
         setDx(0);
       }}
       onPointerCancel={() => {
         start.current = null;
+        setDragging(false);
         setDx(0);
       }}
     >

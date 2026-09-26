@@ -11,6 +11,8 @@ from app.models.university import University
 from app.models.user import VerificationToken
 
 MAX_CODE_ATTEMPTS = 5
+PURPOSE_SIGNUP = "SIGNUP"
+PURPOSE_PASSWORD_RESET = "PASSWORD_RESET"
 
 
 def normalize_email(email: str) -> str:
@@ -23,12 +25,13 @@ def find_university_for_email(db: Session, email: str) -> University | None:
     return db.query(University).filter(University.email_domain == domain, University.active.is_(True)).first()
 
 
-def issue_verification_code(db: Session, email: str) -> str:
+def issue_verification_code(db: Session, email: str, purpose: str = PURPOSE_SIGNUP) -> str:
     settings = get_settings()
     code = new_verification_code()
     db.add(
         VerificationToken(
             email=normalize_email(email),
+            purpose=purpose,
             code_hash=hash_token(code),
             expires_at=utcnow() + timedelta(minutes=settings.verification_code_minutes),
         )
@@ -37,17 +40,19 @@ def issue_verification_code(db: Session, email: str) -> str:
     return code
 
 
-def verify_code_and_issue_ticket(db: Session, email: str, code: str) -> str | None:
-    """인증번호가 맞으면 가입용 1회 티켓(원문)을 돌려준다. 틀리면 None."""
-    settings = get_settings()
+def _check_latest_code(db: Session, email: str, code: str, purpose: str) -> VerificationToken | None:
+    """이 이메일·용도로 가장 최근에 보낸 코드와 비교한다.
+
+    새 코드를 받으면 이전 코드는 자동으로 못 쓰게 된다 (항상 최신 것만 확인).
+    틀리면 시도 횟수를 늘리고, 5번 틀린 코드는 맞아도 거부한다.
+    """
     token = (
         db.query(VerificationToken)
-        .filter(VerificationToken.email == normalize_email(email))
+        .filter(VerificationToken.email == normalize_email(email), VerificationToken.purpose == purpose)
         .order_by(VerificationToken.created_at.desc())
         .first()
     )
-    now = utcnow()
-    if token is None or token.verified_at is not None or as_utc(token.expires_at) <= now:
+    if token is None or token.verified_at is not None or as_utc(token.expires_at) <= utcnow():
         return None
     if token.attempt_count >= MAX_CODE_ATTEMPTS:
         return None
@@ -55,7 +60,17 @@ def verify_code_and_issue_ticket(db: Session, email: str, code: str) -> str | No
         token.attempt_count += 1
         db.commit()
         return None
+    return token
 
+
+def verify_code_and_issue_ticket(db: Session, email: str, code: str) -> str | None:
+    """인증번호가 맞으면 가입용 1회 티켓(원문)을 돌려준다. 틀리면 None."""
+    settings = get_settings()
+    token = _check_latest_code(db, email, code, PURPOSE_SIGNUP)
+    if token is None:
+        return None
+
+    now = utcnow()
     ticket = new_token()
     token.verified_at = now
     token.ticket_hash = hash_token(ticket)
@@ -64,8 +79,23 @@ def verify_code_and_issue_ticket(db: Session, email: str, code: str) -> str | No
     return ticket
 
 
+def use_password_reset_code(db: Session, email: str, code: str) -> bool:
+    """재설정 코드가 맞으면 '사용됨'으로 표시하고 True. (commit은 호출한 쪽에서)"""
+    token = _check_latest_code(db, email, code, PURPOSE_PASSWORD_RESET)
+    if token is None:
+        return False
+    now = utcnow()
+    token.verified_at = now
+    token.consumed_at = now
+    return True
+
+
 def find_valid_ticket(db: Session, ticket: str) -> VerificationToken | None:
-    token = db.query(VerificationToken).filter(VerificationToken.ticket_hash == hash_token(ticket)).first()
+    token = (
+        db.query(VerificationToken)
+        .filter(VerificationToken.ticket_hash == hash_token(ticket), VerificationToken.purpose == PURPOSE_SIGNUP)
+        .first()
+    )
     if token is None or token.consumed_at is not None:
         return None
     if token.ticket_expires_at is None or as_utc(token.ticket_expires_at) <= utcnow():

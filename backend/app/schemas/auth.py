@@ -7,6 +7,16 @@ from pydantic import BaseModel, EmailStr, Field, field_validator
 from app.core.config import get_settings
 
 
+def check_password_policy(value: str) -> str:
+    """가입과 비밀번호 재설정이 같은 규칙을 쓴다."""
+    min_len = get_settings().password_min_length
+    if len(value) < min_len:
+        raise ValueError(f"비밀번호는 {min_len}자 이상이어야 합니다.")
+    if value.isdigit() or value.isalpha():
+        raise ValueError("비밀번호는 영문과 숫자/기호를 섞어야 합니다.")
+    return value
+
+
 class SendCodeRequest(BaseModel):
     email: EmailStr
 
@@ -38,12 +48,7 @@ class RegisterRequest(BaseModel):
     @field_validator("password")
     @classmethod
     def password_policy(cls, value: str) -> str:
-        min_len = get_settings().password_min_length
-        if len(value) < min_len:
-            raise ValueError(f"비밀번호는 {min_len}자 이상이어야 합니다.")
-        if value.isdigit() or value.isalpha():
-            raise ValueError("비밀번호는 영문과 숫자/기호를 섞어야 합니다.")
-        return value
+        return check_password_policy(value)
 
     @field_validator("nickname")
     @classmethod
@@ -57,6 +62,25 @@ class RegisterRequest(BaseModel):
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str = Field(max_length=128)
+
+
+class PasswordResetRequest(BaseModel):
+    """1단계: 재설정 코드 요청"""
+
+    email: EmailStr
+
+
+class PasswordResetConfirm(BaseModel):
+    """2단계: 코드 + 새 비밀번호"""
+
+    email: EmailStr
+    code: str = Field(min_length=6, max_length=6, pattern=r"^\d{6}$")
+    new_password: str = Field(max_length=128)
+
+    @field_validator("new_password")
+    @classmethod
+    def password_policy(cls, value: str) -> str:
+        return check_password_policy(value)
 
 
 class DeleteAccountRequest(BaseModel):

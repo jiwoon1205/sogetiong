@@ -60,6 +60,25 @@ def sent_codes(monkeypatch):
 
 
 @pytest.fixture
+def reset_mail(monkeypatch):
+    """비밀번호 재설정 메일을 실제로 보내지 않고 모아둔다.
+
+    reset_mail["codes"][email] = 마지막으로 보낸 재설정 코드
+    reset_mail["notices"] = 비밀번호 변경 안내 메일을 받은 주소 목록
+    """
+    box: dict = {"codes": {}, "notices": []}
+    monkeypatch.setattr(
+        "app.services.email_service.EmailService.send_password_reset_code",
+        staticmethod(lambda email, code: box["codes"].__setitem__(email, code)),
+    )
+    monkeypatch.setattr(
+        "app.services.email_service.EmailService.send_password_changed_notice",
+        staticmethod(lambda email: box["notices"].append(email)),
+    )
+    return box
+
+
+@pytest.fixture
 def db():
     session = SessionLocal()
     yield session
