@@ -61,6 +61,8 @@ export default function UserDetail() {
             <StatusForm key={d.user_id} userId={d.user_id} current={d.status} deleted={!!d.deleted_at} onDone={() => load(!!d.private)} />
           )}
 
+          {admin.can("chats:read") && <UserChats userId={d.user_id} />}
+
           {d.linked_accounts.length > 0 && (
             <section>
               <p className="eyebrow mb-3">같은 학교 메일로 가입했던 계정</p>
@@ -111,6 +113,61 @@ export default function UserDetail() {
         </div>
       </div>
     </>
+  );
+}
+
+type MatchRow = {
+  match_id: string;
+  partner: { user_id: string; subject_code: string; nickname: string | null };
+  status: string;
+  matched_at: string;
+  ended_at: string | null;
+  message_count: number;
+  last_message_at: string | null;
+};
+
+const MATCH_STATUS_LABEL: Record<string, string> = { ACTIVE: "대화 중", UNMATCHED: "매칭 해제", BLOCKED: "차단으로 종료" };
+
+/** 이 사용자의 모든 대화방 (목록만. 내용은 눌러서 열면 감사 로그에 기록됨) */
+function UserChats({ userId }: { userId: string }) {
+  const [rows, setRows] = useState<MatchRow[] | null>(null);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    adminApi<{ matches: MatchRow[] }>(`/users/${userId}/matches`)
+      .then((r) => setRows(r.matches))
+      .catch((e) => setError(errorMessage(e)));
+  }, [userId]);
+
+  return (
+    <section>
+      <p className="eyebrow mb-3">대화</p>
+      {error ? (
+        <Notice tone="error">{error}</Notice>
+      ) : !rows ? (
+        <Spinner />
+      ) : rows.length === 0 ? (
+        <p className="text-[13.5px] text-ink-faint">매칭된 상대가 없어요.</p>
+      ) : (
+        <ul className="divide-y divide-line rounded-card border border-line bg-paper-card text-[14px]">
+          {rows.map((m) => (
+            <li key={m.match_id} className="flex flex-wrap items-baseline justify-between gap-2 px-5 py-3">
+              <span>
+                <span className="font-mono">{m.partner.subject_code}</span>
+                <span className="text-ink-soft"> · {m.partner.nickname ?? "(탈퇴)"}</span>
+                <span className="ml-2 text-[12.5px] text-ink-faint">
+                  {MATCH_STATUS_LABEL[m.status] ?? m.status} · 메시지 <span className="num">{m.message_count}</span>개
+                  {m.last_message_at && <> · 마지막 {dateTime(m.last_message_at)}</>}
+                </span>
+              </span>
+              <Link href={`/admin/chats/${m.match_id}`} className="text-[13px] underline underline-offset-4">
+                대화 보기
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }
 

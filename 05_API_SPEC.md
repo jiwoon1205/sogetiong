@@ -216,6 +216,8 @@ MVP는 폴링(몇 초마다 조회) 방식. 사용자 증가 후 WebSocket 검�
 | PATCH | /admin/users/{user_id}/status | users:status |
 | GET | /admin/reports?status=OPEN | reports:read |
 | PATCH | /admin/reports/{report_id} | reports:update |
+| GET | /admin/users/{user_id}/matches | chats:read |
+| GET | /admin/matches/{match_id}/messages?before=&limit=200 | chats:read |
 | GET | /admin/audit-logs | audit:read |
 
 **PUT /admin/photo-reviews/{photo_id}/evaluation**
@@ -240,6 +242,12 @@ MVP는 폴링(몇 초마다 조회) 방식. 사용자 증가 후 WebSocket 검�
 
 **PATCH /admin/reports/{report_id}** `{ "status": "IN_REVIEW | RESOLVED | DISMISSED", "admin_note": "..." }`
 
+**대화 열람** (운영 정책: 권한이 있으면 신고 여부와 상관없이 모든 대화를 볼 수 있다)
+- `GET /admin/users/{user_id}/matches` → 이 사용자의 모든 대화방(끝난 대화 포함) 목록. 상대 가명 코드·닉네임, 메시지 수, 마지막 메시지 시각. 내용은 없음.
+- `GET /admin/matches/{match_id}/messages` → 대화 내용 (최신 200개, `before`로 이전 것). 보낸 사람은 가명 코드로 표시, 이메일 없음.
+- 대화 내용을 열 때마다 감사 로그 `CHAT_VIEW` (관리자·시각·IP·대화방)가 남는다.
+- 메시지는 매칭 해제·차단·탈퇴 후에도 삭제하지 않고 보관한다.
+
 ### 역할별 권한
 
 | 권한 | SUPER_ADMIN | MODERATOR | PHOTO_REVIEWER |
@@ -249,6 +257,7 @@ MVP는 폴링(몇 초마다 조회) 방식. 사용자 증가 후 WebSocket 검�
 | users:read / users:status | ✅ | ✅ | |
 | users:private:read (실명·이메일 등) | ✅ | | |
 | reports:read / reports:update | ✅ | ✅ | |
+| chats:read (모든 대화 열람) | ✅ | ✅ | |
 | audit:read | ✅ | | |
 
 ## 9. 요청 횟수 제한

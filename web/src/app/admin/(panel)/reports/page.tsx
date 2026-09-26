@@ -96,7 +96,17 @@ function ReportRow({ report, onChanged }: { report: Report; onChanged: () => voi
         ) : (
           <span className="font-mono">{report.reported_user_id.slice(0, 8)}</span>
         )}
-        {report.match_id && " · 대화 중 신고"}
+        {report.match_id &&
+          (admin.can("chats:read") ? (
+            <>
+              {" · "}
+              <Link href={`/admin/chats/${report.match_id}`} className="text-ink underline underline-offset-4">
+                신고된 대화 보기
+              </Link>
+            </>
+          ) : (
+            " · 대화 중 신고"
+          ))}
       </p>
 
       {admin.can("reports:update") && (

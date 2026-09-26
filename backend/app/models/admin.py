@@ -79,8 +79,10 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         "users:private:read",
         "reports:read",
         "reports:update",
+        "chats:read",
         "audit:read",
     ],
-    "MODERATOR": ["dashboard:read", "users:read", "users:status", "reports:read", "reports:update"],
+    # chats:read = 모든 대화 열람 (열 때마다 감사 로그에 CHAT_VIEW로 기록)
+    "MODERATOR": ["dashboard:read", "users:read", "users:status", "reports:read", "reports:update", "chats:read"],
     "PHOTO_REVIEWER": ["dashboard:read", "photos:read", "photos:evaluate"],
 }

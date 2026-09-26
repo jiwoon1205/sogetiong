@@ -5,6 +5,8 @@ from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 DEFAULT_SECRET = "change-me-in-production"
+# 문서·예시 파일에 공개된 값. 길이가 충분해도 운영에서 쓰면 안 된다.
+PUBLIC_EXAMPLE_SECRETS = {DEFAULT_SECRET, "replace-with-a-long-random-secret"}
 
 
 class Settings(BaseSettings):
@@ -83,7 +85,12 @@ class Settings(BaseSettings):
             raise ValueError("WEIGHT_APPEARANCE가 상한(WEIGHT_APPEARANCE_MAX)을 넘습니다")
         if self.environment != "prod":
             return
-        if self.secret_key == DEFAULT_SECRET or len(self.secret_key) < 32:
+        if self.secret_key in PUBLIC_EXAMPLE_SECRETS:
+            raise ValueError(
+                "SECRET_KEY가 예시 값 그대로입니다. 새로 만들어서 .env에 넣으세요: "
+                'python -c "import secrets; print(secrets.token_urlsafe(48))"'
+            )
+        if len(self.secret_key) < 32:
             raise ValueError("운영 환경에서는 32자 이상의 SECRET_KEY가 필요합니다")
         if self.database_url.startswith("sqlite"):
             raise ValueError("운영 환경에서는 PostgreSQL을 사용해야 합니다")

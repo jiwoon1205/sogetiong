@@ -15,7 +15,7 @@ from app.core.time import utcnow
 from app.db.session import get_db
 from app.deps import CurrentAdmin, get_admin_pending_mfa, get_current_admin, require_permission
 from app.models.admin import AdminUser, AuditLog
-from app.models.matching import Match, Report
+from app.models.matching import Match, Message, Report
 from app.models.photo import AppearanceEvaluation, UserPhoto
 from app.models.profile import PrivateProfile, PublicProfile
 from app.models.user import User
@@ -391,6 +391,118 @@ def update_user_status(
     )
     db.commit()
     return {"user_id": str(user.id), "status": user.status}
+
+
+# ---------- 대화 열람 ----------
+# 운영 정책: 권한(chats:read)이 있는 관리자는 모든 대화를 볼 수 있다.
+# 대신 대화를 열 때마다 감사 로그(CHAT_VIEW)에 누가·언제·어느 대화를 봤는지 남긴다.
+
+
+def _nicknames(db: Session, user_ids: list[uuid.UUID]) -> dict[uuid.UUID, str]:
+    rows = db.query(PublicProfile.user_id, PublicProfile.nickname).filter(PublicProfile.user_id.in_(user_ids)).all()
+    return dict(rows)
+
+
+def _person(user_id: uuid.UUID, nicknames: dict[uuid.UUID, str]) -> dict:
+    return {
+        "user_id": str(user_id),
+        "subject_code": pseudonymous_code(user_id),
+        "nickname": nicknames.get(user_id),  # 탈퇴하면 None
+    }
+
+
+@router.get("/users/{user_id}/matches")
+def list_user_matches(
+    user_id: uuid.UUID,
+    admin: CurrentAdmin = Depends(require_permission("chats:read")),
+    db: Session = Depends(get_db),
+):
+    """이 사용자의 모든 대화방 목록 (끝난 대화 포함). 메시지 내용은 없다."""
+    user = _user_or_404(db, user_id)
+    matches = (
+        db.query(Match)
+        .filter((Match.user_a_id == user.id) | (Match.user_b_id == user.id))
+        .order_by(Match.created_at.desc())
+        .all()
+    )
+    match_ids = [m.id for m in matches]
+    stats = {}
+    if match_ids:
+        stats = {
+            mid: (count, last)
+            for mid, count, last in db.query(Message.match_id, func.count(Message.id), func.max(Message.created_at))
+            .filter(Message.match_id.in_(match_ids))
+            .group_by(Message.match_id)
+        }
+    nicknames = _nicknames(db, [m.partner_of(user.id) for m in matches])
+    result = []
+    for m in matches:
+        count, last = stats.get(m.id, (0, None))
+        result.append(
+            {
+                "match_id": str(m.id),
+                "partner": _person(m.partner_of(user.id), nicknames),
+                "status": m.status,
+                "matched_at": m.created_at.isoformat(),
+                "ended_at": m.ended_at.isoformat() if m.ended_at else None,
+                "message_count": count,
+                "last_message_at": last.isoformat() if last else None,
+            }
+        )
+    return {"matches": result}
+
+
+@router.get("/matches/{match_id}/messages")
+def read_match_messages(
+    match_id: uuid.UUID,
+    request: Request,
+    before: uuid.UUID | None = None,
+    limit: int = Query(default=200, ge=1, le=500),
+    admin: CurrentAdmin = Depends(require_permission("chats:read")),
+    db: Session = Depends(get_db),
+):
+    """대화 내용 열람. 최신 limit개, 더 이전 것은 before=<가장 오래된 message_id>."""
+    match = db.get(Match, match_id)
+    if match is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="대화방을 찾을 수 없습니다.")
+
+    query = db.query(Message).filter(Message.match_id == match.id)
+    if before:
+        anchor = db.get(Message, before)
+        if anchor and anchor.match_id == match.id:
+            query = query.filter(Message.created_at < anchor.created_at)
+    rows = query.order_by(Message.created_at.desc()).limit(limit + 1).all()
+    has_more = len(rows) > limit
+    rows = list(reversed(rows[:limit]))
+
+    nicknames = _nicknames(db, [match.user_a_id, match.user_b_id])
+    AuditService.record(
+        db,
+        admin_id=admin.id,
+        action="CHAT_VIEW",
+        target_type="MATCH",
+        target_id=match.id,
+        request=request,
+        metadata={"messages_shown": len(rows), "before": str(before) if before else None},
+    )
+    db.commit()
+    return {
+        "match_id": str(match.id),
+        "status": match.status,
+        "matched_at": match.created_at.isoformat(),
+        "ended_at": match.ended_at.isoformat() if match.ended_at else None,
+        "members": [_person(match.user_a_id, nicknames), _person(match.user_b_id, nicknames)],
+        "messages": [
+            {
+                "message_id": str(m.id),
+                "sender_subject_code": pseudonymous_code(m.sender_user_id),
+                "body": m.body,
+                "sent_at": m.created_at.isoformat(),
+            }
+            for m in rows
+        ],
+        "has_more": has_more,
+    }
 
 
 # ---------- 신고 처리 ----------

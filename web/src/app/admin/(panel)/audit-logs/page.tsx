@@ -17,6 +17,7 @@ const ACTION_LABEL: Record<string, string> = {
   USER_PRIVATE_VIEW: "개인정보 열람",
   USER_STATUS_CHANGE: "계정 상태 변경",
   REPORT_UPDATE: "신고 처리",
+  CHAT_VIEW: "대화 열람",
 };
 
 export default function AuditLogsPage() {
@@ -47,7 +48,7 @@ export default function AuditLogsPage() {
               {logs.map((l, i) => (
                 <tr key={i}>
                   <td className="num whitespace-nowrap px-5 py-3 text-ink-soft">{dateTime(l.created_at)}</td>
-                  <td className={`px-5 py-3 ${l.action === "USER_PRIVATE_VIEW" ? "font-semibold text-brick" : ""}`}>{ACTION_LABEL[l.action] ?? l.action}</td>
+                  <td className={`px-5 py-3 ${l.action === "USER_PRIVATE_VIEW" || l.action === "CHAT_VIEW" ? "font-semibold text-brick" : ""}`}>{ACTION_LABEL[l.action] ?? l.action}</td>
                   <td className="px-5 py-3 font-mono text-[12.5px] text-ink-soft">
                     {l.target_type} {l.target_id?.slice(0, 8)}
                   </td>
