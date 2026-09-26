@@ -319,6 +319,25 @@ def get_user(
         "created_at": user.created_at.isoformat(),
         "profile": profile_service.build_card(db, profile) if profile else None,
         "reports_received": profile_service.count(db, db.query(Report.id).filter(Report.reported_user_id == user.id)),
+        "deleted_at": user.deleted_at.isoformat() if user.deleted_at else None,
+        # 같은 학교 메일로 가입했던 다른 계정 (탈퇴 후 재가입 등). 이메일 자체는 보여주지 않는다.
+        "linked_accounts": [
+            {
+                "user_id": str(u.id),
+                "subject_code": pseudonymous_code(u.id),
+                "status": u.status,
+                "created_at": u.created_at.isoformat(),
+                "deleted_at": u.deleted_at.isoformat() if u.deleted_at else None,
+            }
+            for u in (
+                db.query(User)
+                .filter(User.email_hash == user.email_hash, User.id != user.id)
+                .order_by(User.created_at)
+                .all()
+                if user.email_hash
+                else []
+            )
+        ],
     }
     AuditService.record(db, admin_id=admin.id, action="USER_VIEW", target_type="USER", target_id=user.id, request=request)
 
@@ -349,13 +368,18 @@ def update_user_status(
     db: Session = Depends(get_db),
 ):
     user = _user_or_404(db, user_id)
-    if user.status == "DELETED":
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="탈퇴한 계정입니다.")
+    if user.deleted_at is not None:
+        # 탈퇴한 계정: 정지(BANNED)로 바꾸면 같은 메일로 재가입할 수 없게 된다. 풀 때는 다시 DELETED로.
+        if payload.status not in ("BANNED", "DELETED"):
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="탈퇴한 계정은 영구 정지 또는 정지 해제(탈퇴 상태)만 할 수 있습니다.")
+    elif payload.status == "DELETED":
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="탈퇴 처리는 사용자 본인만 할 수 있습니다.")
     before = user.status
     user.status = payload.status
     if payload.status != "ACTIVE":
         revoke_all_user_sessions(db, user.id)  # 즉시 로그아웃
-    notify(db, user.id, "ACCOUNT_STATUS", "계정 상태가 변경되었어요", f"현재 상태: {payload.status}")
+    if user.deleted_at is None:  # 탈퇴한 사람에게는 알림을 보내지 않는다
+        notify(db, user.id, "ACCOUNT_STATUS", "계정 상태가 변경되었어요", f"현재 상태: {payload.status}")
     AuditService.record(
         db,
         admin_id=admin.id,

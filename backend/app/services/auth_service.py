@@ -1,5 +1,6 @@
 """학교 이메일 인증 로직 (설계도 §2.1, §40)."""
 
+import uuid
 from datetime import timedelta
 
 from sqlalchemy.orm import Session
@@ -7,8 +8,9 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.core.security import hash_token, new_token, new_verification_code, tokens_match
 from app.core.time import as_utc, utcnow
+from app.models.matching import Block
 from app.models.university import University
-from app.models.user import VerificationToken
+from app.models.user import User, VerificationToken
 
 MAX_CODE_ATTEMPTS = 5
 PURPOSE_SIGNUP = "SIGNUP"
@@ -18,6 +20,65 @@ PURPOSE_PASSWORD_RESET = "PASSWORD_RESET"
 def normalize_email(email: str) -> str:
     return email.strip().lower()
 
+
+# ---------- 탈퇴·재가입 ----------
+
+def email_fingerprint(email: str) -> str:
+    """이메일 지문. 원래 주소로 되돌릴 수 없고, 같은 주소면 항상 같은 값이 나온다.
+
+    주의: SECRET_KEY로 만들기 때문에 SECRET_KEY를 바꾸면 예전 계정을 알아볼 수 없게 된다.
+    """
+    return hash_token(f"email:{normalize_email(email)}")
+
+
+def anonymized_email(user_id: uuid.UUID) -> str:
+    """탈퇴한 계정에 넣는 가짜 주소. 원래 주소가 비워져야 같은 메일로 다시 가입할 수 있다."""
+    return f"deleted-{user_id}@deleted.invalid"
+
+
+def previous_accounts(db: Session, email: str) -> list[User]:
+    """같은 이메일로 예전에 가입했던 계정들 (탈퇴·정지 포함)."""
+    return db.query(User).filter(User.email_hash == email_fingerprint(email)).all()
+
+
+def rejoin_block_reason(db: Session, email: str) -> str | None:
+    """다시 가입할 수 없으면 그 이유(사용자에게 보여줄 문장), 가능하면 None.
+
+    이메일 인증을 통과한 본인에게만 보여주므로 이유를 알려줘도 된다.
+    """
+    previous = previous_accounts(db, email)
+    if any(u.status == "BANNED" for u in previous):
+        return "이용이 영구 제한된 계정이라 다시 가입할 수 없습니다."
+
+    days = get_settings().rejoin_cooldown_days
+    deleted_times = [as_utc(u.deleted_at) for u in previous if u.deleted_at is not None]
+    if days > 0 and deleted_times:
+        available_at = max(deleted_times) + timedelta(days=days)
+        if utcnow() < available_at:
+            kst = available_at + timedelta(hours=9)
+            return f"탈퇴 후 {days}일이 지나야 다시 가입할 수 있습니다. ({kst:%Y년 %m월 %d일 %H:%M} 이후 가능)"
+    return None
+
+
+def carry_over_blocks(db: Session, previous_ids: list[uuid.UUID], new_user_id: uuid.UUID) -> None:
+    """예전 계정의 차단 관계를 새 계정으로 옮긴다.
+
+    이걸 하지 않으면, 나를 차단한 사람에게 탈퇴 후 재가입만으로 다시 추천될 수 있다.
+    (반대로 내가 예전에 차단했던 사람도 계속 차단 상태로 둔다.)
+    """
+    if not previous_ids:
+        return
+    pairs: set[tuple[uuid.UUID, uuid.UUID]] = set()
+    for blocker, _ in db.query(Block.blocker_user_id, Block.blocked_user_id).filter(Block.blocked_user_id.in_(previous_ids)):
+        if blocker not in previous_ids:
+            pairs.add((blocker, new_user_id))
+    for _, blocked in db.query(Block.blocker_user_id, Block.blocked_user_id).filter(Block.blocker_user_id.in_(previous_ids)):
+        if blocked not in previous_ids:
+            pairs.add((new_user_id, blocked))
+    db.add_all([Block(blocker_user_id=a, blocked_user_id=b) for a, b in pairs])
+
+
+# ---------- 학교 이메일 인증 ----------
 
 def find_university_for_email(db: Session, email: str) -> University | None:
     """이메일 도메인이 등록된(활성) 학교와 정확히 일치해야 한다."""

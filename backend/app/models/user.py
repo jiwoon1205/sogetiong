@@ -9,12 +9,17 @@ from app.models._common import created_at, pk, updated_at
 
 
 class User(Base):
-    """계정. status: PENDING / ACTIVE / SUSPENDED / BANNED / DELETED (설계도 §61)."""
+    """계정. status: PENDING / ACTIVE / SUSPENDED / BANNED / DELETED (설계도 §61).
+
+    email_hash: 학교 이메일의 지문(HMAC). 탈퇴하면 email은 가짜 주소로 바뀌고 이 값만 남는다.
+    같은 사람이 다시 가입했는지 알아보는 데만 쓴다 (정지된 사람 재가입 차단, 차단 기록 이어받기).
+    """
 
     __tablename__ = "users"
 
     id: Mapped[uuid.UUID] = pk()
     email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
+    email_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     password_hash: Mapped[str] = mapped_column(Text, nullable=False)
     university_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("universities.id"), nullable=False, index=True)
     status: Mapped[str] = mapped_column(String(30), default="ACTIVE", nullable=False)

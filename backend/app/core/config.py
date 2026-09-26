@@ -31,6 +31,7 @@ class Settings(BaseSettings):
     password_min_length: int = 8
     verification_code_minutes: int = 10
     verification_ticket_minutes: int = 30
+    rejoin_cooldown_days: int = 7  # 탈퇴 후 재가입까지 기다려야 하는 기간 (0이면 바로 가능)
 
     # --- 이메일 ---
     # smtp: 실제 발송 / console: 서버 콘솔에 코드 출력 (dev 전용)

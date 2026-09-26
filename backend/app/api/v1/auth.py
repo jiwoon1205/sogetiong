@@ -67,6 +67,10 @@ def verify_code(payload: VerifyCodeRequest, request: Request, db: Session = Depe
     ticket = auth_service.verify_code_and_issue_ticket(db, email, payload.code)
     if ticket is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="인증번호가 올바르지 않거나 만료되었습니다.")
+    # 메일 주인임이 확인된 뒤에만 재가입 제한 이유를 알려준다 (기본 정보를 다 입력한 뒤 거절되지 않게)
+    reason = auth_service.rejoin_block_reason(db, email)
+    if reason:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=reason)
     return VerifyCodeResponse(verification_ticket=ticket, expires_in_minutes=get_settings().verification_ticket_minutes)
 
 
@@ -95,10 +99,15 @@ def register(payload: RegisterRequest, request: Request, response: Response, db:
 
     if db.query(User.id).filter(User.email == ticket.email).first():
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="이미 가입된 계정입니다. 로그인해주세요.")
+    reason = auth_service.rejoin_block_reason(db, ticket.email)
+    if reason:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=reason)
+    previous_ids = [u.id for u in auth_service.previous_accounts(db, ticket.email)]
 
     now = utcnow()
     user = User(
         email=ticket.email,
+        email_hash=auth_service.email_fingerprint(ticket.email),
         password_hash=hash_password(payload.password),
         university_id=university.id,
         status="ACTIVE",
@@ -120,6 +129,7 @@ def register(payload: RegisterRequest, request: Request, response: Response, db:
         )
     )
     db.add(PublicProfile(user_id=user.id, nickname=payload.nickname, gender=payload.gender, campus_id=campus.id))
+    auth_service.carry_over_blocks(db, previous_ids, user.id)
     ticket.consumed_at = now
     issued = create_user_session(db, user.id, request)
     db.commit()

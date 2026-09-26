@@ -73,6 +73,9 @@ function DeleteAccount({ open, onClose, onDone }: { open: boolean; onClose: () =
         <p className="text-[14px] leading-relaxed text-ink-soft">
           공개 프로필, 매칭 조건, 사진이 삭제되고 진행 중인 대화가 모두 끝나요. 신고 처리 등 법적으로 보관해야 하는 기록은 정해진 기간 동안만 보관돼요.
         </p>
+        <p className="text-[13px] leading-relaxed text-ink-faint">
+          탈퇴 후 7일이 지나면 같은 학교 메일로 다시 가입할 수 있어요. 차단했던 상대는 다시 가입해도 계속 차단된 상태로 유지돼요.
+        </p>
         <Field label="비밀번호 확인" htmlFor="del-pw">
           <Input id="del-pw" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
         </Field>

@@ -36,7 +36,8 @@ class EvaluationRequest(BaseModel):
 
 
 class UserStatusRequest(BaseModel):
-    status: Literal["ACTIVE", "SUSPENDED", "BANNED"]
+    # DELETED: 탈퇴 후 정지된 계정의 정지를 풀 때만 쓴다 (다시 '탈퇴' 상태로)
+    status: Literal["ACTIVE", "SUSPENDED", "BANNED", "DELETED"]
     reason: str = Field(min_length=2, max_length=300)
 
 

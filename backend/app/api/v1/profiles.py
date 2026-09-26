@@ -23,7 +23,7 @@ from app.models.profile import Interest, PublicProfile, UserInterest
 from app.models.university import Campus, Department
 from app.schemas.auth import DeleteAccountRequest
 from app.schemas.profile import PreferencesRequest, ProfileUpdateRequest
-from app.services import profile_service
+from app.services import auth_service, profile_service
 from app.services.session_service import clear_user_cookies, revoke_all_user_sessions
 from app.services.storage_service import PhotoValidationError, get_storage, new_storage_key, process_upload
 
@@ -70,6 +70,7 @@ def delete_me(
     """회원 탈퇴 (설계도 §45).
 
     즉시 삭제: 공개 프로필, 관심사, 매칭 조건, 사진 파일, 로그인 세션
+    익명화: 이메일 → 가짜 주소 + 지문(email_hash)만 보관 (재가입 허용, 정지 이력·차단 관계 확인용)
     보존(법률 검토 후 보유기간 확정): 계정 기본정보, private profile, 신고·채팅 기록
     TODO(법률 검토): 보유기간이 지나면 자동 파기하는 작업 추가
     """
@@ -89,6 +90,9 @@ def delete_me(
     db.query(Match).filter(((Match.user_a_id == uid) | (Match.user_b_id == uid)) & (Match.status == "ACTIVE")).update(
         {"status": "UNMATCHED", "ended_at": now}, synchronize_session=False
     )
+    # 이메일은 지문만 남기고 가짜 주소로 바꾼다 → 같은 학교 메일로 다시 가입할 수 있다
+    current.user.email_hash = auth_service.email_fingerprint(current.user.email)
+    current.user.email = auth_service.anonymized_email(uid)
     current.user.status = "DELETED"
     current.user.deleted_at = now
     revoke_all_user_sessions(db, uid)

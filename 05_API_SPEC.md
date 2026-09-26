@@ -63,6 +63,8 @@
 ```
 → `201 { "message": "...", "csrf_token": "..." }` + 로그인 쿠키
 - 만 19세 미만 거부. 외적 평가 공개 동의 필수.
+- **재가입 제한** (verify와 register 둘 다에서 확인, 403): 같은 메일의 예전 계정이 영구 정지(BANNED)면 가입 불가, 탈퇴 후 `REJOIN_COOLDOWN_DAYS`(기본 7일) 동안 가입 불가. 메일 주인임이 확인된 뒤라서 이유를 알려준다.
+- 재가입하면 예전 계정의 차단 관계(내가 차단한 사람, 나를 차단한 사람)를 새 계정으로 이어받는다.
 
 **login** `{ "email", "password" }` → `{ "message", "csrf_token" }` + 로그인 쿠키
 - 모바일 앱은 헤더 `X-Client-Type: app` → 쿠키 대신 body에 `session_token`.
@@ -232,7 +234,9 @@ MVP는 폴링(몇 초마다 조회) 방식. 사용자 증가 후 WebSocket 검�
 - 사진 이미지는 서버가 직접 전달(영구 URL 없음), 캐시 금지, 조회한 관리자 이메일·시각 워터마크, 조회 기록.
 - PHOTO_REVIEWER는 사진과 가명 코드(`U1A2B3C`)만 본다.
 
-**PATCH /admin/users/{user_id}/status** `{ "status": "ACTIVE | SUSPENDED | BANNED", "reason": "..." }` — 정지 시 즉시 로그아웃.
+**PATCH /admin/users/{user_id}/status** `{ "status": "ACTIVE | SUSPENDED | BANNED | DELETED", "reason": "..." }` — 정지 시 즉시 로그아웃.
+- 탈퇴한 계정은 `BANNED`(재가입 차단) ↔ `DELETED`(정지 해제)만 가능. 멀쩡한 계정을 `DELETED`로 바꿀 수는 없다 (탈퇴는 본인만).
+- `GET /admin/users/{user_id}` 응답에 `deleted_at`, `linked_accounts`(같은 학교 메일로 가입했던 다른 계정, 이메일 제외)가 포함된다.
 
 **PATCH /admin/reports/{report_id}** `{ "status": "IN_REVIEW | RESOLVED | DISMISSED", "admin_note": "..." }`
 
