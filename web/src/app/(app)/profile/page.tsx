@@ -37,6 +37,8 @@ export default function ProfilePage() {
       api<{ photos: Photo[] }>("/me/photos"),
     ]);
     setProfile(p);
+    // 학과를 아직 고르지 않았으면 바로 수정 화면을 연다
+    if (!p.department_locked) setTab("edit");
     setEvaluation(e);
     setPhotos(ph.photos);
   }, []);

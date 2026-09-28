@@ -11,6 +11,7 @@ from app.core.security import verify_password
 from app.core.time import as_utc, utcnow
 from app.db.session import get_db
 from app.deps import CurrentUser, get_current_user
+# ExcludedDepartment·PreferredDepartment는 베타에서 안 쓰지만, 탈퇴할 때 예전 데이터를 지우는 데 쓴다
 from app.models.matching import (
     ExcludedDepartment,
     Match,
@@ -41,6 +42,18 @@ def _latest_photo(db: Session, current: CurrentUser) -> UserPhoto | None:
     return db.query(UserPhoto).filter(UserPhoto.user_id == current.id).order_by(UserPhoto.uploaded_at.desc()).first()
 
 
+def _profile_done(db: Session, current: CurrentUser) -> bool:
+    profile = db.query(PublicProfile).filter(PublicProfile.user_id == current.id).first()
+    return profile is not None and profile.department_id is not None and profile.show_campus is not None
+
+
+def department_locked_message() -> str:
+    return (
+        "학과는 한 번 정하면 바꿀 수 없어요. 잘못 선택했다면 가입한 학교 메일로 "
+        f"{get_settings().support_email} 에 바꿀 학과를 알려주세요. 운영진이 확인 후 바꿔드려요."
+    )
+
+
 # ---------- 계정 ----------
 
 @router.get("/me")
@@ -53,7 +66,8 @@ def get_me(current: CurrentUser = Depends(get_current_user), db: Session = Depen
         "status": current.user.status,
         "university_id": str(current.user.university_id),
         "onboarding": {
-            "profile_done": db.query(PublicProfile.id).filter(PublicProfile.user_id == current.id).first() is not None,
+            # 프로필 작성 완료 = 학과와 공개 여부까지 고름
+            "profile_done": _profile_done(db, current),
             "photo_status": latest_photo.review_status if latest_photo else "NOT_SUBMITTED",
             "preferences_done": has_prefs,
         },
@@ -110,7 +124,11 @@ def get_my_profile(current: CurrentUser = Depends(get_current_user), db: Session
     card = profile_service.build_card(db, profile)
     card["campus_id"] = str(profile.campus_id)
     card["department_id"] = str(profile.department_id) if profile.department_id else None
+    card["department_name"] = profile.department.name if profile.department else None
+    card["campus_name"] = profile.campus.name if profile.campus else None
     card["show_department"] = profile.show_department
+    card["show_campus"] = profile.show_campus
+    card["department_locked"] = profile.department_id is not None
     return card
 
 
@@ -125,16 +143,22 @@ def update_my_profile(
 
     if "nickname" in data and payload.nickname:
         profile.nickname = payload.nickname.strip()
-    if payload.clear_department:
-        profile.department_id = None
-    elif payload.department_id is not None:
+    if payload.department_id is not None and payload.department_id != profile.department_id:
+        # 학과는 처음 한 번만 고를 수 있다 ("같은 과 제외"를 피하려고 학과를 바꾸는 꼼수 방지)
+        if profile.department_id is not None:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=department_locked_message())
         dept = db.get(Department, payload.department_id)
         # 학과는 내 캠퍼스 소속이어야 한다
         if dept is None or dept.campus_id != profile.campus_id or not dept.active:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="학과를 다시 선택해주세요.")
+        # 학과를 처음 고를 때 캠퍼스·학과 공개 여부도 직접 골라야 한다 (정해진 기본값 없음)
+        if payload.show_department is None or (payload.show_campus is None and profile.show_campus is None):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="캠퍼스와 학과를 다른 학생에게 보여줄지 골라주세요.")
         profile.department_id = dept.id
     if payload.show_department is not None:
         profile.show_department = payload.show_department
+    if payload.show_campus is not None:
+        profile.show_campus = payload.show_campus
     for field in ("mbti", "bio", "ideal_type"):
         if field in data:
             value = data[field]
@@ -149,6 +173,7 @@ def update_my_profile(
         db.add_all([UserInterest(user_id=current.id, interest_id=i.id) for i in interests])
 
     db.commit()
+    db.refresh(profile)
     return get_my_profile(current, db)
 
 
@@ -166,9 +191,22 @@ def get_my_preferences(current: CurrentUser = Depends(get_current_user), db: Ses
         "max_age": prefs.max_age,
         "campus_mode": prefs.campus_mode,
         "campus_ids": sorted(str(i) for i in prefs.campus_ids),
-        "excluded_department_ids": sorted(str(i) for i in prefs.excluded_department_ids),
-        "preferred_department_ids": sorted(str(i) for i in prefs.preferred_department_ids),
+        "exclude_same_department": prefs.exclude_same_department,
+        "changes_left_today": _changes_left(db, current),
+        "changes_per_day": get_settings().preferences_changes_per_day,
     }
+
+
+def _window_expired(pref: MatchingPreference, now) -> bool:
+    return pref.change_window_started_at is None or now - as_utc(pref.change_window_started_at) >= timedelta(days=1)
+
+
+def _changes_left(db: Session, current: CurrentUser) -> int:
+    limit = get_settings().preferences_changes_per_day
+    pref = db.query(MatchingPreference).filter(MatchingPreference.user_id == current.id).first()
+    if pref is None or _window_expired(pref, utcnow()):
+        return limit
+    return max(0, limit - pref.changes_in_window)
 
 
 @router.put("/me/preferences")
@@ -182,37 +220,56 @@ def put_my_preferences(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"최소 나이는 {settings.min_age}세 이상이어야 합니다.")
 
     uni = current.user.university_id
-    campus_ids = set(payload.campus_ids)
+    campus_ids = set(payload.campus_ids) if payload.campus_mode == "SELECTED" else set()
     if campus_ids:
         valid = {c for (c,) in db.query(Campus.id).filter(Campus.id.in_(campus_ids), Campus.university_id == uni)}
         if valid != campus_ids:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="캠퍼스를 다시 선택해주세요.")
-    dept_ids = set(payload.excluded_department_ids) | set(payload.preferred_department_ids)
-    if dept_ids:
-        valid = {
-            d
-            for (d,) in db.query(Department.id)
-            .join(Campus, Campus.id == Department.campus_id)
-            .filter(Department.id.in_(dept_ids), Campus.university_id == uni)
-        }
-        if valid != dept_ids:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="학과를 다시 선택해주세요.")
 
     pref = db.query(MatchingPreference).filter(MatchingPreference.user_id == current.id).first()
     if pref is None:
+        # 처음 저장(온보딩)은 변경 횟수에 세지 않는다
         pref = MatchingPreference(user_id=current.id)
         db.add(pref)
+    else:
+        before = profile_service.preferences_of(db, [current.id]).get(current.id)
+        changed = before is None or (
+            before.preferred_gender,
+            before.min_age,
+            before.max_age,
+            before.campus_mode,
+            before.campus_ids,
+            before.exclude_same_department,
+        ) != (
+            payload.preferred_gender,
+            payload.min_age,
+            payload.max_age,
+            payload.campus_mode,
+            campus_ids,
+            payload.exclude_same_department,
+        )
+        if not changed:
+            return get_my_preferences(current, db)
+        # 하루 3번 제한: 조건을 여러 번 바꿔 보며 상대의 비공개 정보(캠퍼스·학과)를 짐작하는 것을 막는다
+        now = utcnow()
+        if _window_expired(pref, now):
+            pref.change_window_started_at = now
+            pref.changes_in_window = 0
+        if pref.changes_in_window >= settings.preferences_changes_per_day:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail=f"매칭 조건은 하루에 {settings.preferences_changes_per_day}번까지만 바꿀 수 있어요. 내일 다시 시도해주세요.",
+            )
+        pref.changes_in_window += 1
+
     pref.preferred_gender = payload.preferred_gender
     pref.min_age = payload.min_age
     pref.max_age = payload.max_age
     pref.campus_mode = payload.campus_mode
+    pref.exclude_same_department = payload.exclude_same_department
 
-    for model in (PreferredCampus, ExcludedDepartment, PreferredDepartment):
-        db.query(model).filter(model.user_id == current.id).delete(synchronize_session=False)
-    if payload.campus_mode == "SELECTED":
-        db.add_all([PreferredCampus(user_id=current.id, campus_id=c) for c in campus_ids])
-    db.add_all([ExcludedDepartment(user_id=current.id, department_id=d) for d in set(payload.excluded_department_ids)])
-    db.add_all([PreferredDepartment(user_id=current.id, department_id=d) for d in set(payload.preferred_department_ids)])
+    db.query(PreferredCampus).filter(PreferredCampus.user_id == current.id).delete(synchronize_session=False)
+    db.add_all([PreferredCampus(user_id=current.id, campus_id=c) for c in campus_ids])
     db.commit()
     return get_my_preferences(current, db)
 

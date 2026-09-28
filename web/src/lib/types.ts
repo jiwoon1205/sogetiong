@@ -28,7 +28,14 @@ export type Card = {
 
 export type MyProfile = Card & {
   department_id: string | null;
+  /** 본인 화면용 실제 이름 (card의 campus·department는 공개 설정에 따라 숨겨질 수 있음) */
+  department_name: string | null;
+  campus_name: string | null;
   show_department: boolean;
+  /** null = 아직 고르지 않음 */
+  show_campus: boolean | null;
+  /** 학과를 한 번 정하면 바꿀 수 없음 (운영진에게 메일로 요청) */
+  department_locked: boolean;
   campus_id: string;
 };
 
@@ -50,8 +57,10 @@ export type Preferences = {
   max_age: number;
   campus_mode: "MY" | "ALL" | "SELECTED";
   campus_ids: string[];
-  excluded_department_ids: string[];
-  preferred_department_ids: string[];
+  /** 같은 과 제외: 둘 중 한 명이라도 켰고 학과가 같으면 서로 추천되지 않음 */
+  exclude_same_department: boolean;
+  changes_left_today?: number;
+  changes_per_day?: number;
 };
 
 export type MatchItem = {

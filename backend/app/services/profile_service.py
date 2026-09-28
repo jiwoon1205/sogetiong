@@ -14,12 +14,10 @@ from app.core.config import get_settings
 from app.core.time import age_on
 from app.models.matching import (
     Block,
-    ExcludedDepartment,
     Like,
     Match,
     MatchingPreference,
     PreferredCampus,
-    PreferredDepartment,
 )
 from app.models.photo import AppearanceEvaluation, UserPhoto
 from app.models.profile import Interest, PrivateProfile, PublicProfile, UserInterest
@@ -74,7 +72,8 @@ def build_cards(db: Session, profiles: list[PublicProfile]) -> list[dict]:
     evaluations = latest_evaluations(db, user_ids)
     interests = interests_of(db, user_ids)
     births = birth_dates_of(db, user_ids)
-    campus_names = dict(db.query(Campus.id, Campus.name).filter(Campus.id.in_({p.campus_id for p in profiles})).all()) if profiles else {}
+    campus_ids = {p.campus_id for p in profiles if p.show_campus}
+    campus_names = dict(db.query(Campus.id, Campus.name).filter(Campus.id.in_(campus_ids)).all()) if campus_ids else {}
     dept_ids = {p.department_id for p in profiles if p.department_id and p.show_department}
     dept_names = dict(db.query(Department.id, Department.name).filter(Department.id.in_(dept_ids)).all()) if dept_ids else {}
 
@@ -87,7 +86,8 @@ def build_cards(db: Session, profiles: list[PublicProfile]) -> list[dict]:
                 "nickname": p.nickname,
                 "age": age_on(births[p.user_id]) if p.user_id in births else None,
                 "gender": p.gender,
-                "campus": campus_names.get(p.campus_id),
+                # 캠퍼스·학과는 본인이 공개로 고른 경우에만 보낸다 (고르지 않았으면 숨김)
+                "campus": campus_names.get(p.campus_id) if p.show_campus else None,
                 "department": dept_names.get(p.department_id) if p.show_department else None,
                 "mbti": p.mbti,
                 "bio": p.bio,
@@ -112,12 +112,6 @@ def preferences_of(db: Session, user_ids: list[uuid.UUID]) -> dict[uuid.UUID, Pr
     campuses = defaultdict(set)
     for uid, cid in db.query(PreferredCampus.user_id, PreferredCampus.campus_id).filter(PreferredCampus.user_id.in_(user_ids)):
         campuses[uid].add(cid)
-    excluded = defaultdict(set)
-    for uid, did in db.query(ExcludedDepartment.user_id, ExcludedDepartment.department_id).filter(ExcludedDepartment.user_id.in_(user_ids)):
-        excluded[uid].add(did)
-    preferred = defaultdict(set)
-    for uid, did in db.query(PreferredDepartment.user_id, PreferredDepartment.department_id).filter(PreferredDepartment.user_id.in_(user_ids)):
-        preferred[uid].add(did)
     return {
         p.user_id: Preferences(
             preferred_gender=p.preferred_gender,
@@ -125,8 +119,7 @@ def preferences_of(db: Session, user_ids: list[uuid.UUID]) -> dict[uuid.UUID, Pr
             max_age=p.max_age,
             campus_mode=p.campus_mode,
             campus_ids=campuses[p.user_id],
-            excluded_department_ids=excluded[p.user_id],
-            preferred_department_ids=preferred[p.user_id],
+            exclude_same_department=p.exclude_same_department,
         )
         for p in prefs
     }
@@ -233,7 +226,6 @@ def matching_weights():
     return Weights(
         interest=s.weight_interest,
         appearance=min(s.weight_appearance, s.weight_appearance_max),
-        preferred_department=s.weight_preferred_department,
         completeness=s.weight_completeness,
         mbti=s.weight_mbti,
     )

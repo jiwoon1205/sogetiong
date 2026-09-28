@@ -11,7 +11,6 @@ from tests.conftest import (
     UserClient,
     admin_login,
     campus_id,
-    department_id,
     discover_ids,
     jpeg_with_exif,
     make_admin,
@@ -103,11 +102,11 @@ def test_5_changing_ids_in_url_gives_nothing(sent_codes, db):
 
 def test_6_preferences_are_only_visible_to_owner(sent_codes, db):
     admin = admin_login(db)
-    a = ready_user(sent_codes, db, admin, "a@hufs.ac.kr", prefs={"excluded_department_ids": [department_id(db, "경영학과")]})
-    b = ready_user(sent_codes, db, admin, "b@hufs.ac.kr")
-    assert b.get("/api/v1/me/preferences").json()["excluded_department_ids"] == []
-    assert a.get("/api/v1/me/preferences").json()["excluded_department_ids"] == [department_id(db, "경영학과")]
-    assert "excluded" not in b.get("/api/v1/discover").text
+    a = ready_user(sent_codes, db, admin, "a@hufs.ac.kr", prefs={"exclude_same_department": True})
+    b = ready_user(sent_codes, db, admin, "b@hufs.ac.kr", dept="국제학부")
+    assert b.get("/api/v1/me/preferences").json()["exclude_same_department"] is False
+    assert a.get("/api/v1/me/preferences").json()["exclude_same_department"] is True
+    assert "exclude" not in b.get("/api/v1/discover").text
 
 
 def test_7_blocked_users_are_not_recommended(sent_codes, db):
@@ -121,15 +120,17 @@ def test_7_blocked_users_are_not_recommended(sent_codes, db):
     assert b.post("/api/v1/likes", json={"profile_id": a.profile_id}).status_code == 404
 
 
-def test_8_excluded_department_is_not_recommended_both_ways(sent_codes, db):
+def test_8_same_department_is_not_recommended_both_ways(sent_codes, db):
     admin = admin_login(db)
-    a = ready_user(sent_codes, db, admin, "a@hufs.ac.kr", prefs={"excluded_department_ids": [department_id(db, "경영학과")]})
-    b = ready_user(sent_codes, db, admin, "b@hufs.ac.kr")
-    c = ready_user(sent_codes, db, admin, "c@hufs.ac.kr")
-    b.patch("/api/v1/me/profile", json={"department_id": department_id(db, "경영학과"), "show_department": False})
+    # A만 "같은 과 제외"를 켬. B는 같은 과(학과 비공개), C는 다른 과
+    a = ready_user(sent_codes, db, admin, "a@hufs.ac.kr", dept="경영학부", prefs={"exclude_same_department": True})
+    b = ready_user(sent_codes, db, admin, "b@hufs.ac.kr", dept="경영학부", show_department=False)
+    c = ready_user(sent_codes, db, admin, "c@hufs.ac.kr", dept="국제학부")
     assert b.profile_id not in discover_ids(a)
-    assert a.profile_id not in discover_ids(b)
+    assert a.profile_id not in discover_ids(b)  # B는 안 켰어도 A가 켰으므로 서로 안 보임
     assert c.profile_id in discover_ids(a)
+    # ID를 직접 넣어 LIKE해도 안 된다
+    assert b.post("/api/v1/likes", json={"profile_id": a.profile_id}).status_code == 404
 
 
 # ---------- 매칭 조건 ----------

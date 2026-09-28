@@ -213,10 +213,27 @@ def approve(admin: AdminClient, photo_id: str, scores=(7, 7, 7, 7)):
     return r
 
 
+DEFAULT_DEPARTMENT = {"서울캠퍼스": "경영학부", "글로벌캠퍼스": "컴퓨터공학부"}
+
+
+def choose_department(client: UserClient, db, name: str, *, show_campus=True, show_department=True):
+    """프로필 작성 단계: 학과 + 캠퍼스·학과 공개 여부를 고른다."""
+    r = client.patch(
+        "/api/v1/me/profile",
+        json={"department_id": department_id(db, name), "show_campus": show_campus, "show_department": show_department},
+    )
+    assert r.status_code == 200, r.text
+    return r
+
+
 def ready_user(sent_codes, db, admin, email, **kw) -> UserClient:
-    """가입 + 매칭 조건 + 사진 승인까지 끝난 사용자."""
+    """가입 + 학과 + 매칭 조건 + 사진 승인까지 끝난 사용자."""
     prefs = kw.pop("prefs", {})
+    dept = kw.pop("dept", None) or DEFAULT_DEPARTMENT[kw.get("campus", "서울캠퍼스")]
+    show_campus = kw.pop("show_campus", True)
+    show_department = kw.pop("show_department", True)
     client = signup(sent_codes, db, email, **kw)
+    choose_department(client, db, dept, show_campus=show_campus, show_department=show_department)
     set_preferences(client, **prefs)
     approve(admin, upload_photo(client))
     return client

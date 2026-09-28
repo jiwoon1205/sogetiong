@@ -4,9 +4,9 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { ProfileCard } from "@/components/ProfileCard";
-import { Button, Field, Input, Notice, Segmented, Spinner } from "@/components/ui";
+import { Button, Field, Input, Notice, Segmented, Select, Spinner } from "@/components/ui";
 import { USER_STATUS_LABEL, adminApi, useAdmin } from "@/lib/admin";
-import { errorMessage } from "@/lib/api";
+import { api, errorMessage } from "@/lib/api";
 import { dateTime } from "@/lib/format";
 import type { Card } from "@/lib/types";
 
@@ -16,6 +16,8 @@ type Detail = {
   status: string;
   created_at: string;
   profile: Card | null;
+  campus: { id: string; name: string } | null;
+  department: { id: string; name: string } | null;
   reports_received: number;
   deleted_at: string | null;
   linked_accounts: { user_id: string; subject_code: string; status: string; created_at: string; deleted_at: string | null }[];
@@ -55,10 +57,22 @@ export default function UserDetail() {
       </div>
 
       <div className="grid gap-8 lg:grid-cols-[minmax(0,24rem)_1fr]">
-        <div>{d.profile ? <ProfileCard card={d.profile} /> : <Notice>공개 프로필이 없습니다 (탈퇴 등).</Notice>}</div>
+        <div className="space-y-4">
+          {d.profile ? <ProfileCard card={d.profile} /> : <Notice>공개 프로필이 없습니다 (탈퇴 등).</Notice>}
+          {d.campus && (
+            <p className="text-[13px] text-ink-soft">
+              실제 소속: {d.campus.name} · {d.department?.name ?? "학과 미선택"}
+              <span className="block text-[12px] text-ink-faint">카드에는 본인 공개 설정에 따라 숨겨질 수 있어요.</span>
+            </p>
+          )}
+        </div>
         <div className="space-y-10">
           {admin.can("users:status") && (
             <StatusForm key={d.user_id} userId={d.user_id} current={d.status} deleted={!!d.deleted_at} onDone={() => load(!!d.private)} />
+          )}
+
+          {admin.can("users:department") && d.campus && !d.deleted_at && (
+            <DepartmentForm key={`${d.user_id}-${d.department?.id}`} userId={d.user_id} campusId={d.campus.id} current={d.department} onDone={() => load(!!d.private)} />
           )}
 
           {admin.can("chats:read") && <UserChats userId={d.user_id} />}
@@ -228,6 +242,76 @@ function StatusForm({ userId, current, deleted, onDone }: { userId: string; curr
       {ok && <Notice tone="ok">변경했어요.</Notice>}
       <Button type="submit" variant={status === "ACTIVE" || status === "DELETED" ? "primary" : "danger"} loading={loading} disabled={status === current || reason.trim().length < 2}>
         상태 변경
+      </Button>
+    </form>
+  );
+}
+
+/** 학과 변경: 사용자는 직접 못 바꾸고, 가입한 학교 메일로 요청하면 여기서 바꾼다 */
+function DepartmentForm({
+  userId,
+  campusId,
+  current,
+  onDone,
+}: {
+  userId: string;
+  campusId: string;
+  current: { id: string; name: string } | null;
+  onDone: () => void;
+}) {
+  const [departments, setDepartments] = useState<{ id: string; name: string }[]>([]);
+  const [deptId, setDeptId] = useState(current?.id ?? "");
+  const [reason, setReason] = useState("");
+  const [error, setError] = useState("");
+  const [ok, setOk] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    api<{ departments: { id: string; name: string }[] }>(`/campuses/${campusId}/departments`)
+      .then((r) => setDepartments(r.departments))
+      .catch((e) => setError(errorMessage(e)));
+  }, [campusId]);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setLoading(true);
+    setError("");
+    setOk(false);
+    try {
+      await adminApi(`/users/${userId}/department`, { method: "PATCH", body: { department_id: deptId, reason } });
+      setOk(true);
+      setReason("");
+      onDone();
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <form onSubmit={submit} className="space-y-4">
+      <p className="eyebrow">학과 변경</p>
+      <Notice>요청 메일이 이 사용자가 가입한 학교 메일에서 왔는지 먼저 확인하세요 (개인정보 열람에서 이메일 확인).</Notice>
+      <Field label="바꿀 학과" htmlFor="dept-change">
+        <Select id="dept-change" value={deptId} onChange={(e) => setDeptId(e.target.value)}>
+          <option value="" disabled>
+            학과 선택
+          </option>
+          {departments.map((d) => (
+            <option key={d.id} value={d.id}>
+              {d.name}
+            </option>
+          ))}
+        </Select>
+      </Field>
+      <Field label="사유 (감사 로그에 남아요)" htmlFor="dept-reason">
+        <Input id="dept-reason" value={reason} onChange={(e) => setReason(e.target.value)} maxLength={300} placeholder="가입 메일로 요청 (잘못 선택)" />
+      </Field>
+      {error && <Notice tone="error">{error}</Notice>}
+      {ok && <Notice tone="ok">변경했어요. 사용자에게 알림이 갔어요.</Notice>}
+      <Button type="submit" loading={loading} disabled={!deptId || deptId === current?.id || reason.trim().length < 2}>
+        학과 변경
       </Button>
     </form>
   );

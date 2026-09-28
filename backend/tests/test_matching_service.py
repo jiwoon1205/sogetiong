@@ -6,18 +6,17 @@ from app.services.matching_service import Person, Preferences, Weights, mutually
 
 CAMPUS_A, CAMPUS_B = uuid.uuid4(), uuid.uuid4()
 DEPT_BIZ, DEPT_CS = uuid.uuid4(), uuid.uuid4()
-W = Weights(interest=0.4, appearance=0.2, preferred_department=0.15, completeness=0.15, mbti=0.1)
+W = Weights(interest=0.47, appearance=0.23, completeness=0.18, mbti=0.12)
 
 
-def person(gender="FEMALE", age=22, campus=CAMPUS_A, dept=None, **prefs_kw) -> Person:
+def person(gender="FEMALE", age=22, campus=CAMPUS_A, dept=DEPT_CS, **prefs_kw) -> Person:
     prefs = Preferences(
         preferred_gender=prefs_kw.pop("want", "ANY"),
         min_age=prefs_kw.pop("min_age", 19),
         max_age=prefs_kw.pop("max_age", 30),
         campus_mode=prefs_kw.pop("campus_mode", "ALL"),
         campus_ids=prefs_kw.pop("campus_ids", set()),
-        excluded_department_ids=prefs_kw.pop("excluded", set()),
-        preferred_department_ids=prefs_kw.pop("preferred", set()),
+        exclude_same_department=prefs_kw.pop("exclude_same", False),
     )
     return Person(user_id=uuid.uuid4(), gender=gender, age=age, campus_id=campus, department_id=dept, preferences=prefs, **prefs_kw)
 
@@ -47,11 +46,27 @@ def test_campus_modes():
     assert not mutually_compatible(person(campus_mode="SELECTED", campus_ids={CAMPUS_B}), person(campus=CAMPUS_A))
 
 
-def test_excluded_department_hides_both_ways():
-    a = person(excluded={DEPT_BIZ})
+def test_same_department_exclusion_hides_both_ways():
+    # A만 "같은 과 제외"를 켰어도, 같은 과인 B와는 서로 안 보인다
+    a = person(dept=DEPT_BIZ, exclude_same=True)
     b = person(dept=DEPT_BIZ)
     assert not mutually_compatible(a, b)
     assert not mutually_compatible(b, a)
+
+
+def test_same_department_exclusion_does_not_affect_other_departments():
+    a = person(dept=DEPT_BIZ, exclude_same=True)
+    assert mutually_compatible(a, person(dept=DEPT_CS))
+
+
+def test_same_department_is_fine_when_nobody_turns_it_on():
+    assert mutually_compatible(person(dept=DEPT_BIZ), person(dept=DEPT_BIZ))
+
+
+def test_person_without_department_is_never_matched():
+    no_dept = person(dept=None)
+    assert not mutually_compatible(person(), no_dept)
+    assert not mutually_compatible(no_dept, person())
 
 
 def test_candidate_without_preferences_is_skipped():
@@ -76,8 +91,10 @@ def test_appearance_is_only_partially_reflected():
     assert 0 < gap <= W.appearance
 
 
-def test_preferred_department_boosts_rank():
-    viewer = person(preferred={DEPT_CS})
-    cs = person(dept=DEPT_CS)
-    other = person(dept=DEPT_BIZ)
-    assert rank(viewer, [other, cs], W, 10)[0] is cs
+def test_default_weights_sum_to_one():
+    from app.core.config import Settings
+
+    # .env 파일 값이 아니라 코드에 적힌 기본값을 확인한다
+    d = {name: f.default for name, f in Settings.model_fields.items()}
+    assert abs(d["weight_interest"] + d["weight_appearance"] + d["weight_completeness"] + d["weight_mbti"] - 1.0) < 1e-9
+    assert d["weight_appearance"] <= d["weight_appearance_max"]

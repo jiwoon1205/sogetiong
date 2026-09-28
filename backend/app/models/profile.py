@@ -23,6 +23,8 @@ class PublicProfile(Base):
     campus_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("campuses.id"), nullable=False, index=True)
     department_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("departments.id"), nullable=True)
     show_department: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    # 캠퍼스 공개 여부. None = 아직 고르지 않음(프로필 작성 단계에서 학과와 함께 직접 고른다) → 카드에서는 숨김
+    show_campus: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     mbti: Mapped[str | None] = mapped_column(String(4), nullable=True)
     bio: Mapped[str | None] = mapped_column(Text, nullable=True)
     ideal_type: Mapped[str | None] = mapped_column(Text, nullable=True)

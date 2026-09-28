@@ -60,9 +60,10 @@ Important rule:
   - specific_campus
 
 ### Department filters
-- excluded_departments는 private data이며 공개되지 않음
-- matching algorithm에서만 사용
-- preferred_departments는 보조 신호로 사용
+- (베타, 2026-09-29) 학과는 필수이고 "같은 과 제외" 스위치 하나만 쓴다.
+  둘 중 한 명이라도 켰고 학과가 같으면 서로 추천되지 않는다. 학과가 없는 사람은 후보에서 빠진다.
+- excluded_departments / preferred_departments 테이블은 남겨두지만 베타에서는 쓰지 않는다.
+- 선호 학과 가산(15%)은 없애고 나머지에 비율대로 나눔: 관심사 47%, 외적 평가 23%, 프로필 완성도 18%, MBTI 12% (설정값 WEIGHT_*).
 
 ## 4. Hard filter pseudocode
 

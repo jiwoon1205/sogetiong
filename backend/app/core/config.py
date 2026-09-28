@@ -54,12 +54,19 @@ class Settings(BaseSettings):
     # --- 매칭 ---
     discover_page_size: int = 10
     require_approved_photo_to_discover: bool = True
-    weight_interest: float = 0.40
-    weight_appearance: float = 0.20  # 외적 평가는 "일부만" 반영 (설계도 §19)
-    weight_preferred_department: float = 0.15
-    weight_completeness: float = 0.15
-    weight_mbti: float = 0.10
+    # 베타: 선호 학과 가산(15%)을 없애고 나머지 항목에 비율대로 나눴다 (합계 1.0)
+    weight_interest: float = 0.47
+    weight_appearance: float = 0.23  # 외적 평가는 "일부만" 반영 (설계도 §19)
+    weight_completeness: float = 0.18
+    weight_mbti: float = 0.12
     weight_appearance_max: float = 0.30  # 외적 평가 가중치 상한
+
+    # 매칭 조건은 하루(24시간)에 이 횟수만큼만 바꿀 수 있다 (처음 저장은 세지 않음)
+    preferences_changes_per_day: int = 3
+
+    # --- 문의 ---
+    # 학과 변경 요청·"내 학과가 목록에 없어요" 문의를 받는 메일 주소 (화면에 표시됨)
+    support_email: str = "jiwoon@private-matching.com"
 
     cors_origins: str = "http://localhost:3000"
 

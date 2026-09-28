@@ -9,6 +9,7 @@ from app.core.config import get_settings
 from app.models import UserPhoto
 from tests.conftest import (
     admin_login,
+    choose_department,
     department_id,
     discover_ids,
     ready_user,
@@ -27,12 +28,15 @@ def test_full_flow_signup_to_chat(sent_codes, db):
     admin = admin_login(db)
     a = signup(sent_codes, db, "alice@hufs.ac.kr", gender="FEMALE")
     b = signup(sent_codes, db, "bob@hufs.ac.kr", gender="MALE")
+    choose_department(b, db, "경영학부")
 
     # 프로필 작성
     r = a.patch(
         "/api/v1/me/profile",
         json={
-            "department_id": department_id(db, "영어학과"),
+            "department_id": department_id(db, "ELLT학과"),
+            "show_campus": True,
+            "show_department": True,
             "mbti": "intp",
             "bio": "카페와 영화를 좋아해요",
             "interests": ["카페", "영화", "여행"],
@@ -74,7 +78,7 @@ def test_full_flow_signup_to_chat(sent_codes, db):
     card = cards[0]
     assert set(card) == PUBLIC_CARD_KEYS
     assert card["appearance"] == {"overall_impression": 8, "style": 7, "grooming": 8, "photo_vibe": 9}
-    assert card["age"] >= 19 and card["department"] == "영어학과" and card["campus"] == "서울캠퍼스"
+    assert card["age"] >= 19 and card["department"] == "ELLT학과" and card["campus"] == "서울캠퍼스"
     assert discover_ids(a) == [b.profile_id]
 
     # LIKE → 아직 매칭 아님 → 상대도 LIKE → 매칭

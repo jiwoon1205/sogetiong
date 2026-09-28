@@ -1,3 +1,4 @@
+import uuid
 from typing import Literal
 
 from pydantic import BaseModel, EmailStr, Field, model_validator
@@ -33,6 +34,13 @@ class EvaluationRequest(BaseModel):
         if self.decision == "REJECTED" and not self.reject_reason:
             raise ValueError("반려 사유를 입력해주세요.")
         return self
+
+
+class UserDepartmentRequest(BaseModel):
+    """PATCH /admin/users/{user_id}/department — 사용자의 학과 변경 요청 처리"""
+
+    department_id: uuid.UUID
+    reason: str = Field(min_length=2, max_length=300)  # 예: "가입 메일로 요청, 컴퓨터공학부 → 통계학과"
 
 
 class UserStatusRequest(BaseModel):

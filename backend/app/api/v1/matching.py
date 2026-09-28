@@ -22,10 +22,13 @@ router = APIRouter()
 
 
 def _viewer(db: Session, current: CurrentUser) -> matching_service.Person:
-    """추천을 받으려면 공개 프로필과 매칭 조건이 있어야 하고, (설정에 따라) 사진이 승인돼 있어야 한다."""
+    """추천을 받으려면 공개 프로필(학과 포함)과 매칭 조건이 있어야 하고, (설정에 따라) 사진이 승인돼 있어야 한다."""
     profile = db.query(PublicProfile).filter(PublicProfile.user_id == current.id).first()
     if profile is None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="PROFILE_REQUIRED")
+    # 학과는 필수: 학과가 없으면 추천도 LIKE도 할 수 없다 (매칭 엔진에서도 한 번 더 거른다)
+    if profile.department_id is None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="DEPARTMENT_REQUIRED")
     if db.query(MatchingPreference.id).filter(MatchingPreference.user_id == current.id).first() is None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="PREFERENCES_REQUIRED")
     if get_settings().require_approved_photo_to_discover and not profile_service.has_approved_photo(db, current.id):

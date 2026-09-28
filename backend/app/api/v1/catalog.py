@@ -5,6 +5,7 @@ import uuid
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
+from app.core.config import get_settings
 from app.db.session import get_db
 from app.models.profile import Interest
 from app.models.university import Campus, Department, University
@@ -38,6 +39,12 @@ def list_departments(campus_id: uuid.UUID, db: Session = Depends(get_db)):
         .all()
     )
     return {"departments": [{"id": str(d.id), "name": d.name} for d in rows]}
+
+
+@router.get("/support")
+def support_contact():
+    """문의 메일 주소 (학과 변경 요청, "내 학과가 목록에 없어요" 등). 서버 설정 SUPPORT_EMAIL로 바꿀 수 있다."""
+    return {"email": get_settings().support_email}
 
 
 @router.get("/interests")

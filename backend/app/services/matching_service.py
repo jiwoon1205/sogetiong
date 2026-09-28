@@ -18,8 +18,7 @@ class Preferences:
     max_age: int
     campus_mode: str  # MY / ALL / SELECTED
     campus_ids: set[uuid.UUID] = field(default_factory=set)
-    excluded_department_ids: set[uuid.UUID] = field(default_factory=set)
-    preferred_department_ids: set[uuid.UUID] = field(default_factory=set)
+    exclude_same_department: bool = False
 
 
 @dataclass
@@ -42,7 +41,6 @@ class Person:
 class Weights:
     interest: float
     appearance: float
-    preferred_department: float
     completeness: float
     mbti: float
 
@@ -60,7 +58,11 @@ def satisfies(viewer: Person, candidate: Person) -> bool:
         return False
     if prefs.campus_mode == "SELECTED" and candidate.campus_id not in prefs.campus_ids:
         return False
-    if candidate.department_id is not None and candidate.department_id in prefs.excluded_department_ids:
+    # 학과가 없는 사람은 후보가 될 수 없다 (학과 필수 — API에서도 막지만 한 번 더 확인)
+    if candidate.department_id is None:
+        return False
+    # 같은 과 제외: 내가 켰고 상대가 나와 같은 과면 제외
+    if prefs.exclude_same_department and candidate.department_id == viewer.department_id:
         return False
     return True
 
@@ -68,8 +70,8 @@ def satisfies(viewer: Person, candidate: Person) -> bool:
 def mutually_compatible(viewer: Person, candidate: Person) -> bool:
     """양쪽 조건을 모두 만족해야 추천한다.
 
-    예) A가 경영학과를 제외했다면 A에게 경영학과 B가 안 보이고,
-        B에게도 A가 보이지 않는다. 이유는 누구에게도 알려주지 않는다 (설계도 §17).
+    예) A가 "같은 과 제외"를 켰고 B가 A와 같은 과라면, A에게 B가 안 보이고
+        B에게도 A가 보이지 않는다 (B는 스위치를 안 켰어도). 이유는 누구에게도 알려주지 않는다 (설계도 §17).
     """
     if viewer.user_id == candidate.user_id:
         return False
@@ -94,7 +96,7 @@ def _completeness(person: Person) -> float:
         person.has_ideal_type,
         person.mbti is not None,
         len(person.interests) >= 3,
-        person.shows_department and person.department_id is not None,
+        person.shows_department,
     ]
     return sum(checks) / len(checks)
 
@@ -108,16 +110,9 @@ def _appearance(person: Person) -> float:
 
 def score(viewer: Person, candidate: Person, weights: Weights) -> float:
     """0~1 사이 점수. 가중치는 설정(.env)에서 바꿀 수 있다."""
-    prefs = viewer.preferences
-    preferred_dept = (
-        1.0
-        if prefs and candidate.department_id is not None and candidate.department_id in prefs.preferred_department_ids
-        else 0.0
-    )
     total = (
         weights.interest * _interest_similarity(viewer.interests, candidate.interests)
         + weights.appearance * _appearance(candidate)
-        + weights.preferred_department * preferred_dept
         + weights.completeness * _completeness(candidate)
         + weights.mbti * _mbti_similarity(viewer.mbti, candidate.mbti)
     )

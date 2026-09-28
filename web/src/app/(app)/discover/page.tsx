@@ -14,6 +14,12 @@ type State =
 
 const BLOCKED_COPY: Record<string, { title: string; body: string; href: string; cta: string }> = {
   PROFILE_REQUIRED: { title: "프로필을 먼저 작성해주세요", body: "추천을 받으려면 공개 프로필이 필요해요.", href: "/onboarding", cta: "프로필 작성" },
+  DEPARTMENT_REQUIRED: {
+    title: "학과를 선택해주세요",
+    body: "학과는 필수예요. 학과와 공개 여부를 고르면 추천을 시작할게요.",
+    href: "/profile",
+    cta: "학과 선택하기",
+  },
   PREFERENCES_REQUIRED: { title: "매칭 조건을 정해주세요", body: "어떤 사람을 만나고 싶은지 알려주면 추천을 시작할게요.", href: "/settings", cta: "매칭 조건 설정" },
   PHOTO_APPROVAL_REQUIRED: {
     title: "사진 검수를 기다리고 있어요",

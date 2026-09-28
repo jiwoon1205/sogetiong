@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, Uuid
+from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, Uuid, false
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -20,6 +20,11 @@ class MatchingPreference(Base):
     min_age: Mapped[int] = mapped_column(Integer, nullable=False)
     max_age: Mapped[int] = mapped_column(Integer, nullable=False)
     campus_mode: Mapped[str] = mapped_column(String(20), default="ALL", nullable=False)  # MY / ALL / SELECTED
+    # 같은 과 제외: 둘 중 한 명이라도 켰고 학과가 같으면 서로 추천되지 않는다
+    exclude_same_department: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false(), nullable=False)
+    # 매칭 조건 변경 횟수 제한(하루 3번)용: 24시간 창이 시작된 시각과 그 안에서 바꾼 횟수
+    change_window_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    changes_in_window: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
     created_at: Mapped[datetime] = created_at()
     updated_at: Mapped[datetime] = updated_at()
 
@@ -37,7 +42,10 @@ class PreferredCampus(Base):
 
 
 class ExcludedDepartment(Base):
-    """만나고 싶지 않은 학과 — Hard Filter (설계도 §15)."""
+    """만나고 싶지 않은 학과 — Hard Filter (설계도 §15).
+
+    베타에서는 쓰지 않는다 ("같은 과 제외" 스위치 하나만 사용). 나중에 다시 쓸 수 있게 테이블만 남겨둔다.
+    """
 
     __tablename__ = "excluded_departments"
     __table_args__ = (UniqueConstraint("user_id", "department_id", name="uq_excluded_dept"),)
@@ -49,7 +57,10 @@ class ExcludedDepartment(Base):
 
 
 class PreferredDepartment(Base):
-    """선호 학과 — 추천 순위에만 쓰는 Soft Preference (설계도 §16)."""
+    """선호 학과 — 추천 순위에만 쓰는 Soft Preference (설계도 §16).
+
+    베타에서는 쓰지 않는다. 나중에 다시 쓸 수 있게 테이블만 남겨둔다.
+    """
 
     __tablename__ = "preferred_departments"
     __table_args__ = (UniqueConstraint("user_id", "department_id", name="uq_preferred_dept"),)

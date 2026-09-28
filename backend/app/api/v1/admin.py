@@ -18,12 +18,14 @@ from app.models.admin import AdminUser, AuditLog
 from app.models.matching import Match, Message, Report
 from app.models.photo import AppearanceEvaluation, UserPhoto
 from app.models.profile import PrivateProfile, PublicProfile
+from app.models.university import Department
 from app.models.user import User
 from app.schemas.admin import (
     AdminLoginRequest,
     AdminTwoFactorRequest,
     EvaluationRequest,
     ReportUpdateRequest,
+    UserDepartmentRequest,
     UserStatusRequest,
 )
 from app.services import profile_service
@@ -318,6 +320,11 @@ def get_user(
         "status": user.status,
         "created_at": user.created_at.isoformat(),
         "profile": profile_service.build_card(db, profile) if profile else None,
+        # 카드는 공개 설정에 따라 캠퍼스·학과가 숨겨질 수 있어서, 관리자에게는 실제 값을 따로 보여준다
+        "campus": {"id": str(profile.campus_id), "name": profile.campus.name} if profile else None,
+        "department": (
+            {"id": str(profile.department_id), "name": profile.department.name} if profile and profile.department else None
+        ),
         "reports_received": profile_service.count(db, db.query(Report.id).filter(Report.reported_user_id == user.id)),
         "deleted_at": user.deleted_at.isoformat() if user.deleted_at else None,
         # 같은 학교 메일로 가입했던 다른 계정 (탈퇴 후 재가입 등). 이메일 자체는 보여주지 않는다.
@@ -391,6 +398,38 @@ def update_user_status(
     )
     db.commit()
     return {"user_id": str(user.id), "status": user.status}
+
+
+@router.patch("/users/{user_id}/department")
+def update_user_department(
+    user_id: uuid.UUID,
+    payload: UserDepartmentRequest,
+    request: Request,
+    admin: CurrentAdmin = Depends(require_permission("users:department")),
+    db: Session = Depends(get_db),
+):
+    """학과 변경 (사용자는 직접 못 바꾼다). 요청 메일이 가입한 학교 메일에서 왔는지 먼저 확인할 것."""
+    user = _user_or_404(db, user_id)
+    profile = db.query(PublicProfile).filter(PublicProfile.user_id == user.id).first()
+    if profile is None or user.deleted_at is not None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="프로필이 없는 계정입니다.")
+    dept = db.get(Department, payload.department_id)
+    if dept is None or not dept.active or dept.campus_id != profile.campus_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="이 사용자의 캠퍼스에 있는 학과를 골라주세요.")
+    before = profile.department_id
+    profile.department_id = dept.id
+    notify(db, user.id, "PROFILE_UPDATED", "학과가 변경되었어요", f"요청하신 대로 학과를 '{dept.name}'(으)로 바꿨어요.")
+    AuditService.record(
+        db,
+        admin_id=admin.id,
+        action="USER_DEPARTMENT_CHANGE",
+        target_type="USER",
+        target_id=user.id,
+        request=request,
+        metadata={"before": str(before) if before else None, "after": str(dept.id), "reason": payload.reason},
+    )
+    db.commit()
+    return {"user_id": str(user.id), "department": {"id": str(dept.id), "name": dept.name}}
 
 
 # ---------- 대화 열람 ----------

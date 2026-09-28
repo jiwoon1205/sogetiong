@@ -87,6 +87,7 @@
 | GET | /universities/{university_id}/campuses |
 | GET | /campuses/{campus_id}/departments |
 | GET | /interests |
+| GET | /support | 문의 메일 주소 `{ "email" }` (학과 변경 요청, 학과 추가 요청) |
 
 ## 4. 내 정보 (`/me`)
 
@@ -107,7 +108,7 @@
 {
   "nickname": "새닉네임",
   "department_id": "uuid",
-  "clear_department": false,
+  "show_campus": true,
   "show_department": true,
   "mbti": "INTP",
   "bio": "최대 500자",
@@ -116,6 +117,9 @@
 }
 ```
 - 성별·생년월일·캠퍼스는 가입 후 변경 불가. 관심사는 `/interests` 목록 안에서 최대 10개.
+- **학과는 필수, 처음 한 번만 정할 수 있다.** 이미 정한 뒤 다른 학과를 보내면 409 (운영진 메일 안내 문구). 잘못 골랐으면 가입한 학교 메일로 요청 → 관리자가 `PATCH /admin/users/{user_id}/department`로 변경.
+- 학과를 처음 정할 때 `show_campus`·`show_department`를 함께 보내야 한다 (기본값 없이 직접 선택). 공개 여부는 이후 언제든 변경 가능.
+- 응답에는 카드 값 외에 `department_name`, `campus_name`, `show_campus`, `show_department`, `department_locked`가 온다.
 
 **PUT /me/preferences**
 ```json
@@ -125,11 +129,12 @@
   "max_age": 27,
   "campus_mode": "MY | ALL | SELECTED",
   "campus_ids": [],
-  "excluded_department_ids": [],
-  "preferred_department_ids": []
+  "exclude_same_department": false
 }
 ```
-- 제외 학과 = Hard Filter, 선호 학과 = 순위에만 반영(Soft).
+- 같은 과 제외: 둘 중 한 명이라도 켰고 학과가 같으면 서로 추천되지 않는다 (Hard Filter, 양방향).
+- 베타에서는 임의 학과 제외·선호 학과 가산을 쓰지 않는다 (DB 테이블만 남겨둠).
+- 처음 저장 이후에는 24시간에 3번까지만 바꿀 수 있다 (429). 내용이 같으면 세지 않는다. GET 응답의 `changes_left_today`로 남은 횟수 확인.
 
 **POST /me/photos** → `201 { "photo_id", "review_status": "PENDING" }`
 - jpg/png/webp, 5MB 이하. 서버가 새 JPEG로 다시 저장하면서 EXIF·GPS를 지운다.
@@ -155,8 +160,8 @@
   "nickname": "익명의 대학생",
   "age": 21,
   "gender": "FEMALE",
-  "campus": "서울캠퍼스",
-  "department": "경영학과 또는 null(비공개)",
+  "campus": "서울캠퍼스 또는 null(비공개)",
+  "department": "경영학부 또는 null(비공개)",
   "mbti": "INTP",
   "bio": "...",
   "ideal_type": "...",
