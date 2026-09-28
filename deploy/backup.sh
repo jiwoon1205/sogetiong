@@ -3,13 +3,12 @@
 #
 # 준비 (서버에서 한 번):
 #   1) rclone 설치:  curl https://rclone.org/install.sh | sudo bash
-#   2) sudo rclone config 로 remote 두 개를 만든다
-#        gdrive       : Google Drive
-#        gdrive-crypt : crypt, remote = gdrive:sogetiong-backup  (비밀번호 2개 설정)
+#   2) remote 두 개 (자세한 방법은 12_DEPLOYMENT.md 3장)
+#        gdrive       : Google Drive (우리 OAuth 클라이언트, scope drive.file)
+#        gdrive-crypt : crypt, remote = gdrive:sogetiong-backup
 #      ⚠️ crypt 비밀번호를 잃어버리면 백업을 영영 풀 수 없다. 비밀번호 관리자에 따로 보관할 것.
-#   3) 매일 새벽 4시(한국 시간) 자동 실행:  sudo crontab -e  → 아래 한 줄 추가
-#        0 4 * * * bash /home/ubuntu/sogetiong/deploy/backup.sh >> /var/log/sogetiong-backup.log 2>&1
-#      (서버 시간대가 UTC면 0 19 * * * 로)
+#   3) 매일 새벽 4시 자동 실행 (서버 시간대 Asia/Seoul):  sudo crontab -e
+#        0 4 * * * bash /home/wldns051205/sogetiong/deploy/backup.sh >> /var/log/sogetiong-backup.log 2>&1
 #
 # 수동 실행:  sudo bash deploy/backup.sh
 set -euo pipefail
@@ -36,7 +35,12 @@ dst.close(); src.close()
 PY
 
 # 2) DB 스냅샷 + 사진 폴더를 하나로 압축
-tar -czf "$ARCHIVE" -C data "$SNAPSHOT" photos 2>/dev/null || tar -czf "$ARCHIVE" -C data "$SNAPSHOT"
+#    (사진 폴더가 아직 없으면 DB만. 압축 중 오류가 나면 조용히 넘어가지 않고 멈춘다)
+if [ -d data/photos ]; then
+  tar -czf "$ARCHIVE" -C data "$SNAPSHOT" photos
+else
+  tar -czf "$ARCHIVE" -C data "$SNAPSHOT"
+fi
 rm -f "data/$SNAPSHOT"
 echo "압축 완료: $ARCHIVE ($(du -h "$ARCHIVE" | cut -f1))"
 
