@@ -16,7 +16,7 @@ from app.core.config import get_settings
 from app.core.security import hash_token, tokens_match
 from app.core.time import as_utc, utcnow
 from app.db.session import get_db
-from app.models.admin import AdminSession, AdminUser
+from app.models.admin import ALL_PERMISSIONS, SUPER_ADMIN_ROLE, AdminSession, AdminUser
 from app.models.user import User, UserSession
 from app.services.session_service import CSRF_HEADER
 
@@ -110,11 +110,15 @@ def _load_admin(request: Request, db: Session, require_mfa: bool) -> CurrentAdmi
     if admin is None or admin.status != "ACTIVE" or admin.role is None:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="비활성화된 관리자 계정입니다.")
 
+    permissions = set(admin.role.permissions_json or [])
+    if admin.role.name == SUPER_ADMIN_ROLE:
+        # 최고 관리자는 DB에 저장된 목록과 상관없이 모든 권한을 가진다
+        permissions |= ALL_PERMISSIONS
     return CurrentAdmin(
         id=admin.id,
         admin=admin,
         role=admin.role.name,
-        permissions=set(admin.role.permissions_json or []),
+        permissions=permissions,
         session=session,
     )
 
@@ -132,6 +136,8 @@ def require_permission(permission: str):
     """사용 예: admin: CurrentAdmin = Depends(require_permission("photos:read"))"""
 
     def dependency(admin: CurrentAdmin = Depends(get_current_admin)) -> CurrentAdmin:
+        if admin.role == SUPER_ADMIN_ROLE:
+            return admin  # 최고 관리자는 항상 통과 (새 권한을 목록에 넣는 걸 잊어도 막히지 않게)
         if permission not in admin.permissions:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="권한이 없습니다.")
         return admin

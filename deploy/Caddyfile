@@ -23,6 +23,12 @@ private-matching.com {
 	handle /health {
 		reverse_proxy backend:8000
 	}
+	# 개인정보처리방침: 화면 빌드 없이 바로 고칠 수 있도록 정적 파일로 제공 (deploy/static/privacy.html)
+	handle /privacy {
+		root * /srv/static
+		rewrite * /privacy.html
+		file_server
+	}
 	handle {
 		reverse_proxy web:3000
 	}

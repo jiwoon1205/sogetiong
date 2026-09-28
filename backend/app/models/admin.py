@@ -86,3 +86,7 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
     "MODERATOR": ["dashboard:read", "users:read", "users:status", "reports:read", "reports:update", "chats:read"],
     "PHOTO_REVIEWER": ["dashboard:read", "photos:read", "photos:evaluate"],
 }
+
+SUPER_ADMIN_ROLE = "SUPER_ADMIN"
+# 코드에 정의된 모든 권한. 최고 관리자는 목록에 빠진 권한이 있어도 항상 전부 가진다.
+ALL_PERMISSIONS: frozenset[str] = frozenset(p for perms in ROLE_PERMISSIONS.values() for p in perms)

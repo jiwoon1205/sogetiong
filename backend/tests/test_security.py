@@ -305,3 +305,24 @@ def test_resubmit_limit_after_evaluation(sent_codes, db):
     a = ready_user(sent_codes, db, admin, "a@hufs.ac.kr")
     r = a.post("/api/v1/me/photos", files={"file": ("x.jpg", jpeg_with_exif(), "image/jpeg")})
     assert r.status_code == 429
+
+
+def test_super_admin_always_has_every_permission(sent_codes, db):
+    """최고 관리자는 DB의 권한 목록이 비어 있어도 모든 관리자 기능을 쓸 수 있다."""
+    from app.models import AdminRole
+    from app.models.admin import ALL_PERMISSIONS
+
+    admin = admin_login(db)
+    role = db.query(AdminRole).filter(AdminRole.name == "SUPER_ADMIN").one()
+    role.permissions_json = []  # 목록을 일부러 비워도
+    db.commit()
+
+    me = admin.get("/api/v1/admin/me").json()
+    assert set(me["permissions"]) >= ALL_PERMISSIONS  # 화면에는 모든 권한이 보이고
+    for url in ("/api/v1/admin/dashboard", "/api/v1/admin/users", "/api/v1/admin/reports", "/api/v1/admin/audit-logs",
+                "/api/v1/admin/photo-reviews?status=APPROVED"):
+        assert admin.get(url).status_code == 200, url  # 실제 API도 통과한다
+
+    # 다른 역할은 여전히 목록대로만
+    reviewer = admin_login(db, role="PHOTO_REVIEWER")
+    assert reviewer.get("/api/v1/admin/audit-logs").status_code == 403
