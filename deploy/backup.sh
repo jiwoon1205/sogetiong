@@ -14,6 +14,14 @@
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
+
+# 백업 결과 알림 (healthchecks.io): 성공하면 주소로, 실패하면 주소/fail 로 신호를 보낸다.
+# 하루 넘게 성공 신호가 없거나 실패 신호가 오면 healthchecks.io가 메일로 알려준다.
+# 알림이 안 가도 백업 자체는 계속되도록 curl 실패는 무시한다.
+HC_PING_URL="${HC_PING_URL:-https://hc-ping.com/0622489b-b82e-4319-81f3-38a68b334bd7}"
+ping_hc() { curl -fsS -m 10 --retry 3 -o /dev/null "$HC_PING_URL$1" || true; }
+trap 'ping_hc /fail' ERR
+ping_hc /start
 REMOTE="${BACKUP_REMOTE:-gdrive-crypt:}"
 KEEP_REMOTE_DAYS="${KEEP_REMOTE_DAYS:-30}"   # 드라이브에 보관할 기간
 KEEP_LOCAL_DAYS="${KEEP_LOCAL_DAYS:-7}"      # 서버에 남겨둘 기간
@@ -53,3 +61,4 @@ rclone delete "$REMOTE" --min-age "${KEEP_REMOTE_DAYS}d"
 find data/backups -name 'sogetiong-*.tar.gz' -mtime +"$KEEP_LOCAL_DAYS" -delete
 
 echo "[$(date -Is)] 백업 끝"
+ping_hc ""

@@ -8,6 +8,7 @@ import { ProfileCard } from "@/components/ProfileCard";
 import { Button, Field, Modal, Notice, Spinner, Textarea } from "@/components/ui";
 import { ApiError, api, errorMessage } from "@/lib/api";
 import { clock, cn } from "@/lib/format";
+import { usePolling } from "@/lib/polling";
 import { REPORT_REASONS, type Card, type ChatMessage } from "@/lib/types";
 
 const POLL_MS = 4000; // MVP: 몇 초마다 새 메시지 확인 (설계도 §51)
@@ -37,10 +38,10 @@ export default function ChatPage() {
     api<{ partner: Card }>(`/matches/${matchId}`)
       .then((r) => setPartner(r.partner))
       .catch((e) => setClosed(errorMessage(e)));
-    loadMessages();
-    const t = setInterval(loadMessages, POLL_MS);
-    return () => clearInterval(t);
-  }, [matchId, loadMessages]);
+  }, [matchId]);
+
+  // 새 메시지 확인: 탭이 안 보이면 멈추고, 다시 보이면 바로 확인
+  usePolling(loadMessages, POLL_MS, [loadMessages]);
 
   useEffect(() => {
     bottom.current?.scrollIntoView({ block: "end" });

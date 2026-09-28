@@ -2,11 +2,12 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Brand } from "@/components/Brand";
 import { Spinner } from "@/components/ui";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/format";
+import { usePolling } from "@/lib/polling";
 import { SessionGate } from "@/lib/session";
 import type { Notification } from "@/lib/types";
 
@@ -30,15 +31,15 @@ function Shell({ children }: { children: React.ReactNode }) {
   const [unread, setUnread] = useState(0);
   const inChat = path.startsWith("/chat/");
 
-  useEffect(() => {
-    const load = () =>
+  // 안 읽은 알림 수: 20초마다 확인 (탭이 안 보이면 멈춤), 화면을 옮길 때도 확인
+  usePolling(
+    () =>
       api<{ notifications: Notification[] }>("/notifications?unread_only=true")
         .then((r) => setUnread(r.notifications.length))
-        .catch(() => {});
-    load();
-    const t = setInterval(load, 20000);
-    return () => clearInterval(t);
-  }, [path]);
+        .catch(() => {}),
+    20000,
+    [path],
+  );
 
   return (
     <div className="min-h-dvh pb-20 sm:pb-0">
