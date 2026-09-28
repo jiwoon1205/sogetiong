@@ -102,7 +102,12 @@ export default function Landing() {
 
         <footer className="flex flex-col gap-2 py-12 text-[12.5px] text-ink-faint sm:flex-row sm:justify-between">
           <p>만 19세 이상 재학생만 이용할 수 있습니다.</p>
-          <p>운영진은 신고와 사진 검수 외의 목적으로 개인정보를 열람하지 않습니다.</p>
+          <p>
+            안전한 이용을 위해 권한을 받은 운영진이 대화 내용과 사진을 확인할 수 있고, 열람 기록은 모두 남습니다.{" "}
+            <a href="/privacy" className="underline underline-offset-4">
+              개인정보처리방침
+            </a>
+          </p>
         </footer>
       </main>
     </div>

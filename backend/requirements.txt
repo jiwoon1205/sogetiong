@@ -1,4 +1,4 @@
-fastapi==0.115.0
+fastapi==0.141.1
 uvicorn[standard]==0.30.6
 sqlalchemy==2.0.35
 psycopg[binary]==3.2.3
@@ -6,8 +6,8 @@ pydantic==2.9.2
 pydantic-settings==2.5.2
 argon2-cffi==23.1.0
 pyotp==2.9.0
-pillow==10.4.0
-python-dotenv==1.0.1
-python-multipart==0.0.9
+pillow==12.3.0
+python-dotenv==1.2.3
+python-multipart==0.0.32
 email-validator==2.2.0
 alembic==1.13.3

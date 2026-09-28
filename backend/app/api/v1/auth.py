@@ -41,7 +41,12 @@ CODE_SENT_MESSAGE = "입력한 주소로 인증번호를 보냈습니다. 메일
 
 
 @router.post("/email/send-code", status_code=status.HTTP_202_ACCEPTED)
-def send_code(payload: SendCodeRequest, request: Request, db: Session = Depends(get_db)):
+def send_code(
+    payload: SendCodeRequest,
+    request: Request,
+    background: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
     email = auth_service.normalize_email(payload.email)
     enforce_rate_limit(f"send-code:ip:{client_ip(request)}", 10, 3600)
     enforce_rate_limit(f"send-code:email:{email}", 3, 3600)
@@ -49,15 +54,30 @@ def send_code(payload: SendCodeRequest, request: Request, db: Session = Depends(
     if auth_service.find_university_for_email(db, email) is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="등록된 학교 이메일만 사용할 수 있습니다.")
 
-    # 이미 가입된 주소여도 같은 응답을 준다 → 특정 학생의 가입 여부를 알아낼 수 없게 (계정 존재 노출 방지)
+    # 가입 여부를 알아낼 수 없게 (계정 존재 노출 방지):
+    # - 응답 내용이 같다: 항상 같은 메시지
+    # - 응답 속도가 같다: 메일은 응답을 보낸 뒤 백그라운드에서 발송
+    # - 메일도 둘 다 간다: 새 주소엔 인증번호, 이미 가입된 주소엔 "로그인/비밀번호 재설정" 안내
+    #   (진짜 주인이 헷갈리지 않게 알려주되, 요청한 사람은 어느 쪽인지 알 수 없다)
     already_registered = db.query(User.id).filter(User.email == email).first() is not None
-    if not already_registered:
+    if already_registered:
+        background.add_task(_send_in_background, EmailService.send_already_registered_notice, email)
+    else:
         code = auth_service.issue_verification_code(db, email)
-        try:
-            EmailService.send_verification_code(email, code)
-        except EmailDeliveryError as exc:
-            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="메일을 보내지 못했습니다. 잠시 후 다시 시도해주세요.") from exc
+        background.add_task(_send_in_background, EmailService.send_verification_code, email, code)
     return {"message": CODE_SENT_MESSAGE}
+
+
+def _send_in_background(send, *args) -> None:
+    """메일은 응답을 보낸 뒤에 발송한다.
+
+    어떤 주소일 때만 발송 시간만큼 응답이 늦어지면, 응답 시간으로 가입 여부를 알아낼 수 있다.
+    발송 실패도 사용자에게 알리지 않는다 (실패 여부도 가입 여부를 드러내므로). 서버 로그에만 남긴다.
+    """
+    try:
+        send(*args)
+    except EmailDeliveryError:
+        logger.error("background email failed: %s", getattr(send, "__name__", "unknown"))
 
 
 @router.post("/email/verify", response_model=VerifyCodeResponse)
@@ -177,18 +197,6 @@ def logout(response: Response, current: CurrentUser = Depends(get_current_user),
 
 RESET_SENT_MESSAGE = "가입된 주소라면 비밀번호 재설정 인증번호를 보냈습니다. 메일함을 확인해주세요."
 RESET_INVALID_MESSAGE = "인증번호가 올바르지 않거나 만료되었습니다."
-
-
-def _send_in_background(send, *args) -> None:
-    """메일은 응답을 보낸 뒤에 발송한다.
-
-    가입된 주소일 때만 발송 시간만큼 응답이 늦어지면, 응답 시간으로 가입 여부를 알아낼 수 있다.
-    발송 실패도 사용자에게 알리지 않는다 (실패 여부도 가입 여부를 드러내므로). 서버 로그에만 남긴다.
-    """
-    try:
-        send(*args)
-    except EmailDeliveryError:
-        logger.error("password reset email failed")
 
 
 @router.post("/password/reset-request", status_code=status.HTTP_202_ACCEPTED)

@@ -13,6 +13,9 @@ private-matching.com {
 		Strict-Transport-Security "max-age=31536000; includeSubDomains"
 		X-Content-Type-Options "nosniff"
 		Referrer-Policy "no-referrer"
+		# 클릭재킹 방지: 다른 사이트가 우리 화면을 투명한 틀(iframe)에 몰래 넣어 클릭을 유도하지 못하게
+		X-Frame-Options "DENY"
+		Content-Security-Policy "frame-ancestors 'none'"
 		-Server
 	}
 

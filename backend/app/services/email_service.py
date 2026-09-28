@@ -23,6 +23,19 @@ class EmailService:
         )
 
     @staticmethod
+    def send_already_registered_notice(email: str) -> None:
+        """이미 가입된 주소로 가입 인증번호를 요청했을 때 보내는 안내 (인증번호 없음)."""
+        _send(
+            email,
+            "이미 가입된 이메일입니다",
+            "이 주소로 가입 인증번호 요청이 들어왔지만, 이미 가입된 계정이 있어서 인증번호는 보내지 않았습니다.\n\n"
+            "- 로그인 화면에서 이 이메일로 로그인하세요.\n"
+            "- 비밀번호가 기억나지 않으면 로그인 화면의 '비밀번호 찾기'로 재설정할 수 있습니다.\n\n"
+            "본인이 요청하지 않았다면 이 메일을 무시하세요. 계정에는 아무 변화가 없습니다.",
+            dev_log="이미 가입된 주소 안내 메일",
+        )
+
+    @staticmethod
     def send_password_reset_code(email: str, code: str) -> None:
         minutes = get_settings().verification_code_minutes
         _send(

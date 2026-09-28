@@ -163,15 +163,35 @@ def test_preferences_validation(sent_codes, db):
 
 # ---------- 가입·로그인 ----------
 
-def test_send_code_does_not_reveal_registered_email(sent_codes, db):
+def test_send_code_does_not_reveal_registered_email(sent_codes, db, monkeypatch):
     signup(sent_codes, db, "a@hufs.ac.kr")
     sent_codes.clear()
+    notices: list[str] = []
+    monkeypatch.setattr(
+        "app.services.email_service.EmailService.send_already_registered_notice",
+        staticmethod(lambda email: notices.append(email)),
+    )
     c = UserClient()
     registered = c.post("/api/v1/auth/email/send-code", json={"email": "a@hufs.ac.kr"})
     fresh = c.post("/api/v1/auth/email/send-code", json={"email": "new@hufs.ac.kr"})
     assert registered.status_code == fresh.status_code == 202
     assert registered.json() == fresh.json()
     assert "a@hufs.ac.kr" not in sent_codes  # 가입된 주소로는 코드를 새로 만들지 않음
+    assert notices == ["a@hufs.ac.kr"]  # 대신 "로그인/비밀번호 재설정" 안내 메일
+    assert "new@hufs.ac.kr" in sent_codes
+
+
+def test_send_code_mail_is_sent_after_response(sent_codes, db, monkeypatch):
+    """메일 발송이 느리거나 실패해도 응답은 똑같다 (응답 속도·오류로 가입 여부를 알 수 없게)."""
+    from app.services.email_service import EmailDeliveryError
+
+    def broken(*args):
+        raise EmailDeliveryError("smtp down")
+
+    monkeypatch.setattr("app.services.email_service.EmailService.send_verification_code", staticmethod(broken))
+    monkeypatch.setattr("app.services.email_service.EmailService.send_already_registered_notice", staticmethod(broken))
+    r = UserClient().post("/api/v1/auth/email/send-code", json={"email": "new@hufs.ac.kr"})
+    assert r.status_code == 202
 
 
 def test_only_school_email(sent_codes, db):

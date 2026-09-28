@@ -56,7 +56,7 @@ export default function SignupPage() {
     e.preventDefault();
     run(async () => {
       await api("/auth/email/send-code", { method: "POST", body: { email } });
-      setNotice(`${email} 로 인증번호를 보냈어요. 10분 안에 입력해주세요.`);
+      setNotice(`${email} 로 메일을 보냈어요. 인증번호는 10분 안에 입력해주세요. 이미 가입된 주소라면 인증번호 대신 로그인 안내 메일이 가요.`);
       setStep(1);
     });
   };
@@ -195,7 +195,12 @@ export default function SignupPage() {
             <Checkbox checked={agree.appearance} onChange={(v) => setAgree({ ...agree, appearance: v })}>
               (필수) 제출한 사진을 운영진이 확인하고, 네 가지 항목의 외적 평가 점수가 다른 학생에게 공개되는 것에 동의합니다
             </Checkbox>
-            <p className="mt-2 text-[12.5px] leading-relaxed text-ink-faint">사진 원본은 다른 학생에게 보이지 않습니다.</p>
+            <p className="mt-2 text-[12.5px] leading-relaxed text-ink-faint">
+              사진 원본은 다른 학생에게 보이지 않습니다. 대화 내용은 안전 관리를 위해 운영진이 볼 수 있어요.{" "}
+              <a href="/privacy" target="_blank" rel="noopener noreferrer" className="underline underline-offset-4">
+                개인정보처리방침 보기
+              </a>
+            </p>
           </div>
 
           {error && <Notice tone="error">{error}</Notice>}
