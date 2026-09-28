@@ -73,7 +73,9 @@ nano deploy/backend.env    # SECRET_KEY, SMTP_USERNAME/PASSWORD/FROM_EMAIL 채�
 
 ### 2-6. 실행
 ```bash
-docker compose up -d --build     # 처음엔 5~10분
+docker login ghcr.io -u jiwoon1205   # 4-1 참고 (처음 한 번)
+docker compose pull              # GitHub가 만들어 둔 이미지 받기
+docker compose up -d
 docker compose ps                # 세 개 모두 running 이면 OK
 docker compose logs -f backend   # 오류 확인 (Ctrl+C로 나가기)
 ```
@@ -122,16 +124,61 @@ sudo crontab -l
 sudo rclone copy gdrive-crypt:sogetiong-날짜.tar.gz /tmp/
 mkdir -p data && sudo tar -xzf /tmp/sogetiong-날짜.tar.gz -C data
 sudo mv data/backups/db-날짜.sqlite data/sogetiong.db
-docker compose up -d --build
+docker login ghcr.io -u jiwoon1205   # 4-1
+docker compose pull && docker compose up -d
 ```
 
 ## 4. 업데이트 배포 (코드를 고친 뒤)
+
+서버(e2-micro, 메모리 1GB)는 화면(Next.js) 빌드를 감당하지 못한다 (2026-09-29: 30분 넘게 멈춤).
+그래서 **이미지는 GitHub가 만들고, 서버는 내려받기만 한다.**
+
+```text
+내 PC: git push
+   ▼
+GitHub Actions (.github/workflows/build-images.yml)
+   backend·web 이미지를 만들어 ghcr.io에 올림 (3~5분)
+   태그: latest + 커밋 번호 7자리
+   ▼
+서버: docker compose pull → up -d   (1~2분)
+```
+
+### 4-1. 서버에서 GitHub 이미지 저장소 로그인 (한 번만)
+저장소가 비공개라 이미지도 비공개다. 서버가 내려받을 수 있게 **읽기 전용 토큰**으로 로그인한다.
+1. GitHub → 오른쪽 위 프로필 → Settings → Developer settings → Personal access tokens → **Tokens (classic)** → Generate new token (classic)
+2. Note: `sogetiong-server-pull`, Expiration: 원하는 기간(만료되면 다시 만들어 로그인), 권한: **`read:packages` 하나만** 체크
+3. 서버에서:
+   ```bash
+   docker login ghcr.io -u jiwoon1205     # Password 자리에 토큰 붙여넣기 (화면에 안 보이는 게 정상)
+   ```
+   `Login Succeeded`가 나오면 끝. 토큰은 채팅·문서에 남기지 않는다.
+
+### 4-2. 배포 순서 (새벽에)
+1. 내 PC에서 `git push`
+2. GitHub 저장소 → **Actions** 탭 → 맨 위 `build-images`가 초록 체크가 될 때까지 기다림 (3~5분)
+3. 서버에서:
+   ```bash
+   cd ~/sogetiong
+   sudo bash deploy/backup.sh     # 배포 전 백업
+   git pull                       # docker-compose.yml·Caddyfile·backup.sh 같은 설정 파일 받기
+   docker compose pull            # 새 이미지 내려받기
+   docker compose up -d           # 새 이미지로 교체 (DB 구조 변경은 backend가 켜질 때 자동 적용)
+   docker compose ps
+   docker image prune -f          # 안 쓰는 예전 이미지 정리 (디스크 20GB 아끼기)
+   ```
+4. https://private-matching.com/health 확인
+
+⚠️ 서버에서 `docker compose up -d --build`는 쓰지 않는다 (서버에서 직접 빌드 → 멈춤).
+
+### 4-3. 되돌리기 (새 버전에 문제가 있을 때)
+GitHub 저장소의 커밋 목록에서 **문제없던 커밋의 번호 7자리**를 확인한 뒤:
 ```bash
 cd ~/sogetiong
-git pull
-docker compose up -d --build     # DB 구조 변경(Alembic)은 backend가 켜질 때 자동 적용
+IMAGE_TAG=a16518e docker compose pull
+IMAGE_TAG=a16518e docker compose up -d
 ```
-배포 전에 `sudo bash deploy/backup.sh`로 백업 한 번 해두면 안전하다.
+- 고친 버전을 다시 푸시해서 Actions가 끝나면, 평소처럼 `docker compose pull && docker compose up -d`로 최신(latest)에 돌아온다.
+- ⚠️ 새 버전이 DB 구조를 바꿨다면(migrations 추가) 예전 이미지가 새 DB를 못 읽을 수 있다. 그럴 땐 배포 직전 백업으로 DB도 함께 되돌린다 (3-4 복원 참고).
 
 ## 5. 운영 체크리스트
 - [ ] `deploy/backend.env`의 SECRET_KEY가 예시 값이 아님 (예시 값이면 서버가 켜지지 않음)

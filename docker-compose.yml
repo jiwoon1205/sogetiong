@@ -1,8 +1,11 @@
-# 운영 서버에서: docker compose up -d --build
+# 운영 서버에서: docker compose pull && docker compose up -d   (자세한 순서: 12_DEPLOYMENT.md 4장)
+# 이미지는 GitHub가 만들어 둔다 (.github/workflows/build-images.yml). 서버는 메모리가 작아서 직접 빌드하지 않는다.
+# IMAGE_TAG: 평소엔 latest, 되돌릴 때는 예전 커밋 번호 7자리 (예: IMAGE_TAG=a16518e docker compose up -d)
 # 데이터(DB·사진·백업)는 서버의 ./data 폴더에 저장된다 → 이 폴더가 백업 대상
 services:
   backend:
-    build: ./backend
+    image: ghcr.io/jiwoon1205/sogetiong-backend:${IMAGE_TAG:-latest}
+    build: ./backend   # 내 PC 등 메모리가 넉넉한 곳에서 직접 빌드할 때만 쓰인다 (--build)
     restart: unless-stopped
     env_file: deploy/backend.env
     environment:
@@ -18,6 +21,7 @@ services:
       options: { max-size: "10m", max-file: "5" }
 
   web:
+    image: ghcr.io/jiwoon1205/sogetiong-web:${IMAGE_TAG:-latest}
     build:
       context: ./web
       args:
