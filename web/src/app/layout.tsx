@@ -2,7 +2,7 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: { default: "소개팅 — 우리 학교, 익명으로", template: "%s · 소개팅" },
+  title: { default: "훕팅 — 우리 학교, 익명으로", template: "%s · 훕팅" },
   description: "같은 학교 학생끼리, 이름과 얼굴 대신 어떤 사람인지로 먼저 만나는 대학생 전용 익명 소개팅.",
 };
 
