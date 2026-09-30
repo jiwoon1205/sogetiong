@@ -10,7 +10,7 @@ from datetime import timedelta
 
 from app.core.config import get_settings
 from app.models import AppearanceEvaluation, AuditLog, Like, PrivateProfile
-from tests.conftest import admin_login, discover_ids, ready_user, set_preferences, signup, upload_photo
+from tests.conftest import UserClient, admin_login, discover_ids, ready_user, set_preferences, signup, upload_photo
 
 
 def _user_id(db, client):
@@ -177,6 +177,28 @@ def test_daily_like_limit_is_five_and_resets_next_day(sent_codes, db):
         like.created_at = like.created_at - timedelta(days=1)
     db.commit()
     assert me.post("/api/v1/likes", json={"profile_id": targets[6].profile_id}).status_code == 200
+
+
+def test_daily_like_limit_holds_when_likes_are_sent_at_the_same_time(sent_codes, db):
+    """LIKE 버튼을 빠르게 여러 번 누르거나 여러 개를 동시에 보내도 하루 5개를 넘지 못한다."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    admin = admin_login(db)
+    me = ready_user(sent_codes, db, admin, "me@hufs.ac.kr", gender="FEMALE", want="MALE")
+    targets = [ready_user(sent_codes, db, admin, f"t{i}@hufs.ac.kr", gender="MALE", want="FEMALE") for i in range(8)]
+
+    def send(target):
+        browser = UserClient()  # 같은 로그인으로 창을 여러 개 연 것과 같다
+        browser.http.cookies.update(me.http.cookies)
+        return browser.post("/api/v1/likes", json={"profile_id": target.profile_id}).status_code
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        codes = list(pool.map(send, targets))
+
+    assert codes.count(200) == 5, codes
+    assert codes.count(429) == 3, codes
+    uid = _user_id(db, me)
+    assert db.query(Like).filter(Like.from_user_id == uid, Like.action == "LIKE").count() == 5
 
 
 def test_private_profile_keeps_preferred_gender(sent_codes, db):

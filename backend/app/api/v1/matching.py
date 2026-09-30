@@ -123,6 +123,15 @@ def like(payload: TargetRequest, current: CurrentUser = Depends(get_current_user
 
     _upsert_action(db, current.id, target.user_id, "LIKE")
     db.flush()
+    # 한 번 더 확인: LIKE를 여러 개 "동시에" 보내면 위의 확인을 모두 통과할 수 있다.
+    # 방금 기록한 LIKE를 포함해 세고, 한도를 넘으면 취소한다.
+    # (SQLite는 쓰기를 한 번에 하나씩만 하므로, 여기서 세는 숫자에는 먼저 끝난 요청이 모두 들어 있다)
+    if profile_service.likes_sent_today(db, current.id) > limit:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"오늘 LIKE {limit}개를 모두 사용했어요. 자정(한국 시간)에 다시 충전돼요.",
+        )
 
     reverse = (
         db.query(Like)

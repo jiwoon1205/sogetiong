@@ -11,6 +11,12 @@ engine = create_engine(
     echo=False,
     future=True,
     connect_args={"check_same_thread": False} if _is_sqlite else {},
+    # 연결 수를 FastAPI 작업 스레드 수(40)보다 넉넉하게 둔다.
+    # 기본값(5+10=15)이면 요청이 몰릴 때 스레드들이 DB 연결을 기다리며 서로 막혀
+    # 서버 전체가 30초씩 멈춘다 (부하 테스트 200명에서 확인, 2026-09-30).
+    pool_size=10,
+    max_overflow=40,
+    pool_timeout=10,
 )
 
 if _is_sqlite:
