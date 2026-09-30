@@ -11,7 +11,7 @@ const PRINCIPLES = [
   {
     no: "02",
     title: "이름과 얼굴은 나중에",
-    body: "실명·학번·사진은 다른 학생에게 보이지 않습니다. 사진은 운영진만 확인하고, 네 가지 항목의 평가로만 전해집니다.",
+    body: "실명·학번·사진은 다른 학생에게 보이지 않습니다. 사진은 AI가 평가하고, 네 가지 항목의 점수로만 전해집니다.",
   },
   {
     no: "03",
@@ -67,7 +67,7 @@ export default function Landing() {
               <p className="font-serif text-[22px] font-semibold">새벽의 산책자</p>
               <p className="mt-1 text-[13.5px] text-ink-soft">22세 · 서울캠퍼스</p>
               <div className="rule my-5" />
-              <p className="eyebrow mb-3">외적 특징 · 운영진 평가</p>
+              <p className="eyebrow mb-3">외적 특징 · AI 평가</p>
               {[
                 ["전체적인 인상", 8],
                 ["스타일", 7],

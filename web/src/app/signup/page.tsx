@@ -228,10 +228,10 @@ export default function SignupPage() {
               (필수) 개인정보 수집·이용
             </Checkbox>
             <Checkbox checked={agree.appearance} onChange={(v) => setAgree({ ...agree, appearance: v })}>
-              (필수) 제출한 사진을 운영진이 확인하고, 네 가지 항목의 외적 평가 점수가 다른 학생에게 공개되는 것에 동의합니다
+              (필수) 제출한 사진을 AI가 분석해 네 가지 항목의 외적 평가 점수를 만들고, 이 점수가 다른 학생에게 공개되는 것에 동의합니다
             </Checkbox>
             <p className="mt-2 text-[12.5px] leading-relaxed text-ink-faint">
-              사진 원본은 다른 학생에게 보이지 않습니다. 대화 내용은 안전 관리를 위해 운영진이 볼 수 있어요.{" "}
+              사진 원본은 다른 학생에게 보이지 않습니다. 신고 처리 등 안전 관리가 필요할 때는 운영진이 사진과 대화 내용을 볼 수 있어요.{" "}
               <a href="/privacy" target="_blank" rel="noopener noreferrer" className="underline underline-offset-4">
                 개인정보처리방침 보기
               </a>

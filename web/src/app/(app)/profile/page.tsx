@@ -24,7 +24,7 @@ type Resubmit = { allowed: boolean; uses_free_rereview: boolean; free_rereview_l
 
 const PHOTO_STATUS: Record<string, string> = {
   PENDING: "검수 대기 중",
-  IN_REVIEW: "운영진이 확인하는 중",
+  IN_REVIEW: "AI가 평가하는 중",
   APPROVED: "승인됨",
   REJECTED: "반려됨",
   SUPERSEDED: "새 사진으로 대체됨",
@@ -93,7 +93,7 @@ export default function ProfilePage() {
               {SCORE_LABELS.map((s) => (
                 <ScoreRow key={s.key} label={s.label} value={evaluation.scores![s.key]} />
               ))}
-              <p className="pt-3 text-[12.5px] text-ink-faint">{dateTime(evaluation.evaluated_at!)} 평가 · 운영진 기준에 따른 참고 정보예요.</p>
+              <p className="pt-3 text-[12.5px] text-ink-faint">{dateTime(evaluation.evaluated_at!)} 평가 · AI가 매긴 참고 정보예요.</p>
             </div>
           ) : (
             <p className="text-[14px] text-ink-soft">아직 평가가 없어요. 사진 검수가 끝나면 표시돼요.</p>

@@ -47,7 +47,7 @@ function Onboarding() {
 
       {step === 2 && (
         <>
-          <PageTitle title="사진을 1~3장 제출해주세요" desc="운영진이 확인한 뒤 전체적인 인상·스타일·자기관리·사진 분위기를 평가해요." />
+          <PageTitle title="사진을 1~3장 제출해주세요" desc="AI가 전체적인 인상·스타일·자기관리·사진 분위기를 평가해요." />
           <PhotoUpload
             onUploaded={async () => {
               await refresh();

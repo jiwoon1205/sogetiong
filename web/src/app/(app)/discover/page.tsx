@@ -25,14 +25,14 @@ const BLOCKED_COPY: Record<string, { title: string; body: string; href: string; 
   PREFERENCES_REQUIRED: { title: "매칭 조건을 정해주세요", body: "어떤 사람을 만나고 싶은지 알려주면 추천을 시작할게요.", href: "/settings", cta: "매칭 조건 설정" },
   PHOTO_APPROVAL_REQUIRED: {
     title: "사진 검수를 기다리고 있어요",
-    body: "운영진이 사진을 확인하고 평가를 마치면 추천이 열려요. 보통 하루 안에 끝나요.",
+    body: "AI가 사진 평가를 마치면 추천이 열려요. 보통 하루 안에 끝나요.",
     href: "/profile",
     cta: "검수 상태 보기",
   },
   // 사진은 승인됐지만 운영진 평가가 아직 끝나지 않음 (추천은 평가가 끝나야 열린다)
   EVALUATION_REQUIRED: {
     title: "평가가 진행 중이에요",
-    body: "운영진이 평가를 마무리하고 있어요. 끝나면 바로 추천이 열려요.",
+    body: "AI가 평가를 마무리하고 있어요. 끝나면 바로 추천이 열려요.",
     href: "/profile",
     cta: "내 프로필 보기",
   },

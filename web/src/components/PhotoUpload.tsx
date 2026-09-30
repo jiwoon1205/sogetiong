@@ -123,10 +123,10 @@ export function PhotoUpload({ onUploaded, submitLabel = "검수 요청하기" }:
       <input ref={input} type="file" accept="image/*" multiple className="hidden" onChange={(e) => pick(e.target.files)} />
 
       <ul className="space-y-1.5 text-[13px] leading-relaxed text-ink-soft">
-        <li>— 얼굴이 잘 보이는 최근 사진을 1~3장 골라주세요. 함께 보고 한 번에 평가해요.</li>
-        <li>— 사진은 운영진만 확인하고, 다른 학생에게는 절대 보이지 않아요.</li>
+        <li>— 얼굴이 잘 보이는 최근 사진을 1~3장 골라주세요. AI가 함께 보고 한 번에 평가해요.</li>
+        <li>— 사진은 AI가 평가하고, 다른 학생에게는 절대 보이지 않아요.</li>
         <li>— 위치 정보 등 사진 속 메타데이터는 저장할 때 지워져요.</li>
-        <li>— 검수가 끝나면 네 가지 항목의 평가가 프로필에 표시돼요.</li>
+        <li>— 평가가 끝나면 네 가지 항목의 점수가 프로필에 표시돼요.</li>
       </ul>
 
       {error && <Notice tone="error">{error}</Notice>}

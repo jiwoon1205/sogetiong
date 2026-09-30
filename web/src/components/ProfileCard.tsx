@@ -24,7 +24,7 @@ export function ProfileCard({ card, className, compact }: { card: Card; classNam
 
       {card.appearance && (
         <section className="space-y-2.5 border-b border-line px-6 py-5">
-          <p className="eyebrow mb-3">외적 특징 · 운영진 평가</p>
+          <p className="eyebrow mb-3">외적 특징 · AI 평가</p>
           {SCORE_LABELS.map((s) => (
             <ScoreRow key={s.key} label={s.label} value={card.appearance![s.key]} />
           ))}
