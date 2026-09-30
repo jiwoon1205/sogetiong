@@ -11,14 +11,16 @@ import { GENDER_LABEL, type MyProfile, type Preferences } from "@/lib/types";
 // 가로 바 양 끝 기본값 (서버가 age_floor / age_cap을 보내면 그 값을 쓴다)
 const AGE_FLOOR = 19;
 const AGE_CAP = 35;
-// 처음 설정할 때 가로 바의 시작 위치
-const DEFAULT_RANGE: [number, number] = [20, 27];
+// 처음 설정할 때 가로 바의 시작 위치: 왼쪽 끝(가입 가능한 최소 나이, 19세)부터 27세까지
+// (예전 기본값 20~27세는 19세 신입생을 기본으로 빼버려서 2026-09-30에 바꿈)
+const DEFAULT_MAX_AGE = 27;
+const DEFAULT_RANGE: [number, number] = [AGE_FLOOR, DEFAULT_MAX_AGE];
 
 const EMPTY: Preferences = {
   configured: false,
   preferred_gender: "ANY",
-  min_age: 20,
-  max_age: 27,
+  min_age: AGE_FLOOR,
+  max_age: DEFAULT_MAX_AGE,
   campus_mode: "ALL",
   campus_ids: [],
   exclude_same_department: false,
@@ -56,6 +58,10 @@ export function PreferencesForm({
         const c = res.age_cap ?? AGE_CAP;
         setFloor(f);
         setCap(c);
+        if (!res.configured) {
+          // 서버가 알려준 왼쪽 끝부터 시작 (가입 최소 나이 설정이 바뀌어도 맞게)
+          setAgeRange([f, Math.min(c, Math.max(f, DEFAULT_MAX_AGE))]);
+        }
         if (res.configured) {
           const any = res.age_any ?? (res.min_age == null && res.max_age == null);
           setAgeAny(any);
@@ -142,7 +148,7 @@ export function PreferencesForm({
 
       <div className="space-y-1.5">
         <div className="flex items-baseline justify-between gap-3">
-          <p id="age-label" className="text-[13px] font-medium text-ink-soft">나이</p>
+          <p id="age-label" className="text-[13px] font-medium text-ink-soft">나이 <span className="font-normal text-ink-faint">(만 나이)</span></p>
           <p className={cn("num text-[19px] font-medium tracking-tight", ageAny ? "text-ink-faint" : "text-ink")} aria-live="polite">
             {ageAny ? "나이 상관없음" : ageRangeText(ageRange, cap)}
           </p>
@@ -171,7 +177,7 @@ export function PreferencesForm({
           </div>
         </div>
         <p className="text-[12.5px] leading-relaxed text-ink-faint">
-          양쪽 끝을 끌어서 범위를 정해요. 상관없음으로 해도, 상대가 정한 나이 범위에 내가 들어가야 서로 추천돼요.
+          모든 나이는 만 나이예요. 양쪽 끝을 끌어서 범위를 정해요. 상관없음으로 해도, 상대가 정한 나이 범위에 내가 들어가야 서로 추천돼요.
         </p>
       </div>
 
@@ -211,10 +217,10 @@ export function PreferencesForm({
   );
 }
 
-/** "22세 ~ 27세", "22세 이상", "25세" 처럼 가로 바 위에 크게 보여줄 문구 */
+/** "만 22세 ~ 27세", "만 35세 이상", "만 25세" 처럼 가로 바 위에 크게 보여줄 문구 (모두 만 나이) */
 function ageRangeText([lo, hi]: [number, number], cap: number) {
-  if (lo >= cap) return `${cap}세 이상`;
-  if (hi >= cap) return `${lo}세 ~ ${cap}세 이상`;
-  if (lo === hi) return `${lo}세`;
-  return `${lo}세 ~ ${hi}세`;
+  if (lo >= cap) return `만 ${cap}세 이상`;
+  if (hi >= cap) return `만 ${lo}세 ~ ${cap}세 이상`;
+  if (lo === hi) return `만 ${lo}세`;
+  return `만 ${lo}세 ~ ${hi}세`;
 }

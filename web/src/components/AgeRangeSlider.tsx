@@ -116,7 +116,8 @@ export function AgeRangeSlider({
     move(which, steps[e.key]);
   }
 
-  const label = (v: number) => (v >= cap ? `${cap}세 이상` : `${v}세`);
+  // 화면 읽기 프로그램용 문구 (만 나이)
+  const label = (v: number) => (v >= cap ? `만 ${cap}세 이상` : `만 ${v}세`);
 
   const thumb = (which: 0 | 1) => {
     const v = which === 0 ? lo : hi;
@@ -176,7 +177,7 @@ export function AgeRangeSlider({
         {thumb(1)}
       </div>
       <div aria-hidden className="flex justify-between text-[12px] text-ink-faint">
-        <span className="num">{floor}세</span>
+        <span className="num">만 {floor}세</span>
         <span className="num">{cap}세 이상</span>
       </div>
     </div>

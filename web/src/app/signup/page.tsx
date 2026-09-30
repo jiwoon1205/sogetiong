@@ -166,7 +166,7 @@ export default function SignupPage() {
         <form onSubmit={register} className="space-y-5">
           <PageTitle
             title="기본 정보"
-            desc="성별·만나고 싶은 상대·생년월일·캠퍼스는 가입 후 바꿀 수 없어요. 생년월일은 나이 계산에만 쓰여요."
+            desc="성별·만나고 싶은 상대·생년월일·캠퍼스는 가입 후 바꿀 수 없어요. 생년월일은 만 나이 계산에만 쓰여요."
           />
           <Field label="닉네임" htmlFor="nickname" hint="2~20자. 실명이나 학번이 드러나지 않게 지어주세요.">
             <Input id="nickname" value={info.nickname} maxLength={20} onChange={(e) => setInfo({ ...info, nickname: e.target.value })} required />
