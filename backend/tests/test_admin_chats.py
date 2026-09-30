@@ -1,6 +1,7 @@
 """관리자 대화 열람 테스트.
 
-정책: chats:read 권한(SUPER_ADMIN, MODERATOR)이 있으면 모든 대화를 볼 수 있다.
+정책: chats:read 권한(SUPER_ADMIN, MODERATOR)이 있으면 신고 여부와 상관없이 모든 대화를 볼 수 있다.
+전체 대화 목록(/admin/matches)에서 바로 찾아 열 수 있다.
 열 때마다 감사 로그(CHAT_VIEW)가 남는다.
 """
 
@@ -75,6 +76,53 @@ def test_paging_older_messages(sent_codes, db):
     assert first["has_more"] is True and [m["body"] for m in first["messages"]] == ["메시지 2", "메시지 3", "메시지 4"]
     older = admin.get(f"/api/v1/admin/matches/{match_id}/messages?limit=3&before={first['messages'][0]['message_id']}").json()
     assert [m["body"] for m in older["messages"]] == ["반가워요 :)", "메시지 0", "메시지 1"]
+
+
+def test_all_chats_list_shows_unreported_chats(sent_codes, db):
+    """신고가 없는 대화방도 전체 대화 목록에 나오고, 바로 열 수 있다."""
+    admin = admin_login(db)
+    a, b, match_id = _matched_pair(sent_codes, db, admin)
+    moderator = admin_login(db, role="MODERATOR")
+
+    r = moderator.get("/api/v1/admin/matches")
+    assert r.status_code == 200, r.text
+    rows = r.json()["matches"]
+    assert [m["match_id"] for m in rows] == [match_id]
+    assert rows[0]["message_count"] == 2 and rows[0]["status"] == "ACTIVE"
+    assert len(rows[0]["members"]) == 2 and all(p["nickname"] for p in rows[0]["members"])
+    assert "안녕하세요" not in r.text  # 목록에는 메시지 내용이 없다
+    assert r.json()["has_more"] is False
+
+    # 목록만 보는 것은 감사 로그를 남기지 않는다
+    db.expire_all()
+    assert db.query(AuditLog).filter(AuditLog.action == "CHAT_VIEW").count() == 0
+
+    # 끝난 대화도 목록에 남는다 + 상태 필터
+    a.delete(f"/api/v1/matches/{match_id}")
+    assert moderator.get("/api/v1/admin/matches?status=ACTIVE").json()["matches"] == []
+    ended = moderator.get("/api/v1/admin/matches?status=UNMATCHED").json()["matches"]
+    assert [m["match_id"] for m in ended] == [match_id]
+
+    # 닉네임 검색 (둘 중 한 명의 닉네임이면 나온다)
+    nick = rows[0]["members"][0]["nickname"]
+    assert len(moderator.get(f"/api/v1/admin/matches?nickname={nick}").json()["matches"]) == 1
+    assert moderator.get("/api/v1/admin/matches?nickname=없는닉네임").json()["matches"] == []
+
+
+def test_all_chats_list_permissions(sent_codes, db):
+    admin = admin_login(db)
+    a, b, match_id = _matched_pair(sent_codes, db, admin)
+    reviewer = admin_login(db, role="PHOTO_REVIEWER")
+    assert reviewer.get("/api/v1/admin/matches").status_code == 403
+    assert a.get("/api/v1/admin/matches").status_code == 401
+
+
+def test_all_chats_list_paging(sent_codes, db):
+    admin = admin_login(db)
+    _matched_pair(sent_codes, db, admin)
+    first = admin.get("/api/v1/admin/matches?limit=1").json()
+    assert len(first["matches"]) == 1 and first["has_more"] is False
+    assert admin.get("/api/v1/admin/matches?offset=1").json()["matches"] == []
 
 
 def test_prod_rejects_public_example_secret_key():

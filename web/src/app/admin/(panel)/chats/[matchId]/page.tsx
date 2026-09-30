@@ -88,7 +88,7 @@ export default function ChatViewer() {
         </div>
       </div>
 
-      <Notice>이 화면을 연 기록은 감사 로그에 남아요. 신고 확인 등 운영에 필요한 경우에만 여세요.</Notice>
+      <Notice>이 화면을 연 기록(누가·언제·어느 대화)은 감사 로그에 남아요.</Notice>
 
       <div className="mt-6 max-w-2xl space-y-3 rounded-card border border-line bg-paper-card p-5">
         {chat.has_more && (

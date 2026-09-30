@@ -670,6 +670,58 @@ def _person(user_id: uuid.UUID, nicknames: dict[uuid.UUID, str]) -> dict:
     }
 
 
+@router.get("/matches")
+def list_all_matches(
+    status_filter: str | None = Query(default=None, alias="status", pattern="^(ACTIVE|UNMATCHED|BLOCKED)$"),
+    nickname: str | None = Query(default=None, max_length=20),
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=200),
+    admin: CurrentAdmin = Depends(require_permission("chats:read")),
+    db: Session = Depends(get_db),
+):
+    """매칭으로 생긴 모든 대화방 목록 (신고 여부와 상관없음, 끝난 대화 포함).
+
+    최근에 메시지가 오간 대화방이 위에 온다 (메시지가 없으면 매칭 시각 기준).
+    목록에는 메시지 내용이 없으므로 감사 로그를 남기지 않는다. 내용을 열 때 CHAT_VIEW가 남는다.
+    """
+    stats = (
+        db.query(
+            Message.match_id.label("match_id"),
+            func.count(Message.id).label("message_count"),
+            func.max(Message.created_at).label("last_message_at"),
+        )
+        .group_by(Message.match_id)
+        .subquery()
+    )
+    activity = func.coalesce(stats.c.last_message_at, Match.created_at)
+    query = db.query(Match, stats.c.message_count, stats.c.last_message_at).outerjoin(stats, stats.c.match_id == Match.id)
+    if status_filter:
+        query = query.filter(Match.status == status_filter)
+    if nickname:
+        members = db.query(PublicProfile.user_id).filter(PublicProfile.nickname.contains(nickname))
+        query = query.filter(Match.user_a_id.in_(members) | Match.user_b_id.in_(members))
+    rows = query.order_by(activity.desc(), Match.id).offset(offset).limit(limit + 1).all()
+    has_more = len(rows) > limit
+    rows = rows[:limit]
+
+    nicknames = _nicknames(db, [uid for m, _, _ in rows for uid in (m.user_a_id, m.user_b_id)])
+    return {
+        "matches": [
+            {
+                "match_id": str(m.id),
+                "members": [_person(m.user_a_id, nicknames), _person(m.user_b_id, nicknames)],
+                "status": m.status,
+                "matched_at": m.created_at.isoformat(),
+                "ended_at": m.ended_at.isoformat() if m.ended_at else None,
+                "message_count": count or 0,
+                "last_message_at": last.isoformat() if last else None,
+            }
+            for m, count, last in rows
+        ],
+        "has_more": has_more,
+    }
+
+
 @router.get("/users/{user_id}/matches")
 def list_user_matches(
     user_id: uuid.UUID,
