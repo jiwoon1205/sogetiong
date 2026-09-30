@@ -133,7 +133,6 @@ app/
   models/      DB 테이블 정의
   schemas/     요청 형식 검사
   services/    핵심 로직 (매칭 엔진, 사진 처리, 세션 등)
-  storage/     사진 저장
   scripts/     seed, create_admin 명령어
 migrations/    Alembic DB 변경 이력
 tests/         자동 테스트
