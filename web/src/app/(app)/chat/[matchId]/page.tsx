@@ -5,11 +5,12 @@ import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Initial } from "@/components/Initial";
 import { ProfileCard } from "@/components/ProfileCard";
-import { Button, Field, Modal, Notice, Spinner, Textarea } from "@/components/ui";
+import { ReportModal } from "@/components/ReportModal";
+import { Button, Modal, Spinner } from "@/components/ui";
 import { ApiError, api, errorMessage } from "@/lib/api";
 import { clock, cn } from "@/lib/format";
 import { usePolling } from "@/lib/polling";
-import { REPORT_REASONS, type Card, type ChatMessage } from "@/lib/types";
+import type { Card, ChatMessage } from "@/lib/types";
 
 const POLL_MS = 4000; // MVP: 몇 초마다 새 메시지 확인 (설계도 §51)
 
@@ -77,12 +78,19 @@ export default function ChatPage() {
   }
 
   if (closed && !partner) {
+    // 대화가 끝났어도(상대 탈퇴·차단·매칭 해제) 이 대화방으로 신고할 수 있다
     return (
       <div className="py-16 text-center">
         <p className="text-[15px]">{closed}</p>
-        <Link href="/matches" className="mt-4 inline-block text-[14px] underline underline-offset-4">
-          대화 목록으로
-        </Link>
+        <div className="mt-5 flex items-center justify-center gap-5 text-[14px]">
+          <Link href="/matches" className="underline underline-offset-4">
+            대화 목록으로
+          </Link>
+          <button onClick={() => setPanel("report")} className="text-brick underline underline-offset-4">
+            신고하기
+          </button>
+        </div>
+        <ReportModal open={panel === "report"} onClose={() => setPanel("none")} matchId={matchId} />
       </div>
     );
   }
@@ -137,7 +145,12 @@ export default function ChatPage() {
       </div>
 
       {closed ? (
-        <div className="border-t border-line py-4 text-center text-[14px] text-ink-soft">{closed}</div>
+        <div className="border-t border-line py-4 text-center text-[14px] text-ink-soft">
+          {closed}{" "}
+          <button onClick={() => setPanel("report")} className="ml-2 text-brick underline underline-offset-4">
+            신고하기
+          </button>
+        </div>
       ) : (
         <form onSubmit={send} className="border-t border-line py-3">
           {error && <p className="mb-2 text-[13px] text-brick">{error}</p>}
@@ -184,63 +197,7 @@ export default function ChatPage() {
         </div>
       </Modal>
 
-      <ReportModal open={panel === "report"} onClose={() => setPanel("none")} profileId={partner.profile_id} matchId={matchId} />
+      <ReportModal open={panel === "report"} onClose={() => setPanel("none")} matchId={matchId} />
     </div>
-  );
-}
-
-function ReportModal({ open, onClose, profileId, matchId }: { open: boolean; onClose: () => void; profileId: string; matchId: string }) {
-  const [reason, setReason] = useState("");
-  const [desc, setDesc] = useState("");
-  const [done, setDone] = useState(false);
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
-
-  async function submit() {
-    setLoading(true);
-    setError("");
-    try {
-      await api("/reports", { method: "POST", body: { profile_id: profileId, reason, description: desc || null, match_id: matchId } });
-      setDone(true);
-    } catch (err) {
-      setError(errorMessage(err));
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  return (
-    <Modal open={open} onClose={onClose} title="신고하기">
-      {done ? (
-        <div className="space-y-4">
-          <Notice tone="ok">신고가 접수됐어요. 운영진이 확인한 뒤 알림으로 결과를 알려드릴게요.</Notice>
-          <Button variant="secondary" className="w-full" onClick={onClose}>
-            닫기
-          </Button>
-        </div>
-      ) : (
-        <div className="space-y-5">
-          <div className="grid grid-cols-2 gap-2">
-            {REPORT_REASONS.map((r) => (
-              <button
-                key={r.value}
-                type="button"
-                onClick={() => setReason(r.value)}
-                className={cn("rounded-md border px-3 py-2.5 text-left text-[14px]", reason === r.value ? "border-ink bg-ink text-paper" : "border-line bg-paper-card hover:border-line-strong")}
-              >
-                {r.label}
-              </button>
-            ))}
-          </div>
-          <Field label="자세한 내용 (선택)">
-            <Textarea value={desc} maxLength={1000} onChange={(e) => setDesc(e.target.value)} rows={3} />
-          </Field>
-          {error && <Notice tone="error">{error}</Notice>}
-          <Button variant="danger" className="w-full" disabled={!reason} loading={loading} onClick={submit}>
-            신고 접수
-          </Button>
-        </div>
-      )}
-    </Modal>
   );
 }

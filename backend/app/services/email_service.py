@@ -57,6 +57,72 @@ class EmailService:
             dev_log="비밀번호 변경 안내 메일",
         )
 
+    # ---------- 사진 검수 결과 (사용자에게) ----------
+
+    @staticmethod
+    def send_photo_approved(email: str) -> None:
+        site = get_settings().site_url
+        _send(
+            email,
+            "사진 검수가 끝났어요",
+            "올려주신 사진의 검수가 끝나서 이제 추천을 받을 수 있어요.\n\n"
+            f"지금 확인하기: {site}/discover\n\n"
+            "사진 원본은 다른 학생에게 보이지 않아요.",
+            dev_log="사진 승인 안내 메일",
+        )
+
+    @staticmethod
+    def send_photo_rejected(email: str, reason: str) -> None:
+        site = get_settings().site_url
+        _send(
+            email,
+            "사진을 다시 올려주세요",
+            f"올려주신 사진이 반려되었어요.\n\n사유: {reason}\n\n"
+            f"새 사진 올리기: {site}/profile",
+            dev_log="사진 반려 안내 메일",
+        )
+
+    # ---------- 운영진 알림 ----------
+
+    @staticmethod
+    def send_admin_photo_queue(email: str, pending_count: int) -> None:
+        site = get_settings().site_url
+        _send(
+            email,
+            f"[운영] 검수 대기 사진 {pending_count}장",
+            f"검수를 기다리는 사진이 {pending_count}장 쌓였어요.\n\n"
+            f"검수하러 가기: {site}/admin/photos\n\n"
+            "(대기 사진이 10장 쌓일 때 한 번 보내요. 검수해서 줄어든 뒤 다시 10장이 되면 또 보내요.)",
+            dev_log=f"관리자 사진 알림 ({pending_count}장)",
+        )
+
+    @staticmethod
+    def send_admin_new_report(email: str, reason: str) -> None:
+        site = get_settings().site_url
+        label = REPORT_REASON_LABELS.get(reason, reason)
+        _send(
+            email,
+            f"[운영] 새 신고: {label}",
+            f"새 신고가 접수됐어요. 사유: {label}\n\n"
+            f"확인하러 가기: {site}/admin/reports\n\n"
+            "처리 목표: 24시간 이내",
+            dev_log=f"관리자 신고 알림 ({reason})",
+        )
+
+
+REPORT_REASON_LABELS = {
+    "SEXUAL_HARASSMENT": "성희롱",
+    "ABUSIVE_LANGUAGE": "욕설",
+    "THREAT": "협박",
+    "STALKING": "스토킹",
+    "OBSCENE_CONTENT": "음란물",
+    "IMPERSONATION": "사칭",
+    "MONEY_REQUEST": "금전 요구",
+    "PERSONAL_INFO_REQUEST": "개인정보 요구",
+    "SPAM": "스팸",
+    "OTHER": "기타",
+}
+
 
 def _send(email: str, subject: str, body: str, *, dev_log: str) -> None:
     settings = get_settings()

@@ -2,7 +2,7 @@
 
 from datetime import timedelta
 
-from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Response, UploadFile, status
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
@@ -24,7 +24,8 @@ from app.models.profile import Interest, PublicProfile, UserInterest
 from app.models.university import Campus, Department
 from app.schemas.auth import DeleteAccountRequest
 from app.schemas.profile import PreferencesRequest, ProfileUpdateRequest
-from app.services import auth_service, profile_service
+from app.services import admin_alert_service, auth_service, profile_service
+from app.services.email_service import EmailService
 from app.services.session_service import clear_user_cookies, revoke_all_user_sessions
 from app.services.storage_service import PhotoValidationError, get_storage, new_storage_key, process_upload
 
@@ -278,6 +279,7 @@ def put_my_preferences(
 
 @router.post("/me/photos", status_code=status.HTTP_201_CREATED)
 def upload_photo(
+    background: BackgroundTasks,
     file: UploadFile = File(...),
     current: CurrentUser = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -321,6 +323,12 @@ def upload_photo(
     )
     db.add(photo)
     db.commit()
+
+    # 검수 대기 사진이 10장 쌓이면 검수 담당 운영진에게 메일 한 통 (응답을 보낸 뒤 발송)
+    pending = admin_alert_service.pending_photo_query(db).count()
+    if admin_alert_service.photo_backlog_alert_due(pending):
+        recipients = admin_alert_service.admin_emails_with(db, "photos:evaluate")
+        background.add_task(admin_alert_service.send_all, EmailService.send_admin_photo_queue, recipients, pending)
     return {"photo_id": str(photo.id), "review_status": photo.review_status, "message": "관리자 검수 대기 중입니다."}
 
 

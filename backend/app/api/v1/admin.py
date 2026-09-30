@@ -1,10 +1,11 @@
 """/api/v1/admin — 관리자 전용. 모든 API는 로그인 + 2단계 인증 + 권한(RBAC)을 확인한다."""
 
+import logging
 import uuid
 from io import BytesIO
 
 import pyotp
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, Response, status
 from PIL import Image, ImageDraw, ImageFont
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -28,7 +29,8 @@ from app.schemas.admin import (
     UserDepartmentRequest,
     UserStatusRequest,
 )
-from app.services import profile_service
+from app.services import admin_alert_service, profile_service
+from app.services.email_service import EmailDeliveryError, EmailService
 from app.services.audit_service import AuditService
 from app.services.notification_service import notify
 from app.services.session_service import (
@@ -39,6 +41,7 @@ from app.services.session_service import (
 )
 from app.services.storage_service import get_storage
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
@@ -100,7 +103,7 @@ def dashboard(admin: CurrentAdmin = Depends(require_permission("dashboard:read")
         "users_total": c(db.query(User.id)),
         "users_active": c(db.query(User.id).filter(User.status == "ACTIVE")),
         "users_suspended": c(db.query(User.id).filter(User.status.in_(["SUSPENDED", "BANNED"]))),
-        "photos_pending": c(db.query(UserPhoto.id).filter(UserPhoto.review_status.in_(["PENDING", "IN_REVIEW"]))),
+        "photos_pending": admin_alert_service.pending_photo_query(db).count(),
         "matches_total": c(db.query(Match.id)),
         "reports_open": c(db.query(Report.id).filter(Report.status.in_(["OPEN", "IN_REVIEW"]))),
     }
@@ -132,13 +135,16 @@ def list_photo_reviews(
     admin: CurrentAdmin = Depends(require_permission("photos:read")),
     db: Session = Depends(get_db),
 ):
-    photos = (
-        db.query(UserPhoto)
-        .filter(UserPhoto.review_status == status_filter, UserPhoto.upload_status != "DELETED")
-        .order_by(UserPhoto.uploaded_at.asc())
-        .limit(100)
-        .all()
-    )
+    """status=PENDING(대기열)에는 "확인 중"도 함께 보여준다.
+    상세 화면을 열기만 하고 평가를 끝내지 않은 사진이 대기열에서 사라져 잊히지 않게 하기 위해서다.
+    정지·탈퇴한 사용자의 사진은 대기열에 넣지 않는다."""
+    if status_filter in ("PENDING", "IN_REVIEW"):
+        query = admin_alert_service.pending_photo_query(db)
+        if status_filter == "IN_REVIEW":
+            query = query.filter(UserPhoto.review_status == "IN_REVIEW")
+    else:
+        query = db.query(UserPhoto).filter(UserPhoto.review_status == status_filter, UserPhoto.upload_status != "DELETED")
+    photos = query.order_by(UserPhoto.uploaded_at.asc()).limit(100).all()
     return {"photos": [_photo_summary(p) for p in photos]}
 
 
@@ -209,6 +215,7 @@ def evaluate_photo(
     photo_id: uuid.UUID,
     payload: EvaluationRequest,
     request: Request,
+    background: BackgroundTasks,
     admin: CurrentAdmin = Depends(require_permission("photos:evaluate")),
     db: Session = Depends(get_db),
 ):
@@ -257,7 +264,25 @@ def evaluate_photo(
         metadata={"before": before, "after": after, "decision": payload.decision},
     )
     db.commit()
+    # 대기 사진이 10장 아래로 줄었으면, 다음에 다시 10장이 쌓일 때 알림이 가도록 기록을 지운다
+    admin_alert_service.photo_backlog_alert_due(admin_alert_service.pending_photo_query(db).count())
+
+    # 사이트 안 알림만으로는 창을 닫은 사용자가 모른다 → 결과를 메일로도 보낸다 (응답 뒤 발송)
+    owner = db.get(User, photo.user_id)
+    if owner is not None and owner.status == "ACTIVE":
+        if payload.decision == "APPROVED":
+            background.add_task(_send_quietly, EmailService.send_photo_approved, owner.email)
+        else:
+            background.add_task(_send_quietly, EmailService.send_photo_rejected, owner.email, payload.reject_reason)
     return {**_photo_summary(photo), "scores": after}
+
+
+def _send_quietly(send, *args) -> None:
+    """메일 발송이 실패해도 평가 결과는 이미 저장됐고, 사용자는 사이트 안 알림으로도 볼 수 있다."""
+    try:
+        send(*args)
+    except EmailDeliveryError:
+        logger.error("photo result email failed")
 
 
 # ---------- 사용자 관리 ----------

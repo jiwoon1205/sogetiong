@@ -68,6 +68,12 @@ class Settings(BaseSettings):
     # 학과 변경 요청·"내 학과가 목록에 없어요" 문의를 받는 메일 주소 (화면에 표시됨)
     support_email: str = "jiwoon@private-matching.com"
 
+    # --- 메일 속 링크·운영진 알림 ---
+    # 메일 본문에 넣는 사이트 주소 (사진 검수 결과, 관리자 알림)
+    site_url: str = "https://private-matching.com"
+    # 검수 대기 사진이 이만큼 쌓이면 운영진에게 메일 한 통 (사진 한 장마다 보내면 메일이 너무 많다)
+    photo_alert_threshold: int = 10
+
     cors_origins: str = "http://localhost:3000"
 
     model_config = SettingsConfigDict(

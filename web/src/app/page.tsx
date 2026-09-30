@@ -1,4 +1,5 @@
 import { Brand } from "@/components/Brand";
+import { SupportContact } from "@/components/SupportContact";
 import { ButtonLink } from "@/components/ui";
 
 const PRINCIPLES = [
@@ -101,7 +102,12 @@ export default function Landing() {
         </section>
 
         <footer className="flex flex-col gap-2 py-12 text-[12.5px] text-ink-faint sm:flex-row sm:justify-between">
-          <p>만 19세 이상 재학생만 이용할 수 있습니다.</p>
+          <div className="space-y-1">
+            <p>만 19세 이상 재학생만 이용할 수 있습니다.</p>
+            <p>
+              <SupportContact />
+            </p>
+          </div>
           <p>
             안전한 이용을 위해 권한을 받은 운영진이 대화 내용과 사진을 확인할 수 있고, 열람 기록은 모두 남습니다.{" "}
             <a href="/privacy" className="underline underline-offset-4">

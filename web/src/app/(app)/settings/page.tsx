@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { PreferencesForm } from "@/components/PreferencesForm";
+import { SupportContact } from "@/components/SupportContact";
 import { Button, Field, Input, Modal, Notice, PageTitle, Spinner } from "@/components/ui";
 import { api, errorMessage } from "@/lib/api";
 import { useCatalog } from "@/lib/catalog";
@@ -42,6 +43,9 @@ export default function SettingsPage() {
             탈퇴하기
           </button>
         </div>
+        <p className="mt-4 text-[13px] leading-relaxed text-ink-faint">
+          학과 변경, 불편한 점, 그 밖의 문의는 메일로 보내주세요. <SupportContact prefix="" />
+        </p>
       </section>
 
       <DeleteAccount open={deleteOpen} onClose={() => setDeleteOpen(false)} onDone={() => router.replace("/")} />

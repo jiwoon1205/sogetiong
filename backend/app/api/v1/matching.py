@@ -1,6 +1,7 @@
 """/api/v1 — 추천(discover), LIKE/PASS, 매칭, 채팅."""
 
 import uuid
+from datetime import timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.exc import IntegrityError
@@ -11,7 +12,7 @@ from app.core.rate_limit import enforce_rate_limit
 from app.core.time import utcnow
 from app.db.session import get_db
 from app.deps import CurrentUser, get_current_user
-from app.models.matching import Like, Match, MatchingPreference, Message
+from app.models.matching import Like, Match, MatchingPreference, Message, Report
 from app.models.profile import PublicProfile
 from app.models.user import User
 from app.schemas.matching import SendMessageRequest, TargetRequest
@@ -205,6 +206,50 @@ def list_matches(current: CurrentUser = Depends(get_current_user), db: Session =
             }
         )
     return {"matches": result}
+
+
+@router.get("/matches/ended")
+def list_ended_matches(current: CurrentUser = Depends(get_current_user), db: Session = Depends(get_db)):
+    """끝난 대화 목록 (매칭 해제·차단·상대 탈퇴 등). 대화 내용은 볼 수 없고, 신고만 할 수 있다.
+
+    끝난 이유(누가 해제·차단했는지)는 알려주지 않는다.
+    """
+    since = utcnow() - timedelta(days=90)
+    matches = (
+        db.query(Match)
+        .filter(
+            ((Match.user_a_id == current.id) | (Match.user_b_id == current.id)),
+            Match.status != "ACTIVE",
+            Match.ended_at >= since,
+        )
+        .order_by(Match.ended_at.desc())
+        .limit(50)
+        .all()
+    )
+    partner_ids = [m.partner_of(current.id) for m in matches]
+    nicknames = dict(
+        db.query(PublicProfile.user_id, PublicProfile.nickname).filter(PublicProfile.user_id.in_(partner_ids)).all()
+    ) if partner_ids else {}
+    reported = {
+        uid
+        for (uid,) in db.query(Report.reported_user_id).filter(
+            Report.reporter_user_id == current.id,
+            Report.reported_user_id.in_(partner_ids),
+            Report.status.in_(["OPEN", "IN_REVIEW"]),
+        )
+    } if partner_ids else set()
+    return {
+        "matches": [
+            {
+                "match_id": str(m.id),
+                "partner_nickname": nicknames.get(m.partner_of(current.id)) or "탈퇴한 사용자",
+                "matched_at": m.created_at.isoformat(),
+                "ended_at": m.ended_at.isoformat() if m.ended_at else None,
+                "report_pending": m.partner_of(current.id) in reported,
+            }
+            for m in matches
+        ]
+    }
 
 
 @router.get("/matches/{match_id}")

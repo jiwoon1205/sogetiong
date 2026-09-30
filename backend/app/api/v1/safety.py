@@ -2,7 +2,7 @@
 
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.core.rate_limit import enforce_rate_limit
@@ -12,7 +12,8 @@ from app.deps import CurrentUser, get_current_user
 from app.models.matching import Block, Match, Notification, Report
 from app.models.profile import PublicProfile
 from app.schemas.matching import NotificationUpdateRequest, ReportRequest, TargetRequest
-from app.services import profile_service
+from app.services import admin_alert_service, profile_service
+from app.services.email_service import EmailService
 
 router = APIRouter()
 
@@ -80,13 +81,23 @@ def unblock(profile_id: uuid.UUID, current: CurrentUser = Depends(get_current_us
 # ---------- 신고 (설계도 §27) ----------
 
 @router.post("/reports", status_code=status.HTTP_201_CREATED)
-def report(payload: ReportRequest, current: CurrentUser = Depends(get_current_user), db: Session = Depends(get_db)):
+def report(
+    payload: ReportRequest,
+    background: BackgroundTasks,
+    current: CurrentUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     enforce_rate_limit(f"report:{current.id}", 5, 3600)
-    target = _target_user_id(db, current, payload.profile_id)
     if payload.match_id:
+        # 대화방 기준 신고: 대화가 끝났거나 상대가 탈퇴·정지돼도 신고할 수 있다 (상대 공개 프로필이 없어도 됨)
         match = db.get(Match, payload.match_id)
-        if match is None or not match.has_member(current.id) or not match.has_member(target):
+        if match is None or not match.has_member(current.id):
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="대화방 정보가 올바르지 않습니다.")
+        target = match.partner_of(current.id)
+        if payload.profile_id and _target_user_id(db, current, payload.profile_id) != target:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="대화방 정보가 올바르지 않습니다.")
+    else:
+        target = _target_user_id(db, current, payload.profile_id)
     open_report = (
         db.query(Report.id)
         .filter(
@@ -107,6 +118,10 @@ def report(payload: ReportRequest, current: CurrentUser = Depends(get_current_us
     )
     db.add(row)
     db.commit()
+
+    # 신고 담당 운영진에게 바로 메일 (응답을 보낸 뒤 발송). 메일에는 사유와 관리자 화면 링크만 넣는다.
+    recipients = admin_alert_service.admin_emails_with(db, "reports:update")
+    background.add_task(admin_alert_service.send_all, EmailService.send_admin_new_report, recipients, payload.reason)
     return {"report_id": str(row.id), "status": row.status}
 
 
