@@ -377,6 +377,7 @@ def list_users(
                 "status": u.status,
                 "onboarding_stage": stages.get(u.id, "PROFILE"),
                 "reports_received": reports or 0,
+                "last_active_at": u.last_active_at.isoformat() if u.last_active_at else None,
                 "created_at": u.created_at.isoformat(),
             }
             for u, nick, reports in rows
@@ -442,6 +443,7 @@ def get_user(
         "subject_code": pseudonymous_code(user.id),
         "status": user.status,
         "created_at": user.created_at.isoformat(),
+        "last_active_at": user.last_active_at.isoformat() if user.last_active_at else None,
         "profile": profile_service.build_card(db, profile) if profile else None,
         # 카드는 공개 설정에 따라 캠퍼스·학과가 숨겨질 수 있어서, 관리자에게는 실제 값을 따로 보여준다
         "campus": {"id": str(profile.campus_id), "name": profile.campus.name} if profile else None,

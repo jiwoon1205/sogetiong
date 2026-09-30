@@ -27,6 +27,9 @@ class User(Base):
     created_at: Mapped[datetime] = created_at()
     updated_at: Mapped[datetime] = updated_at()
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # 마지막 접속 (관리자 확인용). 로그인할 때, 그리고 사이트를 쓰는 동안 10분에 한 번씩 기록한다.
+    # 세션은 로그아웃하면 지워지므로 여기에 따로 남긴다.
+    last_active_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     public_profile = relationship("PublicProfile", back_populates="user", uselist=False)
     private_profile = relationship("PrivateProfile", back_populates="user", uselist=False)

@@ -7,7 +7,7 @@ import { ProfileCard } from "@/components/ProfileCard";
 import { Button, Field, Input, Notice, Segmented, Select, Spinner } from "@/components/ui";
 import { USER_STATUS_LABEL, adminApi, useAdmin } from "@/lib/admin";
 import { api, errorMessage } from "@/lib/api";
-import { dateTime } from "@/lib/format";
+import { dateTime, timeAgo } from "@/lib/format";
 import { GENDER_LABEL, TIER_LABEL, TIER_OPTIONS, type AppearanceTier, type Card } from "@/lib/types";
 
 type Gender = "MALE" | "FEMALE";
@@ -18,6 +18,7 @@ type Detail = {
   subject_code: string;
   status: string;
   created_at: string;
+  last_active_at: string | null;
   profile: Card | null;
   campus: { id: string; name: string } | null;
   department: { id: string; name: string } | null;
@@ -59,7 +60,8 @@ export default function UserDetail() {
       <div className="mb-8 mt-3 flex flex-wrap items-baseline gap-x-4 gap-y-1">
         <h1 className="font-mono text-[26px] font-semibold tracking-wide">{d.subject_code}</h1>
         <p className="text-[13px] text-ink-faint">
-          {dateTime(d.created_at)} 가입{d.deleted_at && <> · {dateTime(d.deleted_at)} 탈퇴</>} · {USER_STATUS_LABEL[d.status] ?? d.status} · 받은 신고 <span className="num">{d.reports_received}</span>건
+          {dateTime(d.created_at)} 가입{d.deleted_at && <> · {dateTime(d.deleted_at)} 탈퇴</>} · 마지막 접속{" "}
+          {d.last_active_at ? <span title={dateTime(d.last_active_at)}>{timeAgo(d.last_active_at)}</span> : "기록 없음"} · {USER_STATUS_LABEL[d.status] ?? d.status} · 받은 신고 <span className="num">{d.reports_received}</span>건
         </p>
       </div>
 

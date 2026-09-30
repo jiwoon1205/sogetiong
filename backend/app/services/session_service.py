@@ -17,7 +17,7 @@ from app.core.rate_limit import client_ip
 from app.core.security import hash_token, new_token
 from app.core.time import utcnow
 from app.models.admin import AdminSession
-from app.models.user import UserSession
+from app.models.user import User, UserSession
 
 APP_CLIENT_HEADER = "X-Client-Type"
 CSRF_HEADER = "X-CSRF-Token"
@@ -44,6 +44,9 @@ def create_user_session(db: Session, user_id: uuid.UUID, request: Request) -> Is
     settings = get_settings()
     token, csrf = new_token(), new_token()
     now = utcnow()
+    user = db.get(User, user_id)
+    if user is not None:
+        user.last_active_at = now  # 로그인·가입 = 접속
     db.add(
         UserSession(
             user_id=user_id,

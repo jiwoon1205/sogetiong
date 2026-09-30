@@ -42,6 +42,9 @@ class CurrentAdmin:
     session: AdminSession
 
 
+LAST_ACTIVE_INTERVAL = timedelta(minutes=10)
+
+
 def _unauthorized(detail: str = "로그인이 필요합니다.") -> HTTPException:
     return HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=detail)
 
@@ -83,10 +86,17 @@ def get_current_user(
     if user is None or user.status != "ACTIVE":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="이용할 수 없는 계정입니다.")
 
+    changed = False
     # 사용할 때마다 만료 연장 (1시간에 한 번만 DB에 기록)
     if now - as_utc(session.last_used_at) > timedelta(hours=1):
         session.last_used_at = now
         session.expires_at = now + timedelta(days=settings.session_days)
+        changed = True
+    # 마지막 접속 시각 (관리자 화면용, 10분에 한 번만 DB에 기록)
+    if user.last_active_at is None or now - as_utc(user.last_active_at) > LAST_ACTIVE_INTERVAL:
+        user.last_active_at = now
+        changed = True
+    if changed:
         db.commit()
 
     return CurrentUser(id=user.id, user=user, session=session)

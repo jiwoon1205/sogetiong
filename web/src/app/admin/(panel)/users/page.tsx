@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Input, PageTitle, Select, Spinner } from "@/components/ui";
 import { USER_STATUS_LABEL, adminApi } from "@/lib/admin";
-import { cn, dateTime } from "@/lib/format";
+import { cn, dateTime, timeAgo } from "@/lib/format";
 
 type UserRow = {
   user_id: string;
@@ -13,6 +13,7 @@ type UserRow = {
   status: string;
   onboarding_stage?: string;
   reports_received: number;
+  last_active_at: string | null;
   created_at: string;
 };
 
@@ -58,7 +59,7 @@ export default function UsersPage() {
         <Spinner />
       ) : (
         <div className="overflow-x-auto rounded-card border border-line bg-paper-card">
-          <table className="w-full min-w-[44rem] text-[14px]">
+          <table className="w-full min-w-[50rem] text-[14px]">
             <thead className="border-b border-line text-left text-[12.5px] text-ink-faint">
               <tr>
                 <th className="px-5 py-3 font-normal">코드</th>
@@ -66,6 +67,7 @@ export default function UsersPage() {
                 <th className="px-5 py-3 font-normal">상태</th>
                 <th className="px-5 py-3 font-normal">가입 단계</th>
                 <th className="px-5 py-3 text-right font-normal">받은 신고</th>
+                <th className="px-5 py-3 font-normal">마지막 접속</th>
                 <th className="px-5 py-3 font-normal">가입</th>
               </tr>
             </thead>
@@ -83,6 +85,9 @@ export default function UsersPage() {
                     {u.onboarding_stage ? STAGE_LABEL[u.onboarding_stage] ?? u.onboarding_stage : "—"}
                   </td>
                   <td className={cn("num px-5 py-3 text-right", u.reports_received > 0 && "font-semibold text-brick")}>{u.reports_received}</td>
+                  <td className="px-5 py-3 text-ink-soft" title={u.last_active_at ? dateTime(u.last_active_at) : undefined}>
+                    {u.last_active_at ? timeAgo(u.last_active_at) : "—"}
+                  </td>
                   <td className="px-5 py-3 text-ink-soft">{dateTime(u.created_at)}</td>
                 </tr>
               ))}
