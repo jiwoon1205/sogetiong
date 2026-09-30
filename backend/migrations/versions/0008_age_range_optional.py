@@ -8,8 +8,8 @@
   - min_age가 35보다 크면 → 35
 - CHECK(min_age <= max_age)는 그대로 둔다. 한쪽이 NULL이면 DB가 통과시킨다.
 
-Revision ID: 0007_age_range_optional
-Revises: 0006_matching_tier
+Revision ID: 0008_age_range_optional
+Revises: 0007_photo_review_note
 Create Date: 2026-09-30
 """
 from typing import Sequence, Union
@@ -17,8 +17,9 @@ from typing import Sequence, Union
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "0007_age_range_optional"
-down_revision: Union[str, None] = "0006_matching_tier"
+revision: str = "0008_age_range_optional"
+# 같은 날 만든 0007_photo_review_note 다음 순서 (둘 다 0006 뒤에 붙어 있어서 서버가 켜지지 않았음 → 한 줄로 이음)
+down_revision: Union[str, None] = "0007_photo_review_note"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
