@@ -46,6 +46,10 @@ export default function SettingsPage() {
         <p className="mt-4 text-[13px] leading-relaxed text-ink-faint">
           학과 변경, 불편한 점, 그 밖의 문의는 메일로 보내주세요. <SupportContact prefix="" />
         </p>
+        {/* 지금 보고 있는 화면이 어느 커밋으로 만든 것인지 (배포가 제대로 됐는지 확인용) */}
+        <p className="mt-8 text-center text-[11.5px] text-ink-faint">
+          버전 <span className="font-mono">{process.env.NEXT_PUBLIC_APP_VERSION || "dev"}</span>
+        </p>
       </section>
 
       <DeleteAccount open={deleteOpen} onClose={() => setDeleteOpen(false)} onDone={() => router.replace("/")} />

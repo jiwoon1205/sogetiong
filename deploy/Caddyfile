@@ -4,9 +4,9 @@
 private-matching.com {
 	encode zstd gzip
 
-	# 사진 업로드(최대 5MB)보다 넉넉하게
+	# 사진 업로드: 한 번에 최대 3장 × 한 장 10MB 보다 넉넉하게 (보통은 화면에서 줄여서 1~2MB씩 보냄)
 	request_body {
-		max_size 10MB
+		max_size 35MB
 	}
 
 	header {

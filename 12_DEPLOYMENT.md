@@ -166,7 +166,14 @@ GitHub Actions (.github/workflows/build-images.yml)
    docker compose ps
    docker image prune -f          # 안 쓰는 예전 이미지 정리 (디스크 20GB 아끼기)
    ```
-4. https://private-matching.com/health 확인
+4. https://private-matching.com/health 확인 → `"version"`이 방금 푸시한 커밋 번호 7자리인지 본다
+5. 휴대폰으로 사이트 → 설정 화면 맨 아래 **버전**도 같은 7자리인지 확인 (다르면 화면 이미지가 안 바뀐 것)
+
+#### 새 기능이 화면에 안 보일 때 (2026-09-30: 나이 가로 바가 안 보이고 예전 숫자 입력 칸이 그대로였음)
+- GitHub **Actions** 탭에서 `build-images`가 초록 체크인지 (빨간 X면 이미지가 안 만들어짐)
+- 서버에서 `docker compose pull` → `docker compose up -d`를 했는지 (push만 하면 서버는 바뀌지 않는다)
+- 서버에서 `docker compose images` → web·backend가 방금 받은 이미지인지 (`IMAGE_TAG`로 예전 번호에 고정해 두지 않았는지 `echo $IMAGE_TAG`, `.env` 확인)
+- 휴대폰 브라우저 새로고침 (앱처럼 홈 화면에 추가했다면 완전히 닫았다가 다시 열기)
 
 ⚠️ 서버에서 `docker compose up -d --build`는 쓰지 않는다 (서버에서 직접 빌드 → 멈춤).
 

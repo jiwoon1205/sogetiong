@@ -27,10 +27,8 @@ jobs:
         include:
           - name: backend
             context: ./backend
-            build_args: ""
           - name: web
             context: ./web
-            build_args: BACKEND_URL=http://backend:8000
     steps:
       - uses: actions/checkout@v5
 
@@ -48,6 +46,7 @@ jobs:
           SHORT_SHA="${GITHUB_SHA::7}"
           IMAGE="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/sogetiong-${{ matrix.name }}"
           echo "list=${IMAGE}:latest,${IMAGE}:${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+          echo "version=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
 
       - uses: docker/build-push-action@v6
         with:
@@ -55,6 +54,10 @@ jobs:
           platforms: linux/amd64 # GCP e2-micro는 x86(amd64)
           push: true
           tags: ${{ steps.tags.outputs.list }}
-          build-args: ${{ matrix.build_args }}
+          # APP_VERSION: 커밋 번호 7자리 → 화면(설정 맨 아래)과 /health 에 표시돼서 새 버전이 배포됐는지 바로 확인 가능
+          # (backend는 BACKEND_URL을 쓰지 않으므로 무시된다)
+          build-args: |
+            APP_VERSION=${{ steps.tags.outputs.version }}
+            BACKEND_URL=http://backend:8000
           cache-from: type=gha,scope=${{ matrix.name }}
           cache-to: type=gha,mode=max,scope=${{ matrix.name }}

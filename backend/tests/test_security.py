@@ -10,6 +10,7 @@ from tests.conftest import (
     AdminClient,
     UserClient,
     admin_login,
+    approve,
     campus_id,
     discover_ids,
     jpeg_with_exif,
@@ -328,10 +329,30 @@ def test_evaluation_change_is_audited_with_before_after(sent_codes, db):
 
 
 def test_resubmit_limit_after_evaluation(sent_codes, db):
+    """평가 후 30일 안: 바로 재검토는 계정당 1번. 그 재검토가 승인되면 다음은 30일 뒤 (2026-09-30)."""
     admin = admin_login(db)
     a = ready_user(sent_codes, db, admin, "a@hufs.ac.kr")
+    status_ = a.get("/api/v1/me/photos").json()["resubmit"]
+    assert status_["allowed"] and status_["uses_free_rereview"]
+    r = a.post("/api/v1/me/photos", files={"file": ("x.jpg", jpeg_with_exif(), "image/jpeg")})
+    assert r.status_code == 201, r.text
+    assert r.json()["used_free_rereview"] is True
+    approve(admin, r.json()["photo_id"])
+    # 한 번 썼으니 이제는 막힌다
+    assert a.get("/api/v1/me/photos").json()["resubmit"]["allowed"] is False
     r = a.post("/api/v1/me/photos", files={"file": ("x.jpg", jpeg_with_exif(), "image/jpeg")})
     assert r.status_code == 429
+
+
+def test_rejected_free_rereview_is_not_used_up(sent_codes, db):
+    """바로 재검토로 낸 사진이 반려되면 기회를 쓴 것으로 치지 않는다."""
+    admin = admin_login(db)
+    a = ready_user(sent_codes, db, admin, "a@hufs.ac.kr")
+    pid = a.post("/api/v1/me/photos", files={"file": ("x.jpg", jpeg_with_exif(), "image/jpeg")}).json()["photo_id"]
+    r = admin.put(f"/api/v1/admin/photo-reviews/{pid}/evaluation", json={"decision": "REJECTED", "reject_reason": "얼굴이 잘 안 보여요"})
+    assert r.status_code == 200, r.text
+    r = a.post("/api/v1/me/photos", files={"file": ("x.jpg", jpeg_with_exif(), "image/jpeg")})
+    assert r.status_code == 201, r.text
 
 
 def test_super_admin_always_has_every_permission(sent_codes, db):

@@ -12,6 +12,9 @@ COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
 ARG BACKEND_URL=http://backend:8000
 ENV BACKEND_URL=$BACKEND_URL
+# 어느 커밋으로 만든 화면인지 (GitHub Actions가 커밋 번호 7자리를 넣어줌) → 설정 화면 맨 아래에 표시
+ARG APP_VERSION=dev
+ENV NEXT_PUBLIC_APP_VERSION=$APP_VERSION
 RUN npm run build
 
 # 3) 실행 (빌드 결과만 담은 작은 이미지)

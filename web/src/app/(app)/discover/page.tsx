@@ -1,9 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { MatchCelebration } from "@/components/MatchCelebration";
 import { ProfileCard } from "@/components/ProfileCard";
 import { Button, ButtonLink, Notice, Spinner } from "@/components/ui";
 import { ApiError, api, errorMessage } from "@/lib/api";
+import { markMatchSeen } from "@/lib/seenMatches";
 import type { Card } from "@/lib/types";
 
 type State =
@@ -39,6 +41,7 @@ const BLOCKED_COPY: Record<string, { title: string; body: string; href: string; 
 export default function DiscoverPage() {
   const [state, setState] = useState<State>({ kind: "loading" });
   const [busy, setBusy] = useState(false);
+  // 방금 서로 좋아요가 된 상대 → 축하 화면
   const [matched, setMatched] = useState<{ card: Card; matchId: string } | null>(null);
   const [error, setError] = useState("");
   // 오늘 남은 좋아요 (한국 시간 자정에 다시 충전)
@@ -77,7 +80,11 @@ export default function DiscoverPage() {
             body: { profile_id: card.profile_id },
           });
           setLikes((prev) => (prev ? { ...prev, left: res.likes_left_today } : prev));
-          if (res.matched && res.match_id) setMatched({ card, matchId: res.match_id });
+          if (res.matched && res.match_id) {
+            // 이 기기에서 축하 화면을 이미 봤다고 기록 → 대화 목록에서 한 번 더 뜨지 않게
+            markMatchSeen(res.match_id);
+            setMatched({ card, matchId: res.match_id });
+          }
         } else {
           await api("/passes", { method: "POST", body: { profile_id: card.profile_id } });
         }
@@ -106,89 +113,89 @@ export default function DiscoverPage() {
     return () => window.removeEventListener("keydown", onKey);
   }, [act, matched]);
 
-  if (state.kind === "loading") return <Spinner label="오늘의 추천을 고르는 중" />;
-  if (state.kind === "error") return <Notice tone="error">{state.message}</Notice>;
-  if (state.kind === "blocked") {
-    const copy = BLOCKED_COPY[state.code] ?? BLOCKED_COPY.PROFILE_REQUIRED;
-    return (
-      <EmptyState title={copy.title} body={copy.body}>
-        <ButtonLink href={copy.href}>{copy.cta}</ButtonLink>
-      </EmptyState>
-    );
-  }
-  if (state.cards.length === 0) {
-    return (
-      <EmptyState title="지금은 조건에 맞는 사람이 없어요" body="매칭 범위를 넓히면 더 많은 프로필을 볼 수 있어요. 조건은 자동으로 바뀌지 않아요.">
-        <ButtonLink href="/settings" variant="secondary">
-          매칭 조건 바꾸기
-        </ButtonLink>
-        <Button variant="ghost" onClick={load}>
-          다시 불러오기
-        </Button>
-      </EmptyState>
-    );
-  }
-
-  const [current, next] = state.cards;
-  return (
-    <div className="mx-auto max-w-app">
-      <div className="mb-5 flex items-baseline justify-between">
-        <p className="eyebrow">오늘의 추천</p>
-        <p className="text-[12.5px] text-ink-faint">
-          {likes && (
-            <>
-              오늘 남은 좋아요 <span className="num">{likes.left}</span>/<span className="num">{likes.limit}</span>
-              {" · "}
-            </>
-          )}
-          <span className="num">{state.cards.length}</span>명 남음
-        </p>
-      </div>
-
-      <SwipeCard key={current.profile_id} onSwipe={act} disabled={busy}>
-        <ProfileCard card={current} />
-      </SwipeCard>
-      {next && <div aria-hidden className="mx-4 -mt-2 h-3 rounded-b-card border border-t-0 border-line bg-paper-deep" />}
-
-      {error && <div className="mt-4"><Notice tone="error">{error}</Notice></div>}
-
-      <div className="mt-6 grid grid-cols-2 gap-3">
-        <Button variant="secondary" size="lg" onClick={() => act("pass")} disabled={busy}>
-          넘기기
-        </Button>
-        <Button size="lg" onClick={() => act("like")} disabled={busy || (likes !== null && likes.left <= 0)}>
-          좋아요
-        </Button>
-      </div>
-      {likes && likes.left <= 0 && (
-        <p className="mt-3 text-center text-[12.5px] text-ink-soft">오늘 좋아요를 모두 사용했어요. 자정에 다시 충전돼요.</p>
-      )}
-      <p className="mt-4 hidden text-center text-[12px] text-ink-faint sm:block">키보드 ← 넘기기 · → 좋아요</p>
-      <p className="mt-4 text-center text-[12px] text-ink-faint sm:hidden">카드를 옆으로 밀어도 돼요</p>
-
-      {matched && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-paper/95 px-6">
-          <div className="w-full max-w-sm text-center">
-            <p className="eyebrow mb-4 text-brick">서로 좋아요</p>
-            <h2 className="font-serif text-[30px] font-semibold leading-snug">
-              {matched.card.nickname}님과
-              <br />
-              마음이 맞았어요
-            </h2>
-            <p className="mt-4 text-[14.5px] leading-relaxed text-ink-soft">이름도 얼굴도 모르는 채로, 대화부터 시작해보세요.</p>
-            <div className="mt-8 space-y-3">
-              <ButtonLink href={`/chat/${matched.matchId}`} size="lg" className="w-full">
-                대화 시작하기
-              </ButtonLink>
-              <Button variant="ghost" className="w-full" onClick={() => setMatched(null)}>
-                계속 둘러보기
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
+  // 축하 화면은 아래 화면 종류(카드·빈 화면·로딩)와 상관없이 항상 위에 띄운다.
+  // (예전 버그: 마지막 카드에서 매칭되면 목록을 다시 불러오느라 로딩/빈 화면으로 바뀌면서 축하 화면이 사라졌다)
+  const celebration = matched && (
+    <MatchCelebration
+      partnerName={matched.card.nickname}
+      matchId={matched.matchId}
+      onClose={() => {
+        markMatchSeen(matched.matchId);
+        setMatched(null);
+      }}
+    />
   );
+
+  return (
+    <>
+      {renderBody()}
+      {celebration}
+    </>
+  );
+
+  function renderBody() {
+    if (state.kind === "loading") return <Spinner label="오늘의 추천을 고르는 중" />;
+    if (state.kind === "error") return <Notice tone="error">{state.message}</Notice>;
+    if (state.kind === "blocked") {
+      const copy = BLOCKED_COPY[state.code] ?? BLOCKED_COPY.PROFILE_REQUIRED;
+      return (
+        <EmptyState title={copy.title} body={copy.body}>
+          <ButtonLink href={copy.href}>{copy.cta}</ButtonLink>
+        </EmptyState>
+      );
+    }
+    if (state.cards.length === 0) {
+      return (
+        <EmptyState title="지금은 조건에 맞는 사람이 없어요" body="매칭 범위를 넓히면 더 많은 프로필을 볼 수 있어요. 조건은 자동으로 바뀌지 않아요.">
+          <ButtonLink href="/settings" variant="secondary">
+            매칭 조건 바꾸기
+          </ButtonLink>
+          <Button variant="ghost" onClick={load}>
+            다시 불러오기
+          </Button>
+        </EmptyState>
+      );
+    }
+
+    const [current, next] = state.cards;
+    return (
+      <div className="mx-auto max-w-app">
+        <div className="mb-5 flex items-baseline justify-between">
+          <p className="eyebrow">오늘의 추천</p>
+          <p className="text-[12.5px] text-ink-faint">
+            {likes && (
+              <>
+                오늘 남은 좋아요 <span className="num">{likes.left}</span>/<span className="num">{likes.limit}</span>
+                {" · "}
+              </>
+            )}
+            <span className="num">{state.cards.length}</span>명 남음
+          </p>
+        </div>
+
+        <SwipeCard key={current.profile_id} onSwipe={act} disabled={busy}>
+          <ProfileCard card={current} />
+        </SwipeCard>
+        {next && <div aria-hidden className="mx-4 -mt-2 h-3 rounded-b-card border border-t-0 border-line bg-paper-deep" />}
+
+        {error && <div className="mt-4"><Notice tone="error">{error}</Notice></div>}
+
+        <div className="mt-6 grid grid-cols-2 gap-3">
+          <Button variant="secondary" size="lg" onClick={() => act("pass")} disabled={busy}>
+            넘기기
+          </Button>
+          <Button size="lg" onClick={() => act("like")} disabled={busy || (likes !== null && likes.left <= 0)}>
+            좋아요
+          </Button>
+        </div>
+        {likes && likes.left <= 0 && (
+          <p className="mt-3 text-center text-[12.5px] text-ink-soft">오늘 좋아요를 모두 사용했어요. 자정에 다시 충전돼요.</p>
+        )}
+        <p className="mt-4 hidden text-center text-[12px] text-ink-faint sm:block">키보드 ← 넘기기 · → 좋아요</p>
+        <p className="mt-4 text-center text-[12px] text-ink-faint sm:hidden">카드를 옆으로 밀어도 돼요</p>
+      </div>
+    );
+  }
 }
 
 function EmptyState({ title, body, children }: { title: string; body: string; children?: React.ReactNode }) {

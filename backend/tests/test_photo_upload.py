@@ -98,3 +98,84 @@ def test_large_photo_uses_little_memory(tmp_path):
     used_mb = int(subprocess.run([sys.executable, "-c", script], env=env, capture_output=True, text=True, check=True).stdout.strip())
     # 예전 방식은 이 사진에 약 280MB를 썼다. 작게 풀기(draft) 덕분에 100MB 아래로 떨어져야 한다.
     assert used_mb < 100, used_mb
+
+
+# ---------- 2026-09-30: JPEG 업로드 오류 · 여러 장 제출 ----------
+
+def _mpo_bytes() -> bytes:
+    """휴대폰 카메라가 찍은 JPEG(MPO: 사진 안에 작은 사진이 하나 더 들어 있음)."""
+    out = BytesIO()
+    Image.new("RGB", (400, 300), (120, 90, 60)).save(
+        out, format="MPO", save_all=True, append_images=[Image.new("RGB", (160, 120), (1, 2, 3))]
+    )
+    return out.getvalue()
+
+
+@pytest.mark.parametrize(
+    "name,mime",
+    [("photo.jpg", "image/jpeg"), ("photo.jfif", "image/jpeg"), ("photo.jpeg", "image/jpg"), ("photo", ""), ("IMG.JPG", "application/octet-stream")],
+)
+def test_jpeg_is_accepted_whatever_the_name_or_mime(name, mime):
+    """이름·MIME이 제각각이어도 내용이 JPEG면 받는다 (윈도우 .jfif, 안드로이드 image/jpg 등)."""
+    result = process_upload(_upload(_image_bytes((300, 200)), name, mime))
+    assert result.mime_type == "image/jpeg"
+
+
+def test_phone_camera_mpo_jpeg_is_accepted():
+    data = _mpo_bytes()
+    assert Image.open(BytesIO(data)).format == "MPO"  # 예전에는 이 형식이라 거절됐다
+    result = process_upload(_upload(data))
+    assert (result.width, result.height) == (400, 300)
+    assert Image.open(BytesIO(result.data)).format == "JPEG"
+
+
+def test_fake_image_is_still_rejected():
+    with pytest.raises(PhotoValidationError):
+        process_upload(_upload(b"<html>not an image</html>", "evil.jpg", "image/jpeg"))
+
+
+def test_gif_is_rejected():
+    out = BytesIO()
+    Image.new("P", (10, 10)).save(out, format="GIF")
+    with pytest.raises(PhotoValidationError, match="jpg, png, webp"):
+        process_upload(_upload(out.getvalue(), "a.gif", "image/gif"))
+
+
+def test_upload_up_to_three_photos_as_one_submission(sent_codes, db):
+    from tests.conftest import admin_login, approve
+
+    a = signup(sent_codes, db, "a@hufs.ac.kr")
+    files = [("files", (f"{i}.jpg", _image_bytes((300, 400)), "image/jpeg")) for i in range(3)]
+    r = a.post("/api/v1/me/photos", files=files)
+    assert r.status_code == 201, r.text
+    assert r.json()["photo_count"] == 3
+    mine = a.get("/api/v1/me/photos").json()
+    assert len(mine["photos"]) == 1 and mine["photos"][0]["photo_count"] == 3
+
+    admin = admin_login(db)
+    queue = admin.get("/api/v1/admin/photo-reviews").json()["photos"]
+    assert len(queue) == 1 and queue[0]["photo_count"] == 3  # 대기열에는 묶음 하나
+    detail = admin.get(f"/api/v1/admin/photo-reviews/{queue[0]['photo_id']}").json()
+    assert len(detail["image_urls"]) == 3
+    for url in detail["image_urls"]:
+        assert admin.get(url).status_code == 200
+    approve(admin, queue[0]["photo_id"])
+    assert admin.get("/api/v1/admin/photo-reviews").json()["photos"] == []
+    assert a.get("/api/v1/me/photos").json()["photos"][0]["review_status"] == "APPROVED"
+
+
+def test_more_than_three_photos_is_rejected(sent_codes, db):
+    a = signup(sent_codes, db, "a@hufs.ac.kr")
+    files = [("files", (f"{i}.jpg", _image_bytes((50, 50)), "image/jpeg")) for i in range(4)]
+    r = a.post("/api/v1/me/photos", files=files)
+    assert r.status_code == 400
+    assert "3장" in r.json()["detail"]
+
+
+def test_one_bad_photo_saves_nothing(sent_codes, db):
+    a = signup(sent_codes, db, "a@hufs.ac.kr")
+    files = [("files", ("ok.jpg", _image_bytes((50, 50)), "image/jpeg")), ("files", ("bad.jpg", b"nope", "image/jpeg"))]
+    r = a.post("/api/v1/me/photos", files=files)
+    assert r.status_code == 400
+    assert "2번째 사진" in r.json()["detail"]
+    assert a.get("/api/v1/me/photos").json()["photos"] == []

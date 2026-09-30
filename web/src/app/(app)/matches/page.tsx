@@ -3,10 +3,12 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Initial } from "@/components/Initial";
+import { MatchCelebration } from "@/components/MatchCelebration";
 import { ReportModal } from "@/components/ReportModal";
 import { ButtonLink, Notice, PageTitle, Spinner } from "@/components/ui";
 import { api, errorMessage } from "@/lib/api";
 import { timeAgo } from "@/lib/format";
+import { markMatchSeen, unseenMatches } from "@/lib/seenMatches";
 import type { MatchItem } from "@/lib/types";
 
 type EndedMatch = { match_id: string; partner_nickname: string; matched_at: string; ended_at: string | null; report_pending: boolean };
@@ -17,10 +19,19 @@ export default function MatchesPage() {
 
   const [ended, setEnded] = useState<EndedMatch[]>([]);
   const [reporting, setReporting] = useState<string | null>(null);
+  // 내가 없을 때 생긴 새 매칭 (상대가 나중에 좋아요를 누른 경우) → 축하 화면 한 번
+  const [celebrate, setCelebrate] = useState<MatchItem | null>(null);
 
   useEffect(() => {
     api<{ matches: MatchItem[] }>("/matches")
-      .then((r) => setItems(r.matches))
+      .then((r) => {
+        setItems(r.matches);
+        const fresh = unseenMatches(r.matches.map((m) => m.match_id));
+        // 여러 개면 가장 최근 것 하나만 보여주고 나머지도 본 것으로 처리
+        const newest = r.matches.find((m) => fresh.includes(m.match_id));
+        if (newest) setCelebrate(newest);
+        if (fresh.length) markMatchSeen(...fresh);
+      })
       .catch((e) => setError(errorMessage(e)));
     api<{ matches: EndedMatch[] }>("/matches/ended")
       .then((r) => setEnded(r.matches))
@@ -86,6 +97,8 @@ export default function MatchesPage() {
           </ul>
         </section>
       )}
+
+      {celebrate && <MatchCelebration partnerName={celebrate.partner.nickname} matchId={celebrate.match_id} onClose={() => setCelebrate(null)} />}
 
       {reporting && (
         <ReportModal

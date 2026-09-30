@@ -49,7 +49,8 @@ class Settings(BaseSettings):
     # --- 사진 ---
     storage_backend: Literal["local"] = "local"
     local_storage_dir: str = "./private_storage"
-    photo_max_bytes: int = 5 * 1024 * 1024
+    photo_max_bytes: int = 10 * 1024 * 1024  # 한 장당. 화면에서 먼저 줄여서 보내므로 보통 1~2MB
+    photo_max_count: int = 3  # 한 번에 제출할 수 있는 사진 수
     photo_max_side: int = 2048
     photo_resubmit_days: int = 30  # 승인된 평가 이후 재평가 요청 간격
 

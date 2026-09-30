@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Integer, String, Text, Uuid
+from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Integer, String, Text, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -30,6 +30,12 @@ class UserPhoto(Base):
     reject_reason: Mapped[str | None] = mapped_column(String(300), nullable=True)
     # 검수할 때 쓴 내부 메모 (운영진 전용, 사용자에게 절대 안 보임). 승인·반려 모두 여기에 남는다
     review_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # 한 번에 제출한 사진 묶음 (최대 3장, 2026-09-30). 같은 묶음은 같은 submission_id를 가지고 함께 검수된다.
+    # position 0 = 묶음의 대표 사진 (관리자 대기열·평가 기록은 대표 사진 기준)
+    submission_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True, index=True)
+    position: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    # 평가 후 30일이 안 지났는데 "바로 재검토"(계정당 평생 1번)를 써서 낸 사진인지
+    free_rereview: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     uploaded_at: Mapped[datetime] = created_at()
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     reviewed_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("admin_users.id"), nullable=True)

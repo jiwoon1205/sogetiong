@@ -62,13 +62,17 @@ def reset_photo_alert() -> None:
 
 
 def pending_photo_query(db: Session):
-    """검수할 사진: 대기 + 확인 중, 활성 계정만 (정지·탈퇴한 사람의 사진은 검수하지 않는다)."""
+    """검수할 사진 묶음: 대기 + 확인 중, 활성 계정만 (정지·탈퇴한 사람의 사진은 검수하지 않는다).
+
+    여러 장을 함께 낸 경우 대표 사진(position 0)만 센다 → 대기열·알림 수 = 제출 묶음 수.
+    """
     return (
         db.query(UserPhoto)
         .join(User, User.id == UserPhoto.user_id)
         .filter(
             UserPhoto.review_status.in_(["PENDING", "IN_REVIEW"]),
             UserPhoto.upload_status != "DELETED",
+            UserPhoto.position == 0,
             User.status == "ACTIVE",
         )
     )

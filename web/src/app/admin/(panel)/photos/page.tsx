@@ -6,7 +6,14 @@ import { PageTitle, Spinner } from "@/components/ui";
 import { adminApi } from "@/lib/admin";
 import { cn, timeAgo } from "@/lib/format";
 
-type PhotoItem = { photo_id: string; subject_code: string; review_status: string; uploaded_at: string; reviewed_at: string | null };
+type PhotoItem = {
+  photo_id: string;
+  photo_count?: number; // 함께 제출한 사진 수 (최대 3)
+  subject_code: string;
+  review_status: string;
+  uploaded_at: string;
+  reviewed_at: string | null;
+};
 
 // "대기"에는 "확인 중"(누가 열어봤지만 평가를 안 끝낸 사진)도 함께 나온다
 const TABS = [
@@ -47,6 +54,11 @@ export default function PhotoQueue() {
                 <span>
                   <span className="font-mono text-[14.5px] font-semibold tracking-wide">{p.subject_code}</span>
                   <span className="ml-3 text-[13px] text-ink-faint">{timeAgo(p.uploaded_at)} 제출</span>
+                  {(p.photo_count ?? 1) > 1 && (
+                    <span className="ml-2 text-[12.5px] text-ink-soft">
+                      사진 <span className="num">{p.photo_count}</span>장
+                    </span>
+                  )}
                   {p.review_status === "IN_REVIEW" && <span className="ml-2 rounded bg-paper-deep px-1.5 py-0.5 text-[11.5px] text-ink-soft">확인 중</span>}
                 </span>
                 <span className={cn("text-[13px]", status === "PENDING" ? "text-brick" : "text-ink-soft")}>{status === "PENDING" ? "평가하기 →" : "보기 →"}</span>

@@ -9,6 +9,9 @@ COPY migrations ./migrations
 COPY app ./app
 
 ENV PYTHONUNBUFFERED=1
+# 어느 커밋으로 만든 이미지인지 (GitHub Actions가 커밋 번호 7자리를 넣어줌) → /health 에 표시
+ARG APP_VERSION=dev
+ENV APP_VERSION=$APP_VERSION
 EXPOSE 8000
 
 # 시작할 때: DB 구조 최신화 → 기본 데이터(학교·학과·관심사·관리자 역할) 확인 → 서버 실행

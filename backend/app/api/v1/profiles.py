@@ -1,8 +1,10 @@
 """/api/v1/me — 내 계정, 내 공개 프로필, 매칭 조건, 사진, 외적 평가."""
 
+import uuid
 from datetime import timedelta
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Response, UploadFile, status
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
@@ -309,82 +311,151 @@ def put_my_preferences(
 
 # ---------- 사진 ----------
 
-@router.post("/me/photos", status_code=status.HTTP_201_CREATED)
-def upload_photo(
-    background: BackgroundTasks,
-    file: UploadFile = File(...),
-    current: CurrentUser = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    settings = get_settings()
-    enforce_rate_limit(f"photo:{current.id}", 5, 3600)
+def _resubmit_status(db: Session, user_id: uuid.UUID) -> dict:
+    """지금 새 사진을 낼 수 있는지 (2026-09-30 규칙).
 
-    # 재평가는 마지막 평가 후 일정 기간이 지나야 요청할 수 있다
+    - 아직 평가를 받은 적 없음(첫 제출, 반려 뒤 다시 내기 등) → 언제든 가능
+    - 마지막 평가 후 30일이 지남 → 가능
+    - 30일 안 → "바로 재검토"를 계정당 평생 1번만 쓸 수 있다.
+      바로 재검토로 낸 사진이 승인까지 되면 "사용함"으로 친다.
+      (반려되거나, 검수 전에 다른 사진으로 바꾸면 쓴 것으로 치지 않는다)
+    """
+    settings = get_settings()
     last_eval = (
         db.query(AppearanceEvaluation)
-        .filter(AppearanceEvaluation.user_id == current.id)
+        .filter(AppearanceEvaluation.user_id == user_id)
         .order_by(AppearanceEvaluation.created_at.desc())
         .first()
     )
-    if last_eval and utcnow() - as_utc(last_eval.created_at) < timedelta(days=settings.photo_resubmit_days):
+    free_used = (
+        db.query(UserPhoto.id)
+        .filter(UserPhoto.user_id == user_id, UserPhoto.free_rereview.is_(True), UserPhoto.review_status == "APPROVED")
+        .first()
+        is not None
+    )
+    if last_eval is None:
+        return {"allowed": True, "uses_free_rereview": False, "free_rereview_left": not free_used, "next_available_at": None}
+    next_at = as_utc(last_eval.created_at) + timedelta(days=settings.photo_resubmit_days)
+    if utcnow() >= next_at:
+        return {"allowed": True, "uses_free_rereview": False, "free_rereview_left": not free_used, "next_available_at": None}
+    return {
+        "allowed": not free_used,
+        "uses_free_rereview": not free_used,
+        "free_rereview_left": not free_used,
+        "next_available_at": next_at.isoformat(),
+    }
+
+
+@router.post("/me/photos", status_code=status.HTTP_201_CREATED)
+def upload_photo(
+    background: BackgroundTasks,
+    files: list[UploadFile] | None = File(default=None),
+    file: UploadFile | None = File(default=None),  # 예전 화면(한 장) 호환
+    current: CurrentUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """사진 제출 (한 번에 1~3장). 함께 낸 사진은 한 묶음으로 함께 검수·평가된다."""
+    settings = get_settings()
+    uploads = [f for f in (files or []) if f is not None]
+    if file is not None:
+        uploads.append(file)
+    if not uploads:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="사진을 골라주세요.")
+    if len(uploads) > settings.photo_max_count:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"사진은 한 번에 {settings.photo_max_count}장까지 올릴 수 있어요.")
+
+    enforce_rate_limit(f"photo:{current.id}", 5, 3600)
+
+    rule = _resubmit_status(db, current.id)
+    if not rule["allowed"]:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail=f"사진 재평가는 {settings.photo_resubmit_days}일에 한 번만 요청할 수 있습니다.",
+            detail=f"바로 재검토는 이미 한 번 사용했어요. 마지막 평가 후 {settings.photo_resubmit_days}일이 지나면 다시 제출할 수 있어요.",
         )
 
-    try:
-        processed = process_upload(file)
-    except PhotoValidationError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    # 모두 검사를 통과해야 저장한다 (한 장이라도 문제가 있으면 아무것도 저장하지 않음)
+    processed = []
+    for index, upload in enumerate(uploads, start=1):
+        try:
+            processed.append(process_upload(upload))
+        except PhotoValidationError as exc:
+            prefix = f"{index}번째 사진: " if len(uploads) > 1 else ""
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"{prefix}{exc}") from exc
 
-    key = new_storage_key(current.id)
-    get_storage().save(key, processed.data)
+    storage = get_storage()
+    keys = []
+    for item in processed:
+        key = new_storage_key(current.id)
+        storage.save(key, item.data)
+        keys.append(key)
 
-    # 아직 검수 전인 이전 사진은 새 사진으로 대체
+    # 아직 검수 전인 이전 사진(묶음 전체)은 새 사진으로 대체
     db.query(UserPhoto).filter(
         UserPhoto.user_id == current.id, UserPhoto.review_status.in_(["PENDING", "IN_REVIEW"])
     ).update({"review_status": "SUPERSEDED"}, synchronize_session=False)
-    photo = UserPhoto(
-        user_id=current.id,
-        storage_key=key,
-        mime_type=processed.mime_type,
-        file_size=len(processed.data),
-        width=processed.width,
-        height=processed.height,
-        review_status="PENDING",
-    )
-    db.add(photo)
+    submission_id = uuid.uuid4()
+    photos = [
+        UserPhoto(
+            user_id=current.id,
+            storage_key=key,
+            mime_type=item.mime_type,
+            file_size=len(item.data),
+            width=item.width,
+            height=item.height,
+            review_status="PENDING",
+            submission_id=submission_id,
+            position=position,
+            free_rereview=rule["uses_free_rereview"],
+        )
+        for position, (key, item) in enumerate(zip(keys, processed))
+    ]
+    db.add_all(photos)
     db.commit()
 
-    # 검수 대기 사진이 10장 쌓이면 검수 담당 운영진에게 메일 한 통 (응답을 보낸 뒤 발송)
+    # 검수 대기 묶음이 10개 쌓이면 검수 담당 운영진에게 메일 한 통 (응답을 보낸 뒤 발송)
     pending = admin_alert_service.pending_photo_query(db).count()
     if admin_alert_service.photo_backlog_alert_due(pending):
         recipients = admin_alert_service.admin_emails_with(db, "photos:evaluate")
         background.add_task(admin_alert_service.send_all, EmailService.send_admin_photo_queue, recipients, pending)
-    return {"photo_id": str(photo.id), "review_status": photo.review_status, "message": "관리자 검수 대기 중입니다."}
+    return {
+        "photo_id": str(photos[0].id),
+        "photo_count": len(photos),
+        "review_status": "PENDING",
+        "used_free_rereview": rule["uses_free_rereview"],
+        "message": "관리자 검수 대기 중입니다.",
+    }
 
 
 @router.get("/me/photos")
 def list_my_photos(current: CurrentUser = Depends(get_current_user), db: Session = Depends(get_db)):
-    """사진 검수 상태만 알려준다. 원본 사진 주소(storage_key)는 본인에게도 보내지 않는다."""
-    photos = (
+    """사진 검수 상태만 알려준다 (제출 묶음 단위). 원본 사진 주소(storage_key)는 본인에게도 보내지 않는다."""
+    leaders = (
         db.query(UserPhoto)
-        .filter(UserPhoto.user_id == current.id, UserPhoto.upload_status != "DELETED")
+        .filter(UserPhoto.user_id == current.id, UserPhoto.upload_status != "DELETED", UserPhoto.position == 0)
         .order_by(UserPhoto.uploaded_at.desc())
         .limit(10)
+        .all()
+    )
+    counts = dict(
+        db.query(UserPhoto.submission_id, func.count(UserPhoto.id))
+        .filter(UserPhoto.submission_id.in_([p.submission_id for p in leaders if p.submission_id]))
+        .group_by(UserPhoto.submission_id)
         .all()
     )
     return {
         "photos": [
             {
                 "photo_id": str(p.id),
+                "photo_count": counts.get(p.submission_id, 1),
                 "review_status": p.review_status,
                 "reject_reason": p.reject_reason,
                 "uploaded_at": p.uploaded_at.isoformat(),
                 "reviewed_at": p.reviewed_at.isoformat() if p.reviewed_at else None,
             }
-            for p in photos
-        ]
+            for p in leaders
+        ],
+        "max_count": get_settings().photo_max_count,
+        "resubmit": _resubmit_status(db, current.id),
     }
 
 

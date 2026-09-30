@@ -122,9 +122,22 @@ def _photo_or_404(db: Session, photo_id: uuid.UUID) -> UserPhoto:
     return photo
 
 
-def _photo_summary(photo: UserPhoto) -> dict:
+def _submission_photos(db: Session, photo: UserPhoto) -> list[UserPhoto]:
+    """같이 제출한 사진 묶음 전체 (대표 사진 먼저). 예전 사진은 한 장짜리 묶음."""
+    if photo.submission_id is None:
+        return [photo]
+    return (
+        db.query(UserPhoto)
+        .filter(UserPhoto.submission_id == photo.submission_id, UserPhoto.upload_status != "DELETED")
+        .order_by(UserPhoto.position.asc())
+        .all()
+    )
+
+
+def _photo_summary(photo: UserPhoto, count: int | None = None) -> dict:
     return {
         "photo_id": str(photo.id),
+        "photo_count": count or 1,
         "subject_code": pseudonymous_code(photo.user_id),
         "review_status": photo.review_status,
         "uploaded_at": photo.uploaded_at.isoformat(),
@@ -146,9 +159,18 @@ def list_photo_reviews(
         if status_filter == "IN_REVIEW":
             query = query.filter(UserPhoto.review_status == "IN_REVIEW")
     else:
-        query = db.query(UserPhoto).filter(UserPhoto.review_status == status_filter, UserPhoto.upload_status != "DELETED")
+        query = db.query(UserPhoto).filter(
+            UserPhoto.review_status == status_filter, UserPhoto.upload_status != "DELETED", UserPhoto.position == 0
+        )
     photos = query.order_by(UserPhoto.uploaded_at.asc()).limit(100).all()
-    return {"photos": [_photo_summary(p) for p in photos]}
+    # 묶음마다 사진이 몇 장인지 (쿼리 1번)
+    counts = dict(
+        db.query(UserPhoto.submission_id, func.count(UserPhoto.id))
+        .filter(UserPhoto.submission_id.in_([p.submission_id for p in photos if p.submission_id]))
+        .group_by(UserPhoto.submission_id)
+        .all()
+    )
+    return {"photos": [_photo_summary(p, counts.get(p.submission_id)) for p in photos]}
 
 
 @router.get("/photo-reviews/{photo_id}")
@@ -158,8 +180,11 @@ def get_photo_review(
     db: Session = Depends(get_db),
 ):
     photo = _photo_or_404(db, photo_id)
+    group = _submission_photos(db, photo)
     if photo.review_status == "PENDING":
-        photo.review_status = "IN_REVIEW"
+        for p in group:
+            if p.review_status == "PENDING":
+                p.review_status = "IN_REVIEW"
         db.commit()
     history = (
         db.query(AppearanceEvaluation)
@@ -169,8 +194,10 @@ def get_photo_review(
         .all()
     )
     return {
-        **_photo_summary(photo),
+        **_photo_summary(photo, len(group)),
         "image_url": f"/api/v1/admin/photo-reviews/{photo.id}/image",
+        # 함께 제출한 사진 전부 (최대 3장). 묶음 전체를 보고 한 번에 평가한다
+        "image_urls": [f"/api/v1/admin/photo-reviews/{p.id}/image" for p in group],
         # 이 사진의 검수 결과 (반려/승인 후 '보기'로 들어왔을 때 보여준다)
         "reject_reason": photo.reject_reason,
         "review_note": photo.review_note,
@@ -230,6 +257,10 @@ def evaluate_photo(
     photo = _photo_or_404(db, photo_id)
     if photo.review_status == "SUPERSEDED":
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="새 사진으로 대체된 사진입니다.")
+    # 묶음으로 낸 사진은 대표 사진 기준으로 함께 평가한다
+    group = _submission_photos(db, photo)
+    photo = group[0]
+    siblings = group[1:]
 
     previous = profile_service.latest_evaluations(db, [photo.user_id]).get(photo.user_id)
     before = {**previous.scores(), "tier": previous.tier} if previous else None
@@ -238,6 +269,12 @@ def evaluate_photo(
     photo.reviewed_by = admin.id
     # 내부 메모는 승인·반려 상관없이 사진에 저장한다 (예전엔 반려 메모가 어디에도 저장되지 않았다)
     photo.review_note = payload.note.strip() if payload.note and payload.note.strip() else None
+
+    for sibling in siblings:
+        sibling.reviewed_at = now
+        sibling.reviewed_by = admin.id
+        sibling.review_status = "APPROVED" if payload.decision == "APPROVED" else "REJECTED"
+        sibling.reject_reason = None if payload.decision == "APPROVED" else payload.reject_reason
 
     if payload.decision == "APPROVED":
         photo.review_status = "APPROVED"
@@ -287,7 +324,7 @@ def evaluate_photo(
             background.add_task(_send_quietly, EmailService.send_photo_rejected, owner.email, payload.reject_reason)
     # 관리자 응답이라 등급을 보여줘도 된다 (사용자 쪽 API에는 절대 넣지 않음)
     return {
-        **_photo_summary(photo),
+        **_photo_summary(photo, len(group)),
         "scores": {k: v for k, v in after.items() if k != "tier"} if after else None,
         "tier": after["tier"] if after else None,
     }

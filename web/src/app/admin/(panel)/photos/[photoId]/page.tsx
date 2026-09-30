@@ -18,6 +18,8 @@ type Detail = {
   reject_reason: string | null;
   review_note: string | null; // 내부 메모 (운영진 전용)
   image_url: string;
+  image_urls?: string[]; // 함께 제출한 사진 전부 (최대 3장, 첫 번째가 대표)
+  photo_count?: number;
   evaluation_history: (Scores & { tier: AppearanceTier | null; note: string | null; created_at: string })[];
 };
 
@@ -95,9 +97,23 @@ export default function PhotoReview() {
 
       <div className="grid gap-8 lg:grid-cols-[minmax(0,26rem)_1fr]">
         <div>
-          <div className="overflow-hidden rounded-card border border-line bg-paper-deep" onContextMenu={(e) => e.preventDefault()}>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={detail.image_url} alt="검수 대상 사진" draggable={false} className="w-full select-none" />
+          {(detail.image_urls?.length ?? 1) > 1 && (
+            <p className="mb-2 text-[13px] text-ink-soft">
+              함께 제출한 사진 <span className="num">{detail.image_urls!.length}</span>장 · 모두 보고 한 번에 평가해요
+            </p>
+          )}
+          <div className="space-y-3">
+            {(detail.image_urls ?? [detail.image_url]).map((url, i, all) => (
+              <div key={url} className="relative overflow-hidden rounded-card border border-line bg-paper-deep" onContextMenu={(e) => e.preventDefault()}>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={url} alt={`검수 대상 사진 ${i + 1}`} draggable={false} className="w-full select-none" />
+                {all.length > 1 && (
+                  <span className="absolute left-2 top-2 rounded-sm bg-ink/75 px-1.5 py-0.5 text-[11px] text-paper">
+                    <span className="num">{i + 1}</span>/<span className="num">{all.length}</span>
+                  </span>
+                )}
+              </div>
+            ))}
           </div>
           <p className="mt-3 text-[12px] leading-relaxed text-ink-faint">
             이 화면 열람은 기록됩니다. 사진에는 열람자 정보가 워터마크로 들어가 있어요. 저장·캡처하지 마세요.

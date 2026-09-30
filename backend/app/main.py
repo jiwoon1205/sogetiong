@@ -1,3 +1,5 @@
+import os
+
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -52,4 +54,6 @@ app.include_router(admin_router, prefix=f"{API}/admin", tags=["admin"])
 
 @app.get("/health")
 def health_check() -> dict[str, str]:
-    return {"status": "ok"}
+    # version = 이 서버가 어느 커밋으로 만들어졌는지 (GitHub Actions가 넣어줌, 내 PC에서는 "dev")
+    # → 배포 후 https://private-matching.com/health 에서 새 버전이 떴는지 바로 확인할 수 있다
+    return {"status": "ok", "version": os.environ.get("APP_VERSION", "dev")}
