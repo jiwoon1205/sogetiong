@@ -34,7 +34,11 @@ def _viewer(db: Session, current: CurrentUser) -> matching_service.Person:
     if db.query(MatchingPreference.id).filter(MatchingPreference.user_id == current.id).first() is None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="PREFERENCES_REQUIRED")
     if get_settings().require_approved_photo_to_discover and not profile_service.has_approved_photo(db, current.id):
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="PHOTO_APPROVAL_REQUIRED")
+        # 사진을 "냈는데 기다리는 중"과 "아직 안 냄(또는 반려)"을 나눠서 알려준다.
+        # (2026-10-01: 사진을 안 낸 사람에게도 "검수 대기 중"이라고 보여줘서 제출을 빼먹는 문제가 있었다)
+        if profile_service.has_pending_photo(db, current.id):
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="PHOTO_APPROVAL_REQUIRED")
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="PHOTO_REQUIRED")
     viewer = profile_service.people_from_profiles(db, [profile])[0]
     # 추천은 "나와 외모 등급이 비슷한 사람" 순서라서, 내 등급이 정해져야 추천을 볼 수 있다.
     # (사진은 승인됐지만 등급이 없는 예전 평가 → 관리자가 다시 정할 때까지 "평가 중"으로 안내)

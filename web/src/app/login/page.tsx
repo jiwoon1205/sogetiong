@@ -6,6 +6,8 @@ import { useState } from "react";
 import { AuthFrame } from "@/components/AuthFrame";
 import { Button, EmailInput, Field, Input, Notice, PageTitle } from "@/components/ui";
 import { api, errorMessage } from "@/lib/api";
+import { firstStep } from "@/lib/onboarding";
+import type { Me } from "@/lib/types";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -20,7 +22,9 @@ export default function LoginPage() {
     setLoading(true);
     try {
       await api("/auth/login", { method: "POST", body: { email, password } });
-      router.replace("/discover");
+      // 가입 과정(프로필·조건·사진)이 덜 끝났으면 멈춘 곳부터 이어서 하게 한다
+      const me = await api<Me>("/me").catch(() => null);
+      router.replace(me && firstStep(me.onboarding) !== -1 ? "/onboarding" : "/discover");
     } catch (err) {
       setError(errorMessage(err));
       setLoading(false);

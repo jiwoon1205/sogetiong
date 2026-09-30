@@ -188,6 +188,20 @@ def has_approved_photo(db: Session, user_id: uuid.UUID) -> bool:
     )
 
 
+def has_pending_photo(db: Session, user_id: uuid.UUID) -> bool:
+    """검수를 기다리는 사진(대기·확인 중)이 있는지."""
+    return (
+        db.query(UserPhoto.id)
+        .filter(
+            UserPhoto.user_id == user_id,
+            UserPhoto.review_status.in_(["PENDING", "IN_REVIEW"]),
+            UserPhoto.upload_status != "DELETED",
+        )
+        .first()
+        is not None
+    )
+
+
 def discoverable_profiles_query(db: Session, university_id: uuid.UUID):
     """추천 후보가 될 수 있는 프로필: 활성 계정 + 같은 학교 + 승인된 사진 + 외모 등급 + 매칭 조건 설정.
 

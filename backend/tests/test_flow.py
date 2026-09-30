@@ -52,6 +52,9 @@ def test_full_flow_signup_to_chat(sent_codes, db):
     set_preferences(a)
     set_preferences(b)
 
+    # 사진을 아직 안 냈으면 "검수 대기"가 아니라 "사진 제출 필요"로 알려준다
+    assert a.get("/api/v1/discover").json()["detail"] == "PHOTO_REQUIRED"
+
     # 사진 승인 전에는 추천 불가
     photo_a = upload_photo(a)
     assert a.get("/api/v1/discover").json()["detail"] == "PHOTO_APPROVAL_REQUIRED"

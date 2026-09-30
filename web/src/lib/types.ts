@@ -47,6 +47,7 @@ export type Me = {
     profile_done: boolean;
     photo_status: "NOT_SUBMITTED" | "PENDING" | "IN_REVIEW" | "APPROVED" | "REJECTED" | "SUPERSEDED";
     preferences_done: boolean;
+    photo_approved?: boolean;
   };
 };
 

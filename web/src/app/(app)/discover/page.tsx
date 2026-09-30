@@ -23,6 +23,13 @@ const BLOCKED_COPY: Record<string, { title: string; body: string; href: string; 
     cta: "학과 선택하기",
   },
   PREFERENCES_REQUIRED: { title: "매칭 조건을 정해주세요", body: "어떤 사람을 만나고 싶은지 알려주면 추천을 시작할게요.", href: "/settings", cta: "매칭 조건 설정" },
+  // 사진을 아직 안 냈거나 반려됨 (2026-10-01: 예전에는 이 경우에도 "검수 대기 중"이라고 보여줬다)
+  PHOTO_REQUIRED: {
+    title: "사진을 제출해주세요",
+    body: "사진을 1~3장 제출하면 AI가 평가한 뒤 추천이 열려요. 사진은 다른 학생에게 절대 보이지 않아요.",
+    href: "/onboarding",
+    cta: "사진 제출하기",
+  },
   PHOTO_APPROVAL_REQUIRED: {
     title: "사진 검수를 기다리고 있어요",
     body: "AI가 사진 평가를 마치면 추천이 열려요. 보통 하루 안에 끝나요.",

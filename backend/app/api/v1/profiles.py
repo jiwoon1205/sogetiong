@@ -80,6 +80,8 @@ def get_me(current: CurrentUser = Depends(get_current_user), db: Session = Depen
             "profile_done": _profile_done(db, current),
             "photo_status": latest_photo.review_status if latest_photo else "NOT_SUBMITTED",
             "preferences_done": has_prefs,
+            # 예전에 승인된 사진이 있으면 (재검토가 반려돼도) 가입 과정은 끝난 것
+            "photo_approved": profile_service.has_approved_photo(db, current.id),
         },
     }
 

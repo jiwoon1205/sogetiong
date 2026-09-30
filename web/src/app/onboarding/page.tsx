@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { AuthFrame } from "@/components/AuthFrame";
 import { PhotoUpload } from "@/components/PhotoUpload";
 import { PreferencesForm } from "@/components/PreferencesForm";
@@ -10,6 +10,7 @@ import { Steps } from "@/components/Steps";
 import { PageTitle, Spinner } from "@/components/ui";
 import { useCatalog } from "@/lib/catalog";
 import { SessionGate, useSession } from "@/lib/session";
+import { firstStep } from "@/lib/onboarding";
 
 export default function OnboardingPage() {
   return (
@@ -23,9 +24,16 @@ function Onboarding() {
   const router = useRouter();
   const { me, refresh } = useSession();
   const { campuses, interests, loaded } = useCatalog(me.university_id);
-  const [step, setStep] = useState(0);
+  // 멈췄던 단계부터 이어서 한다 (예전에는 들어올 때마다 1단계부터 시작)
+  const [step, setStep] = useState(() => firstStep(me.onboarding));
+  const finished = step === -1;
 
-  if (!loaded) return <Spinner />;
+  // 이미 사진까지 냈으면(검수 대기·승인) 가입 과정은 끝났으므로 추천 화면으로
+  useEffect(() => {
+    if (finished) router.replace("/discover");
+  }, [finished, router]);
+
+  if (!loaded || finished) return <Spinner />;
 
   return (
     <AuthFrame>
@@ -59,3 +67,4 @@ function Onboarding() {
     </AuthFrame>
   );
 }
+

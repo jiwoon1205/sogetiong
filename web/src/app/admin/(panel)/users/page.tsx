@@ -6,7 +6,24 @@ import { Input, PageTitle, Select, Spinner } from "@/components/ui";
 import { USER_STATUS_LABEL, adminApi } from "@/lib/admin";
 import { cn, dateTime } from "@/lib/format";
 
-type UserRow = { user_id: string; subject_code: string; nickname: string | null; status: string; reports_received: number; created_at: string };
+type UserRow = {
+  user_id: string;
+  subject_code: string;
+  nickname: string | null;
+  status: string;
+  onboarding_stage?: string;
+  reports_received: number;
+  created_at: string;
+};
+
+// 가입 후 어느 단계까지 했는지 (어디서 멈췄는지 보려고)
+const STAGE_LABEL: Record<string, string> = {
+  PROFILE: "프로필 미완료",
+  PREFERENCES: "매칭 조건 미설정",
+  PHOTO: "사진 미제출",
+  REVIEW: "사진 검수 대기",
+  DONE: "완료",
+};
 
 export default function UsersPage() {
   const [items, setItems] = useState<UserRow[] | null>(null);
@@ -41,12 +58,13 @@ export default function UsersPage() {
         <Spinner />
       ) : (
         <div className="overflow-x-auto rounded-card border border-line bg-paper-card">
-          <table className="w-full min-w-[36rem] text-[14px]">
+          <table className="w-full min-w-[44rem] text-[14px]">
             <thead className="border-b border-line text-left text-[12.5px] text-ink-faint">
               <tr>
                 <th className="px-5 py-3 font-normal">코드</th>
                 <th className="px-5 py-3 font-normal">닉네임</th>
                 <th className="px-5 py-3 font-normal">상태</th>
+                <th className="px-5 py-3 font-normal">가입 단계</th>
                 <th className="px-5 py-3 text-right font-normal">받은 신고</th>
                 <th className="px-5 py-3 font-normal">가입</th>
               </tr>
@@ -61,6 +79,9 @@ export default function UsersPage() {
                   </td>
                   <td className="px-5 py-3">{u.nickname ?? <span className="text-ink-faint">—</span>}</td>
                   <td className={cn("px-5 py-3", u.status !== "ACTIVE" && "text-brick")}>{USER_STATUS_LABEL[u.status] ?? u.status}</td>
+                  <td className={cn("px-5 py-3", u.onboarding_stage === "DONE" ? "text-ink-soft" : "text-brick")}>
+                    {u.onboarding_stage ? STAGE_LABEL[u.onboarding_stage] ?? u.onboarding_stage : "—"}
+                  </td>
                   <td className={cn("num px-5 py-3 text-right", u.reports_received > 0 && "font-semibold text-brick")}>{u.reports_received}</td>
                   <td className="px-5 py-3 text-ink-soft">{dateTime(u.created_at)}</td>
                 </tr>

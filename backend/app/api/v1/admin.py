@@ -17,7 +17,7 @@ from app.core.time import as_utc, utcnow
 from app.db.session import get_db
 from app.deps import CurrentAdmin, get_admin_pending_mfa, get_current_admin, require_permission
 from app.models.admin import AdminUser, AuditLog
-from app.models.matching import Match, Message, Report
+from app.models.matching import Match, MatchingPreference, Message, Report
 from app.models.photo import AppearanceEvaluation, UserPhoto
 from app.models.profile import PrivateProfile, PublicProfile
 from app.models.university import Department
@@ -367,6 +367,7 @@ def list_users(
     if nickname:
         query = query.filter(PublicProfile.nickname.contains(nickname))
     rows = query.order_by(User.created_at.desc()).limit(100).all()
+    stages = _onboarding_stages(db, [u.id for u, _, _ in rows])
     return {
         "users": [
             {
@@ -374,12 +375,55 @@ def list_users(
                 "subject_code": pseudonymous_code(u.id),
                 "nickname": nick,
                 "status": u.status,
+                "onboarding_stage": stages.get(u.id, "PROFILE"),
                 "reports_received": reports or 0,
                 "created_at": u.created_at.isoformat(),
             }
             for u, nick, reports in rows
         ]
     }
+
+
+def _onboarding_stages(db: Session, user_ids: list[uuid.UUID]) -> dict[uuid.UUID, str]:
+    """가입 후 어느 단계까지 했는지 (관리자가 "어디서 멈췄는지" 보려고, 2026-10-01 추가).
+
+    PROFILE     : 프로필(학과) 미완료
+    PREFERENCES : 매칭 조건 미설정
+    PHOTO       : 사진 미제출 (반려 후 다시 안 낸 경우 포함)
+    REVIEW      : 사진 검수 대기
+    DONE        : 사진 승인됨
+    목록에 나온 사람들만 한 번에 조회한다 (사람 수만큼 DB를 부르지 않게).
+    """
+    if not user_ids:
+        return {}
+    profile_done = {
+        uid
+        for (uid,) in db.query(PublicProfile.user_id).filter(
+            PublicProfile.user_id.in_(user_ids), PublicProfile.department_id.isnot(None)
+        )
+    }
+    prefs_done = {uid for (uid,) in db.query(MatchingPreference.user_id).filter(MatchingPreference.user_id.in_(user_ids))}
+    photo_rows = (
+        db.query(UserPhoto.user_id, UserPhoto.review_status)
+        .filter(UserPhoto.user_id.in_(user_ids), UserPhoto.upload_status != "DELETED")
+        .all()
+    )
+    approved = {uid for uid, st in photo_rows if st == "APPROVED"}
+    pending = {uid for uid, st in photo_rows if st in ("PENDING", "IN_REVIEW")}
+
+    stages = {}
+    for uid in user_ids:
+        if uid in approved:
+            stages[uid] = "DONE"
+        elif uid in pending:
+            stages[uid] = "REVIEW"
+        elif uid not in profile_done:
+            stages[uid] = "PROFILE"
+        elif uid not in prefs_done:
+            stages[uid] = "PREFERENCES"
+        else:
+            stages[uid] = "PHOTO"
+    return stages
 
 
 @router.get("/users/{user_id}")
