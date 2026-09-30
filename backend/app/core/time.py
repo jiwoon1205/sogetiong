@@ -17,8 +17,8 @@ def as_utc(value: datetime | None) -> datetime | None:
 
 
 def age_on(birth_date: date, today: date | None = None) -> int:
-    """만 나이."""
-    today = today or utcnow().date()
+    """만 나이. 날짜는 한국 시간 기준 (UTC로 계산하면 생일이 오전 9시에야 바뀐다)."""
+    today = today or utcnow().astimezone(KST).date()
     years = today.year - birth_date.year
     if (today.month, today.day) < (birth_date.month, birth_date.day):
         years -= 1

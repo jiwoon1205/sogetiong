@@ -134,8 +134,8 @@ matching_preferences
 - id (PK)
 - user_id (FK unique)
   (preferred_gender는 2026-09-30에 private_profiles로 이동)
-- min_age
-- max_age
+- min_age nullable (NULL = 아래쪽 제한 없음)
+- max_age nullable (NULL = 위쪽 제한 없음, "35세 이상") — 둘 다 NULL = 나이 상관없음 (2026-09-30)
 - preferred_campus_mode
 - preferred_campus_id nullable
 - allow_all_campuses

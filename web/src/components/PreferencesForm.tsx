@@ -1,10 +1,18 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Button, Checkbox, Field, Input, Notice } from "@/components/ui";
+import { AgeRangeSlider } from "@/components/AgeRangeSlider";
+import { Button, Checkbox, Notice } from "@/components/ui";
 import { api, errorMessage } from "@/lib/api";
 import type { CampusWithDepts } from "@/lib/catalog";
+import { cn } from "@/lib/format";
 import { GENDER_LABEL, type MyProfile, type Preferences } from "@/lib/types";
+
+// 가로 바 양 끝 기본값 (서버가 age_floor / age_cap을 보내면 그 값을 쓴다)
+const AGE_FLOOR = 19;
+const AGE_CAP = 35;
+// 처음 설정할 때 가로 바의 시작 위치
+const DEFAULT_RANGE: [number, number] = [20, 27];
 
 const EMPTY: Preferences = {
   configured: false,
@@ -30,6 +38,11 @@ export function PreferencesForm({
   const [p, setP] = useState<Preferences>(EMPTY);
   // 만날 캠퍼스: 체크한 캠퍼스 목록 (전부 체크 = 모든 캠퍼스)
   const [campusIds, setCampusIds] = useState<string[]>([]);
+  // 나이: 가로 바에서 고른 범위와 "상관없음"을 따로 기억한다 → 상관없음을 껐다 켜도 고른 범위가 남아 있다
+  const [ageRange, setAgeRange] = useState<[number, number]>(DEFAULT_RANGE);
+  const [ageAny, setAgeAny] = useState(false);
+  const [floor, setFloor] = useState(AGE_FLOOR);
+  const [cap, setCap] = useState(AGE_CAP);
   const [error, setError] = useState("");
   const [saved, setSaved] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -39,6 +52,22 @@ export function PreferencesForm({
       .then(([res, profile]) => {
         // 설정 전이어도 가입할 때 고른 원하는 성별은 온다
         setP((prev) => (res.configured ? res : { ...prev, preferred_gender: res.preferred_gender, gender_locked_message: res.gender_locked_message }));
+        const f = res.age_floor ?? AGE_FLOOR;
+        const c = res.age_cap ?? AGE_CAP;
+        setFloor(f);
+        setCap(c);
+        if (res.configured) {
+          const any = res.age_any ?? (res.min_age == null && res.max_age == null);
+          setAgeAny(any);
+          // 저장된 범위를 가로 바에 표시. 바를 벗어나는 값은 가장 가까운 끝으로, 비어 있는 쪽은 끝으로.
+          // (상관없음이면 바는 흐리게 기본 위치에 두고, 끄면 그 위치에서 시작)
+          if (!any) {
+            const fit = (v: number) => Math.min(c, Math.max(f, v));
+            const lo = fit(res.min_age ?? f);
+            const hi = fit(res.max_age ?? c);
+            setAgeRange([Math.min(lo, hi), Math.max(lo, hi)]);
+          }
+        }
         const mode = res.configured ? res.campus_mode : "ALL";
         // 예전 방식("내 캠퍼스만")도 체크박스로 보여준다
         if (mode === "ALL") setCampusIds(campuses.map((c) => c.id));
@@ -63,13 +92,17 @@ export function PreferencesForm({
     setError("");
     if (campusIds.length === 0) return setError("만날 캠퍼스를 하나 이상 골라주세요.");
     const all = campuses.every((c) => campusIds.includes(c.id));
+    // 상관없음 → 둘 다 비움. 오른쪽 끝("35세 이상") → 최대 나이 비움 (위쪽 제한 없음)
+    const [lo, hi] = ageRange;
+    const min_age = ageAny ? null : lo;
+    const max_age = ageAny || hi >= cap ? null : hi;
     setLoading(true);
     try {
       const res = await api<Preferences>("/me/preferences", {
         method: "PUT",
         body: {
-          min_age: p.min_age,
-          max_age: p.max_age,
+          min_age,
+          max_age,
           campus_mode: all ? "ALL" : "SELECTED",
           campus_ids: all ? [] : campusIds,
           exclude_same_department: p.exclude_same_department,
@@ -107,14 +140,40 @@ export function PreferencesForm({
         </p>
       </div>
 
-      <Field label="나이">
-        <div className="flex items-center gap-3">
-          <Input type="number" min={19} max={60} value={p.min_age} onChange={(e) => change({ min_age: Number(e.target.value) })} className="num text-center" aria-label="최소 나이" />
-          <span className="text-ink-faint">~</span>
-          <Input type="number" min={19} max={60} value={p.max_age} onChange={(e) => change({ max_age: Number(e.target.value) })} className="num text-center" aria-label="최대 나이" />
-          <span className="shrink-0 text-[14px] text-ink-soft">세</span>
+      <div className="space-y-1.5">
+        <div className="flex items-baseline justify-between gap-3">
+          <p id="age-label" className="text-[13px] font-medium text-ink-soft">나이</p>
+          <p className={cn("num text-[19px] font-medium tracking-tight", ageAny ? "text-ink-faint" : "text-ink")} aria-live="polite">
+            {ageAny ? "나이 상관없음" : ageRangeText(ageRange, cap)}
+          </p>
         </div>
-      </Field>
+        <div role="group" aria-labelledby="age-label" className="rounded-md border border-line bg-paper-card px-4 pb-2 pt-1">
+          <AgeRangeSlider
+            floor={floor}
+            cap={cap}
+            value={ageRange}
+            disabled={ageAny}
+            onChange={(next) => {
+              setSaved(false);
+              setAgeRange(next);
+            }}
+          />
+          <div className="mt-1 border-t border-line pt-1">
+            <Checkbox
+              checked={ageAny}
+              onChange={(v) => {
+                setSaved(false);
+                setAgeAny(v);
+              }}
+            >
+              나이 상관없음
+            </Checkbox>
+          </div>
+        </div>
+        <p className="text-[12.5px] leading-relaxed text-ink-faint">
+          양쪽 끝을 끌어서 범위를 정해요. 상관없음으로 해도, 상대가 정한 나이 범위에 내가 들어가야 서로 추천돼요.
+        </p>
+      </div>
 
       <div className="space-y-1.5">
         <p className="text-[13px] font-medium text-ink-soft">만날 캠퍼스</p>
@@ -150,4 +209,12 @@ export function PreferencesForm({
       </Button>
     </form>
   );
+}
+
+/** "22세 ~ 27세", "22세 이상", "25세" 처럼 가로 바 위에 크게 보여줄 문구 */
+function ageRangeText([lo, hi]: [number, number], cap: number) {
+  if (lo >= cap) return `${cap}세 이상`;
+  if (hi >= cap) return `${lo}세 ~ ${cap}세 이상`;
+  if (lo === hi) return `${lo}세`;
+  return `${lo}세 ~ ${hi}세`;
 }

@@ -193,19 +193,43 @@ def get_my_preferences(current: CurrentUser = Depends(get_current_user), db: Ses
     # 원하는 성별은 가입할 때 정해서 바꿀 수 없다 → 보여주기만 한다
     preferred_gender = profile_service.preferred_genders_of(db, [current.id]).get(current.id, "ANY")
     if prefs is None:
-        return {"configured": False, "preferred_gender": preferred_gender, "gender_locked_message": gender_locked_message()}
+        return {"configured": False, "preferred_gender": preferred_gender, "gender_locked_message": gender_locked_message(), **_age_bounds()}
     return {
+        **_age_bounds(),
         "configured": True,
         "preferred_gender": preferred_gender,
         "gender_locked_message": gender_locked_message(),
         "min_age": prefs.min_age,
         "max_age": prefs.max_age,
+        # 둘 다 비어 있으면 "나이 상관없음"
+        "age_any": prefs.min_age is None and prefs.max_age is None,
         "campus_mode": prefs.campus_mode,
         "campus_ids": sorted(str(i) for i in prefs.campus_ids),
         "exclude_same_department": prefs.exclude_same_department,
         "changes_left_today": _changes_left(db, current),
         "changes_per_day": get_settings().preferences_changes_per_day,
     }
+
+
+def _age_bounds() -> dict:
+    """나이 가로 바의 양 끝 (화면이 이 값으로 바를 그린다). 왼쪽 = 가입 가능한 최소 나이, 오른쪽 = "N세 이상"."""
+    settings = get_settings()
+    return {"age_floor": settings.min_age, "age_cap": settings.preference_age_cap}
+
+
+def _normalize_age_range(min_age: int | None, max_age: int | None) -> tuple[int | None, int | None]:
+    """가로 바 기준으로 나이 범위를 정리한다.
+
+    - 최소 나이가 가입 가능한 나이보다 작으면 400 (아래 put에서 처리)
+    - 최소 나이가 오른쪽 끝(35)보다 크면 오른쪽 끝으로 맞춘다 ("35세 이상")
+    - 최대 나이가 오른쪽 끝(35) 이상이면 비운다 = 위쪽 제한 없음 ("35세 이상")
+    """
+    cap = get_settings().preference_age_cap
+    if min_age is not None and min_age > cap:
+        min_age = cap
+    if max_age is not None and max_age >= cap:
+        max_age = None
+    return min_age, max_age
 
 
 def _window_expired(pref: MatchingPreference, now) -> bool:
@@ -227,8 +251,9 @@ def put_my_preferences(
     db: Session = Depends(get_db),
 ):
     settings = get_settings()
-    if payload.min_age < settings.min_age:
+    if payload.min_age is not None and payload.min_age < settings.min_age:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"최소 나이는 {settings.min_age}세 이상이어야 합니다.")
+    min_age, max_age = _normalize_age_range(payload.min_age, payload.max_age)
 
     uni = current.user.university_id
     campus_ids = set(payload.campus_ids) if payload.campus_mode == "SELECTED" else set()
@@ -251,8 +276,8 @@ def put_my_preferences(
             before.campus_ids,
             before.exclude_same_department,
         ) != (
-            payload.min_age,
-            payload.max_age,
+            min_age,
+            max_age,
             payload.campus_mode,
             campus_ids,
             payload.exclude_same_department,
@@ -271,8 +296,8 @@ def put_my_preferences(
             )
         pref.changes_in_window += 1
 
-    pref.min_age = payload.min_age
-    pref.max_age = payload.max_age
+    pref.min_age = min_age
+    pref.max_age = max_age
     pref.campus_mode = payload.campus_mode
     pref.exclude_same_department = payload.exclude_same_department
 

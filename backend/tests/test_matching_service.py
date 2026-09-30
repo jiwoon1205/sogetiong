@@ -41,6 +41,39 @@ def test_age_range():
     assert mutually_compatible(viewer, person(age=23))
 
 
+def test_age_range_is_checked_both_ways():
+    """내 범위에 상대가 들어가도, 상대 범위에 내가 안 들어가면 추천되지 않는다 (양쪽 모두에게)."""
+    me = person(age=26, min_age=20, max_age=30)
+    younger_only = person(age=22, min_age=19, max_age=24)  # 나(26)는 상대 범위 밖
+    assert not mutually_compatible(me, younger_only)
+    assert not mutually_compatible(younger_only, me)
+
+
+def test_age_boundaries_are_inclusive():
+    viewer = person(min_age=22, max_age=25)
+    assert mutually_compatible(viewer, person(age=22))
+    assert mutually_compatible(viewer, person(age=25))
+    assert not mutually_compatible(viewer, person(age=21))
+    assert not mutually_compatible(viewer, person(age=26))
+
+
+def test_age_any_passes_every_age_but_other_side_still_applies():
+    """"나이 상관없음"(둘 다 None)이어도, 상대가 정한 나이 범위에 내가 들어가야 한다."""
+    anyone = person(age=31, min_age=None, max_age=None)
+    assert mutually_compatible(anyone, person(age=19, max_age=None))
+    assert mutually_compatible(anyone, person(age=45, max_age=None))
+    picky = person(age=22, min_age=20, max_age=25)  # 31살인 anyone은 이 사람 범위 밖
+    assert not mutually_compatible(anyone, picky)
+    assert not mutually_compatible(picky, anyone)
+
+
+def test_open_ended_max_age_means_no_upper_limit():
+    """"35세 이상" = max_age None → 35살 넘는 사람도 포함."""
+    viewer = person(min_age=27, max_age=None)
+    assert mutually_compatible(viewer, person(age=41, max_age=None))
+    assert not mutually_compatible(viewer, person(age=26))
+
+
 def test_campus_modes():
     assert not mutually_compatible(person(campus_mode="MY"), person(campus=CAMPUS_B))
     assert mutually_compatible(person(campus_mode="SELECTED", campus_ids={CAMPUS_B}), person(campus=CAMPUS_B))

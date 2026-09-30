@@ -55,8 +55,13 @@ export type Preferences = {
   /** 가입할 때 정함. 본인은 못 바꾸고 운영진에게 메일로 요청 */
   preferred_gender: "MALE" | "FEMALE" | "ANY";
   gender_locked_message?: string;
-  min_age: number;
-  max_age: number;
+  /** 나이 범위. null = 그쪽은 제한 없음. 둘 다 null = "나이 상관없음", max_age만 null = "35세 이상" */
+  min_age: number | null;
+  max_age: number | null;
+  age_any?: boolean;
+  /** 가로 바 양 끝 (서버 설정): 왼쪽 = 가입 가능한 최소 나이, 오른쪽 = "N세 이상" */
+  age_floor?: number;
+  age_cap?: number;
   campus_mode: "MY" | "ALL" | "SELECTED";
   campus_ids: string[];
   /** 같은 과 제외: 둘 중 한 명이라도 켰고 학과가 같으면 서로 추천되지 않음 */

@@ -133,6 +133,9 @@
   "exclude_same_department": false
 }
 ```
+- 나이 (2026-09-30, 화면은 가로 바 + "나이 상관없음"): `min_age`·`max_age`는 null 가능. 둘 다 null = 나이 상관없음. `max_age`가 null이거나 `age_cap`(기본 35) 이상이면 "35세 이상" = 위쪽 제한 없음으로 저장(null). `min_age`는 가입 가능한 최소 나이(`age_floor`, 19) 미만이면 거절, `age_cap`보다 크면 `age_cap`으로 맞춤.
+- GET 응답에는 `age_any`(나이 상관없음 여부), `age_floor`, `age_cap`(가로 바 양 끝)도 온다.
+- 내가 나이 상관없음이어도, 상대가 정한 나이 범위에 내가 들어가야 서로 추천된다 (양방향 확인).
 - 원하는 성별은 여기서 바꿀 수 없다 (가입 때 정함, 보내도 무시). GET 응답에는 `preferred_gender`(읽기 전용)와 `gender_locked_message`(운영진 메일 안내)가 온다. 조건을 아직 저장하지 않았어도(`configured: false`) `preferred_gender`는 온다.
 - 같은 과 제외: 둘 중 한 명이라도 켰고 학과가 같으면 서로 추천되지 않는다 (Hard Filter, 양방향).
 - 베타에서는 임의 학과 제외·선호 학과 가산을 쓰지 않는다 (DB 테이블만 남겨둠).

@@ -24,8 +24,8 @@ MAX_TIER_GAP = 2  # 상↔하
 @dataclass
 class Preferences:
     preferred_gender: str  # MALE / FEMALE / ANY
-    min_age: int
-    max_age: int
+    min_age: int | None  # None = 아래쪽 제한 없음
+    max_age: int | None  # None = 위쪽 제한 없음 ("35세 이상" 또는 "나이 상관없음")
     campus_mode: str  # MY / ALL / SELECTED
     campus_ids: set[uuid.UUID] = field(default_factory=set)
     exclude_same_department: bool = False
@@ -55,6 +55,15 @@ class Weights:
 
 # ---------- Stage 1: 조건 확인 ----------
 
+def age_in_range(age: int, min_age: int | None, max_age: int | None) -> bool:
+    """나이 조건. 비어 있는(None) 쪽은 확인하지 않는다 → 둘 다 None이면 "나이 상관없음"."""
+    if min_age is not None and age < min_age:
+        return False
+    if max_age is not None and age > max_age:
+        return False
+    return True
+
+
 def satisfies(viewer: Person, candidate: Person) -> bool:
     """candidate가 viewer의 매칭 조건을 모두 만족하는가? (한 방향)"""
     prefs = viewer.preferences
@@ -62,7 +71,7 @@ def satisfies(viewer: Person, candidate: Person) -> bool:
         return False
     if prefs.preferred_gender != "ANY" and candidate.gender != prefs.preferred_gender:
         return False
-    if not (prefs.min_age <= candidate.age <= prefs.max_age):
+    if not age_in_range(candidate.age, prefs.min_age, prefs.max_age):
         return False
     if prefs.campus_mode == "MY" and candidate.campus_id != viewer.campus_id:
         return False

@@ -204,3 +204,51 @@ def test_daily_like_limit_holds_when_likes_are_sent_at_the_same_time(sent_codes,
 def test_private_profile_keeps_preferred_gender(sent_codes, db):
     a = signup(sent_codes, db, "a@hufs.ac.kr", want="FEMALE")
     assert db.query(PrivateProfile).filter(PrivateProfile.user_id == _user_id(db, a)).one().preferred_gender == "FEMALE"
+
+
+# ---------- 나이 범위 (가로 바 + "나이 상관없음", 2026-09-30) ----------
+
+def test_age_any_is_saved_as_empty_and_reported(sent_codes, db):
+    a = signup(sent_codes, db, "a@hufs.ac.kr")
+    set_preferences(a, min_age=None, max_age=None)
+    body = a.get("/api/v1/me/preferences").json()
+    assert body["min_age"] is None and body["max_age"] is None and body["age_any"] is True
+    # 가로 바 양 끝은 서버 설정을 따른다
+    assert body["age_floor"] == get_settings().min_age
+    assert body["age_cap"] == get_settings().preference_age_cap
+
+
+def test_max_age_at_cap_means_no_upper_limit(sent_codes, db):
+    a = signup(sent_codes, db, "a@hufs.ac.kr")
+    cap = get_settings().preference_age_cap
+    set_preferences(a, min_age=22, max_age=cap)
+    body = a.get("/api/v1/me/preferences").json()
+    assert (body["min_age"], body["max_age"], body["age_any"]) == (22, None, False)
+    # 예전 화면처럼 cap보다 큰 값을 보내도 "35세 이상"으로 저장된다
+    set_preferences(a, min_age=22, max_age=50)
+    assert a.get("/api/v1/me/preferences").json()["max_age"] is None
+
+
+def test_age_range_rejects_below_signup_age_and_reversed_range(sent_codes, db):
+    a = signup(sent_codes, db, "a@hufs.ac.kr")
+    assert a.put("/api/v1/me/preferences", json={"min_age": 18, "max_age": 25, "campus_mode": "ALL"}).status_code == 422
+    assert a.put("/api/v1/me/preferences", json={"min_age": 27, "max_age": 22, "campus_mode": "ALL"}).status_code == 422
+
+
+def test_age_any_user_is_still_filtered_by_the_other_sides_range(sent_codes, db):
+    """내가 "나이 상관없음"이어도, 상대가 정한 나이 범위에 내가 들어가야 서로 추천된다."""
+    from datetime import date
+
+    admin = admin_login(db)
+    older = ready_user(sent_codes, db, admin, "old@hufs.ac.kr", gender="MALE", want="FEMALE",
+                       birth=date(1995, 1, 1), prefs={"min_age": None, "max_age": None})
+    young_only = ready_user(sent_codes, db, admin, "y@hufs.ac.kr", gender="FEMALE", want="MALE",
+                            birth=date(2004, 1, 1), prefs={"min_age": 19, "max_age": 25})
+    open_minded = ready_user(sent_codes, db, admin, "o@hufs.ac.kr", gender="FEMALE", want="MALE",
+                             birth=date(2004, 6, 1), prefs={"min_age": 20, "max_age": None})
+    assert discover_ids(older) == [open_minded.profile_id]
+    assert discover_ids(young_only) == []
+    assert discover_ids(open_minded) == [older.profile_id]
+    # 추천에 안 나온 사람에게 ID로 직접 LIKE해도 막힌다
+    r = older.post("/api/v1/likes", json={"profile_id": young_only.profile_id})
+    assert r.status_code == 404

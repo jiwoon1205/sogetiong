@@ -31,17 +31,21 @@ class PreferencesRequest(BaseModel):
     """PUT /me/preferences — 매칭 조건 전체를 한 번에 저장한다.
 
     원하는 성별은 여기서 바꿀 수 없다 (가입할 때 정함). 보내도 무시된다.
+
+    나이 (2026-09-30 가로 바 방식):
+    - min_age, max_age 둘 다 null → "나이 상관없음"
+    - max_age가 null이거나 가로 바 오른쪽 끝(35) 이상 → "35세 이상" = 위쪽 제한 없음 (서버가 null로 저장)
     """
 
-    min_age: int = Field(ge=19, le=60)
-    max_age: int = Field(ge=19, le=60)
+    min_age: int | None = Field(default=None, ge=19, le=60)
+    max_age: int | None = Field(default=None, ge=19, le=60)
     campus_mode: Literal["MY", "ALL", "SELECTED"] = "ALL"
     campus_ids: list[uuid.UUID] = Field(default_factory=list, max_length=20)
     exclude_same_department: bool = False
 
     @model_validator(mode="after")
     def check(self):
-        if self.min_age > self.max_age:
+        if self.min_age is not None and self.max_age is not None and self.min_age > self.max_age:
             raise ValueError("최소 나이가 최대 나이보다 클 수 없습니다.")
         if self.campus_mode == "SELECTED" and not self.campus_ids:
             raise ValueError("캠퍼스를 하나 이상 선택해주세요.")

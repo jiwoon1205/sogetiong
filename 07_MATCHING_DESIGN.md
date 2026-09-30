@@ -92,6 +92,7 @@ Important rule:
 
 ### Gender and age
 - matching_preferences에 정의된 preferred_gender, min_age, max_age 적용
+- min_age / max_age가 NULL이면 그쪽 제한 없음 (둘 다 NULL = 나이 상관없음). 양쪽 사용자의 나이 조건을 모두 확인한다
 - 서버에서 유효성 검증 후 필터 적용
 
 ### Campus logic

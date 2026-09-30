@@ -30,6 +30,8 @@ class Settings(BaseSettings):
     # --- 가입 정책 ---
     min_age: int = 19  # 법률 검토 후 확정 (설계도 §44)
     max_age: int = 60
+    # 매칭 조건의 나이 가로 바 오른쪽 끝. 여기까지 끌면 "35세 이상" = 나이 위쪽 제한 없음(max_age 비움)
+    preference_age_cap: int = 35
     password_min_length: int = 8
     verification_code_minutes: int = 10
     verification_ticket_minutes: int = 30

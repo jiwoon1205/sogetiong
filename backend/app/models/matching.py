@@ -17,8 +17,10 @@ class MatchingPreference(Base):
     id: Mapped[uuid.UUID] = pk()
     user_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("users.id"), unique=True, nullable=False)
     # 원하는 성별은 여기 없다 → PrivateProfile.preferred_gender (가입 때 정하고 본인은 못 바꿈)
-    min_age: Mapped[int] = mapped_column(Integer, nullable=False)
-    max_age: Mapped[int] = mapped_column(Integer, nullable=False)
+    # 나이 범위. 비어 있으면(None) 그쪽은 제한 없음 → 둘 다 비어 있으면 "나이 상관없음" (2026-09-30)
+    # max_age가 비어 있는 경우 = 가로 바 오른쪽 끝("35세 이상")까지 고른 경우도 포함
+    min_age: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    max_age: Mapped[int | None] = mapped_column(Integer, nullable=True)
     campus_mode: Mapped[str] = mapped_column(String(20), default="ALL", nullable=False)  # MY / ALL / SELECTED
     # 같은 과 제외: 둘 중 한 명이라도 켰고 학과가 같으면 서로 추천되지 않는다
     exclude_same_department: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false(), nullable=False)
