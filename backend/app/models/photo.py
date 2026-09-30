@@ -28,6 +28,8 @@ class UserPhoto(Base):
     upload_status: Mapped[str] = mapped_column(String(30), default="UPLOADED", nullable=False)
     review_status: Mapped[str] = mapped_column(String(30), default="PENDING", nullable=False, index=True)
     reject_reason: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    # 검수할 때 쓴 내부 메모 (운영진 전용, 사용자에게 절대 안 보임). 승인·반려 모두 여기에 남는다
+    review_note: Mapped[str | None] = mapped_column(Text, nullable=True)
     uploaded_at: Mapped[datetime] = created_at()
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     reviewed_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("admin_users.id"), nullable=True)

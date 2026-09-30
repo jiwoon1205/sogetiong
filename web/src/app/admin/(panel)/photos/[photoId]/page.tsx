@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { Button, Field, Input, Notice, Segmented, Spinner, Textarea } from "@/components/ui";
 import { adminApi, useAdmin } from "@/lib/admin";
 import { errorMessage } from "@/lib/api";
@@ -14,6 +14,9 @@ type Detail = {
   subject_code: string;
   review_status: string;
   uploaded_at: string;
+  reviewed_at: string | null;
+  reject_reason: string | null;
+  review_note: string | null; // 내부 메모 (운영진 전용)
   image_url: string;
   evaluation_history: (Scores & { tier: AppearanceTier | null; note: string | null; created_at: string })[];
 };
@@ -47,6 +50,8 @@ export default function PhotoReview() {
     adminApi<Detail>(`/photo-reviews/${photoId}`)
       .then((d) => {
         setDetail(d);
+        // 전에 쓴 내부 메모가 있으면 그대로 채워 둔다 (다시 평가할 때 지워지지 않게)
+        if (d.review_note) setNote(d.review_note);
         const last = d.evaluation_history[0];
         if (last) {
           setScores({ overall_impression: last.overall_impression, style: last.style, grooming: last.grooming, photo_vibe: last.photo_vibe });
@@ -100,6 +105,30 @@ export default function PhotoReview() {
         </div>
 
         <div className="space-y-7">
+          {(detail.review_status === "APPROVED" || detail.review_status === "REJECTED") && (
+            <section className="rounded-card border border-line bg-paper-card px-5 py-4 text-[13.5px]">
+              <p className="eyebrow mb-3">검수 결과</p>
+              <dl className="grid grid-cols-[5.5rem_1fr] gap-x-3 gap-y-2">
+                <dt className="text-ink-faint">결과</dt>
+                <dd className={cn("font-semibold", detail.review_status === "REJECTED" && "text-brick")}>{PHOTO_STATUS[detail.review_status]}</dd>
+                {detail.reviewed_at && (
+                  <>
+                    <dt className="text-ink-faint">검수 일시</dt>
+                    <dd>{dateTime(detail.reviewed_at)}</dd>
+                  </>
+                )}
+                {detail.review_status === "REJECTED" && (
+                  <>
+                    <dt className="text-ink-faint">반려 사유</dt>
+                    <dd className="whitespace-pre-wrap">{detail.reject_reason || "—"}</dd>
+                  </>
+                )}
+                <dt className="text-ink-faint">내부 메모</dt>
+                <dd className="whitespace-pre-wrap">{detail.review_note || <span className="text-ink-faint">없음</span>}</dd>
+              </dl>
+            </section>
+          )}
+
           {canEvaluate ? (
             <>
               <Segmented
@@ -195,15 +224,24 @@ export default function PhotoReview() {
                 </thead>
                 <tbody className="num">
                   {detail.evaluation_history.map((h) => (
-                    <tr key={h.created_at} className="border-t border-line">
-                      <td className="py-2 text-ink-soft">{dateTime(h.created_at)}</td>
-                      {SCORE_LABELS.map((s) => (
-                        <td key={s.key} className="py-2 text-right font-semibold">
-                          {h[s.key]}
-                        </td>
-                      ))}
-                      <td className="py-2 text-right font-semibold">{h.tier ? TIER_LABEL[h.tier] : "—"}</td>
-                    </tr>
+                    <Fragment key={h.created_at}>
+                      <tr className="border-t border-line">
+                        <td className="py-2 text-ink-soft">{dateTime(h.created_at)}</td>
+                        {SCORE_LABELS.map((s) => (
+                          <td key={s.key} className="py-2 text-right font-semibold">
+                            {h[s.key]}
+                          </td>
+                        ))}
+                        <td className="py-2 text-right font-semibold">{h.tier ? TIER_LABEL[h.tier] : "—"}</td>
+                      </tr>
+                      {h.note && (
+                        <tr>
+                          <td colSpan={SCORE_LABELS.length + 2} className="whitespace-pre-wrap pb-2 font-sans text-[12.5px] text-ink-soft">
+                            메모: {h.note}
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
                   ))}
                 </tbody>
               </table>

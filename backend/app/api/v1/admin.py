@@ -171,6 +171,9 @@ def get_photo_review(
     return {
         **_photo_summary(photo),
         "image_url": f"/api/v1/admin/photo-reviews/{photo.id}/image",
+        # 이 사진의 검수 결과 (반려/승인 후 '보기'로 들어왔을 때 보여준다)
+        "reject_reason": photo.reject_reason,
+        "review_note": photo.review_note,
         "evaluation_history": [
             {**e.scores(), "tier": e.tier, "note": e.evaluation_note, "created_at": e.created_at.isoformat()} for e in history
         ],
@@ -233,6 +236,8 @@ def evaluate_photo(
     now = utcnow()
     photo.reviewed_at = now
     photo.reviewed_by = admin.id
+    # 내부 메모는 승인·반려 상관없이 사진에 저장한다 (예전엔 반려 메모가 어디에도 저장되지 않았다)
+    photo.review_note = payload.note.strip() if payload.note and payload.note.strip() else None
 
     if payload.decision == "APPROVED":
         photo.review_status = "APPROVED"
@@ -246,7 +251,7 @@ def evaluate_photo(
             photo_vibe=payload.photo_vibe,
             tier=payload.tier,
             evaluator_admin_id=admin.id,
-            evaluation_note=payload.note,
+            evaluation_note=photo.review_note,
         )
         db.add(evaluation)
         after = {**evaluation.scores(), "tier": evaluation.tier}
