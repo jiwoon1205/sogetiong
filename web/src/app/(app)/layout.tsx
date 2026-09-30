@@ -9,7 +9,6 @@ import { api } from "@/lib/api";
 import { cn } from "@/lib/format";
 import { usePolling } from "@/lib/polling";
 import { SessionGate } from "@/lib/session";
-import type { Notification } from "@/lib/types";
 
 const NAV = [
   { href: "/discover", label: "추천" },
@@ -32,10 +31,11 @@ function Shell({ children }: { children: React.ReactNode }) {
   const inChat = path.startsWith("/chat/");
 
   // 안 읽은 알림 수: 20초마다 확인 (탭이 안 보이면 멈춤), 화면을 옮길 때도 확인
+  // 알림 내용은 필요 없으니 개수만 받는다 (가벼운 요청)
   usePolling(
     () =>
-      api<{ notifications: Notification[] }>("/notifications?unread_only=true")
-        .then((r) => setUnread(r.notifications.length))
+      api<{ count: number }>("/notifications/unread-count")
+        .then((r) => setUnread(r.count))
         .catch(() => {}),
     20000,
     [path],
@@ -55,7 +55,7 @@ function Shell({ children }: { children: React.ReactNode }) {
           </nav>
           <Link href="/notifications" className="inline-flex items-center gap-1.5 text-[14px] text-ink-soft hover:text-ink" aria-label={`알림 ${unread}개`}>
             알림
-            {unread > 0 && <span className="num min-w-[18px] rounded-full bg-brick px-1.5 text-center text-[11px] font-semibold leading-[18px] text-paper">{unread}</span>}
+            {unread > 0 && <span className="num min-w-[18px] rounded-full bg-brick px-1.5 text-center text-[11px] font-semibold leading-[18px] text-paper">{unread > 99 ? "99+" : unread}</span>}
           </Link>
         </div>
       </header>

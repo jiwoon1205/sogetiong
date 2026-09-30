@@ -4,6 +4,7 @@ import uuid
 from datetime import timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -34,11 +35,13 @@ def _viewer(db: Session, current: CurrentUser) -> matching_service.Person:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="PREFERENCES_REQUIRED")
     if get_settings().require_approved_photo_to_discover and not profile_service.has_approved_photo(db, current.id):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="PHOTO_APPROVAL_REQUIRED")
+    viewer = profile_service.people_from_profiles(db, [profile])[0]
     # 추천은 "나와 외모 등급이 비슷한 사람" 순서라서, 내 등급이 정해져야 추천을 볼 수 있다.
     # (사진은 승인됐지만 등급이 없는 예전 평가 → 관리자가 다시 정할 때까지 "평가 중"으로 안내)
-    if profile_service.current_tier(db, current.id) is None:
+    # 등급은 people_from_profiles가 이미 읽어 왔으므로 DB를 다시 조회하지 않는다.
+    if viewer.tier is None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="EVALUATION_REQUIRED")
-    return profile_service.people_from_profiles(db, [profile])[0]
+    return viewer
 
 
 # ---------- 추천 ----------
@@ -210,6 +213,24 @@ def _partner_cards(db: Session, matches: list[Match], me: uuid.UUID) -> dict[uui
     return {p.user_id: card for p, card in zip(profiles, cards)}
 
 
+def _last_messages(db: Session, match_ids: list[uuid.UUID]) -> dict[uuid.UUID, Message]:
+    """대화방마다 가장 최근 메시지 1개 (쿼리 1번)."""
+    if not match_ids:
+        return {}
+    ranked = (
+        select(
+            Message.id,
+            func.row_number()
+            .over(partition_by=Message.match_id, order_by=(Message.created_at.desc(), Message.id.desc()))
+            .label("rn"),
+        )
+        .where(Message.match_id.in_(match_ids))
+        .subquery()
+    )
+    rows = db.query(Message).join(ranked, ranked.c.id == Message.id).filter(ranked.c.rn == 1).all()
+    return {m.match_id: m for m in rows}
+
+
 @router.get("/matches")
 def list_matches(current: CurrentUser = Depends(get_current_user), db: Session = Depends(get_db)):
     matches = (
@@ -219,12 +240,15 @@ def list_matches(current: CurrentUser = Depends(get_current_user), db: Session =
         .all()
     )
     cards = _partner_cards(db, matches, current.id)
+    # 차단 관계와 마지막 메시지를 매칭마다 따로 묻지 않고 한 번에 가져온다 (매칭이 20개여도 쿼리 2번)
+    blocked = profile_service.blocked_user_ids(db, current.id)
+    last_messages = _last_messages(db, [m.id for m in matches])
     result = []
     for m in matches:
         partner = m.partner_of(current.id)
-        if partner not in cards or profile_service.is_blocked_between(db, current.id, partner):
+        if partner not in cards or partner in blocked:
             continue
-        last = db.query(Message).filter(Message.match_id == m.id).order_by(Message.created_at.desc()).first()
+        last = last_messages.get(m.id)
         result.append(
             {
                 "match_id": str(m.id),
@@ -315,19 +339,36 @@ def unmatch(match_id: uuid.UUID, current: CurrentUser = Depends(get_current_user
 def list_messages(
     match_id: uuid.UUID,
     before: uuid.UUID | None = None,
+    after: uuid.UUID | None = None,
     limit: int = Query(default=50, ge=1, le=100),
     current: CurrentUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """최신 메시지부터 limit개. 더 이전 것은 before=<가장 오래된 message_id>로 요청."""
+    """최신 메시지부터 limit개.
+
+    - 더 이전 것: before=<가장 오래된 message_id>
+    - 새로 온 것만: after=<화면에 있는 마지막 message_id> → 채팅 화면이 몇 초마다 부르는 방식.
+      새 메시지가 없으면 빈 목록이라 서버·데이터 사용량이 훨씬 적다.
+      (같은 시각에 저장된 메시지를 놓치지 않도록 "같은 시각 이상"으로 가져오고, 화면에서 중복을 걸러낸다)
+    """
     match = _my_match(db, current, match_id)
     query = db.query(Message).filter(Message.match_id == match.id)
-    if before:
-        anchor = db.get(Message, before)
-        if anchor and anchor.match_id == match.id:
+    anchor_id = after or before
+    anchor = db.get(Message, anchor_id) if anchor_id else None
+    if anchor is not None and anchor.match_id != match.id:
+        anchor = None
+    if after and anchor is not None:
+        rows = (
+            query.filter(Message.created_at >= anchor.created_at, Message.id != anchor.id)
+            .order_by(Message.created_at.asc(), Message.id.asc())
+            .limit(limit)
+            .all()
+        )
+    else:
+        if before and anchor is not None:
             query = query.filter(Message.created_at < anchor.created_at)
-    rows = query.order_by(Message.created_at.desc()).limit(limit).all()
-    rows.reverse()
+        rows = query.order_by(Message.created_at.desc()).limit(limit).all()
+        rows.reverse()
     # 상대의 내부 user_id 대신 is_mine만 보낸다
     return {
         "messages": [

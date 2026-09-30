@@ -7,7 +7,7 @@
 import uuid
 from collections import defaultdict
 
-from sqlalchemy import func
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
@@ -29,18 +29,33 @@ from app.services.matching_service import Person, Preferences
 # ---------- 여러 명의 정보를 한 번에 불러오기 ----------
 
 def latest_evaluations(db: Session, user_ids: list[uuid.UUID]) -> dict[uuid.UUID, AppearanceEvaluation]:
+    """사람마다 가장 최근 외모 평가 1개.
+
+    예전에는 평가 이력을 전부 불러와서 파이썬에서 마지막 것만 남겼다 → 재평가가 쌓일수록 느려짐.
+    지금은 DB가 사람별로 최신 1개만 골라서 돌려준다 (ROW_NUMBER: 사람별로 최신순 번호를 매겨 1번만 가져오기).
+    """
     if not user_ids:
         return {}
+    ranked = (
+        select(
+            AppearanceEvaluation.id,
+            func.row_number()
+            .over(
+                partition_by=AppearanceEvaluation.user_id,
+                order_by=(AppearanceEvaluation.created_at.desc(), AppearanceEvaluation.id.desc()),
+            )
+            .label("rn"),
+        )
+        .where(AppearanceEvaluation.user_id.in_(user_ids))
+        .subquery()
+    )
     rows = (
         db.query(AppearanceEvaluation)
-        .filter(AppearanceEvaluation.user_id.in_(user_ids))
-        .order_by(AppearanceEvaluation.created_at.asc())
+        .join(ranked, ranked.c.id == AppearanceEvaluation.id)
+        .filter(ranked.c.rn == 1)
         .all()
     )
-    result: dict[uuid.UUID, AppearanceEvaluation] = {}
-    for row in rows:  # 오래된 것부터 덮어써서 마지막(최신)만 남김
-        result[row.user_id] = row
-    return result
+    return {row.user_id: row for row in rows}
 
 
 def interests_of(db: Session, user_ids: list[uuid.UUID]) -> dict[uuid.UUID, list[str]]:
@@ -217,6 +232,14 @@ def is_blocked_between(db: Session, a: uuid.UUID, b: uuid.UUID) -> bool:
         .first()
         is not None
     )
+
+
+def blocked_user_ids(db: Session, user_id: uuid.UUID) -> set[uuid.UUID]:
+    """나와 차단 관계인 사람 전부 (내가 차단했든, 상대가 나를 차단했든). 쿼리 1번."""
+    rows = db.query(Block.blocker_user_id, Block.blocked_user_id).filter(
+        (Block.blocker_user_id == user_id) | (Block.blocked_user_id == user_id)
+    )
+    return {blocked if blocker == user_id else blocker for blocker, blocked in rows}
 
 
 def find_active_profile(db: Session, profile_id: uuid.UUID) -> PublicProfile | None:

@@ -14,6 +14,14 @@ import type { Card, ChatMessage } from "@/lib/types";
 
 const POLL_MS = 4000; // MVP: 몇 초마다 새 메시지 확인 (설계도 §51)
 
+/** 이미 있는 메시지는 빼고 합친 뒤 시간순으로 정렬 (보내기와 자동 확인이 겹쳐도 중복·순서가 꼬이지 않게) */
+function mergeMessages(prev: ChatMessage[], incoming: ChatMessage[]): ChatMessage[] {
+  const seen = new Set(prev.map((m) => m.message_id));
+  const added = incoming.filter((m) => !seen.has(m.message_id));
+  if (added.length === 0) return prev;
+  return [...prev, ...added].sort((a, b) => Date.parse(a.sent_at) - Date.parse(b.sent_at));
+}
+
 export default function ChatPage() {
   const { matchId } = useParams<{ matchId: string }>();
   const router = useRouter();
@@ -26,10 +34,21 @@ export default function ChatPage() {
   const [panel, setPanel] = useState<"none" | "profile" | "menu" | "report">("none");
   const bottom = useRef<HTMLDivElement>(null);
 
+  // 화면에 있는 마지막 메시지 ID. 몇 초마다 확인할 때 "이 뒤에 온 것만 주세요"(after)로 요청한다.
+  // → 새 메시지가 없으면 서버는 빈 목록만 돌려주므로 서버·데이터 사용량이 크게 줄어든다.
+  const lastIdRef = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    lastIdRef.current = messages.at(-1)?.message_id;
+  }, [messages]);
+
   const loadMessages = useCallback(async () => {
     try {
-      const r = await api<{ messages: ChatMessage[] }>(`/matches/${matchId}/messages`);
-      setMessages((prev) => (prev.length === r.messages.length && prev.at(-1)?.message_id === r.messages.at(-1)?.message_id ? prev : r.messages));
+      const after = lastIdRef.current;
+      const r = await api<{ messages: ChatMessage[] }>(
+        after ? `/matches/${matchId}/messages?after=${encodeURIComponent(after)}` : `/matches/${matchId}/messages`,
+      );
+      if (r.messages.length === 0) return; // 새 메시지 없음 → 화면을 다시 그리지 않는다
+      setMessages((prev) => mergeMessages(prev, r.messages));
     } catch (err) {
       if (err instanceof ApiError && (err.status === 403 || err.status === 404)) setClosed(err.message);
     }
@@ -56,7 +75,7 @@ export default function ChatPage() {
     setError("");
     try {
       const msg = await api<ChatMessage>(`/matches/${matchId}/messages`, { method: "POST", body: { body } });
-      setMessages((m) => [...m, msg]);
+      setMessages((m) => mergeMessages(m, [msg]));
       setText("");
     } catch (err) {
       setError(errorMessage(err));

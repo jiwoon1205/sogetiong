@@ -3,6 +3,7 @@
 import uuid
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.rate_limit import enforce_rate_limit
@@ -149,6 +150,17 @@ def list_notifications(
             for n in rows
         ]
     }
+
+
+@router.get("/notifications/unread-count")
+def unread_notification_count(current: CurrentUser = Depends(get_current_user), db: Session = Depends(get_db)):
+    """안 읽은 알림 개수만 (상단 배지용). 화면이 20초마다 부르므로 가볍게 COUNT 한 번만 한다."""
+    count = (
+        db.query(func.count(Notification.id))
+        .filter(Notification.user_id == current.id, Notification.read_at.is_(None))
+        .scalar()
+    )
+    return {"count": count or 0}
 
 
 @router.patch("/notifications/{notification_id}")
