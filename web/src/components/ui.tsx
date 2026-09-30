@@ -93,6 +93,45 @@ export const Input = forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTML
   return <input ref={ref} className={cn("field", className)} {...rest} />;
 });
 
+/** 학교 이메일 입력: 앞부분만 입력받고 "@도메인"은 고정 글자로 보여줌. value/onChange는 전체 주소("abc@hufs.ac.kr")로 주고받음 */
+export function EmailInput({
+  id,
+  value,
+  onChange,
+  domain = "hufs.ac.kr",
+  required,
+}: {
+  id?: string;
+  value: string;
+  onChange: (email: string) => void;
+  domain?: string;
+  required?: boolean;
+}) {
+  const suffix = `@${domain}`;
+  const local = value.endsWith(suffix) ? value.slice(0, -suffix.length) : value;
+  return (
+    <div className="field flex items-center gap-1 focus-within:border-ink">
+      <input
+        id={id}
+        type="text"
+        inputMode="email"
+        autoComplete="username"
+        autoCapitalize="none"
+        spellCheck={false}
+        value={local}
+        onChange={(e) => {
+          // 전체 주소를 붙여넣어도 "@" 앞부분만 사용
+          const v = e.target.value.split("@")[0].trim();
+          onChange(v ? `${v}${suffix}` : "");
+        }}
+        required={required}
+        className="min-w-0 flex-1 bg-transparent focus:outline-none"
+      />
+      <span className="shrink-0 select-none text-ink-soft">{suffix}</span>
+    </div>
+  );
+}
+
 export function Textarea({ className, ...rest }: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
   return <textarea className={cn("field min-h-[96px] resize-none leading-relaxed", className)} {...rest} />;
 }

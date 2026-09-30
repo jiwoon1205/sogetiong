@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { AuthFrame } from "@/components/AuthFrame";
 import { Steps } from "@/components/Steps";
-import { Button, ButtonLink, Field, Input, Notice, PageTitle } from "@/components/ui";
+import { Button, ButtonLink, EmailInput, Field, Input, Notice, PageTitle } from "@/components/ui";
 import { api, errorMessage } from "@/lib/api";
 
 /**
@@ -72,7 +72,7 @@ export default function ForgotPasswordPage() {
         <form onSubmit={requestCode} className="space-y-5">
           <PageTitle title="비밀번호 재설정" desc="가입할 때 쓴 학교 이메일로 인증번호를 보내드릴게요." />
           <Field label="학교 이메일" htmlFor="email">
-            <Input id="email" type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="학번@hufs.ac.kr" required />
+            <EmailInput id="email" value={email} onChange={setEmail} required />
           </Field>
           {error && <Notice tone="error">{error}</Notice>}
           <Button type="submit" size="lg" className="w-full" loading={loading}>

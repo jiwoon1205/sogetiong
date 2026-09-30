@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { AuthFrame } from "@/components/AuthFrame";
 import { Steps } from "@/components/Steps";
-import { Button, Checkbox, Field, Input, Notice, PageTitle, Segmented, Select } from "@/components/ui";
+import { Button, Checkbox, EmailInput, Field, Input, Notice, PageTitle, Segmented, Select } from "@/components/ui";
 import { api, errorMessage } from "@/lib/api";
 
 type University = { id: string; name: string; email_domain: string };
@@ -126,8 +126,8 @@ export default function SignupPage() {
       {step === 0 && (
         <form onSubmit={sendCode} className="space-y-5">
           <PageTitle title="학교 메일로 확인할게요" desc={<>재학생 확인에만 쓰이고, 다른 학생에게는 절대 보이지 않아요.</>} />
-          <Field label="학교 이메일" htmlFor="email" hint={university ? `@${university.email_domain} 주소만 사용할 수 있어요.` : undefined}>
-            <Input id="email" type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder={`학번@${university?.email_domain ?? "hufs.ac.kr"}`} required />
+          <Field label="학교 이메일" htmlFor="email">
+            <EmailInput id="email" value={email} onChange={setEmail} domain={university?.email_domain ?? "hufs.ac.kr"} required />
           </Field>
           {error && <Notice tone="error">{error}</Notice>}
           <Button type="submit" size="lg" className="w-full" loading={loading}>
