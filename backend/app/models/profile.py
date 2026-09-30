@@ -48,6 +48,9 @@ class PrivateProfile(Base):
     phone_number: Mapped[str | None] = mapped_column(String(30), nullable=True)
     student_id: Mapped[str | None] = mapped_column(String(60), nullable=True)
     birth_date: Mapped[date] = mapped_column(Date, nullable=False)
+    # 만나고 싶은 성별 (MALE / FEMALE / ANY). 가입할 때 정하고, 생년월일처럼 본인은 바꿀 수 없다.
+    # 바꾸려면 운영진에게 메일로 요청 → 관리자가 변경 (PATCH /admin/users/{id}/gender)
+    preferred_gender: Mapped[str] = mapped_column(String(10), nullable=False)
     verification_data_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = created_at()
     updated_at: Mapped[datetime] = updated_at()

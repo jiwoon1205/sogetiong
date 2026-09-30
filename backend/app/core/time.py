@@ -1,4 +1,6 @@
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
+
+KST = timezone(timedelta(hours=9))
 
 
 def utcnow() -> datetime:
@@ -21,3 +23,9 @@ def age_on(birth_date: date, today: date | None = None) -> int:
     if (today.month, today.day) < (birth_date.month, birth_date.day):
         years -= 1
     return years
+
+
+def kst_day_start(now: datetime | None = None) -> datetime:
+    """오늘(한국 시간) 0시를 UTC로 돌려준다. 하루 LIKE 개수를 셀 때 쓴다."""
+    now_kst = (now or utcnow()).astimezone(KST)
+    return now_kst.replace(hour=0, minute=0, second=0, microsecond=0).astimezone(timezone.utc)

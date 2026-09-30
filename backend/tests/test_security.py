@@ -218,7 +218,7 @@ def _register(sent_codes, db, email, **overrides):
     c.post("/api/v1/auth/email/send-code", json={"email": email})
     ticket = c.post("/api/v1/auth/email/verify", json={"email": email, "code": sent_codes[email]}).json()["verification_ticket"]
     body = {
-        "verification_ticket": ticket, "password": "goodpass123", "nickname": "닉네임", "gender": "MALE",
+        "verification_ticket": ticket, "password": "goodpass123", "nickname": "닉네임", "gender": "MALE", "preferred_gender": "FEMALE",
         "birth_date": "2003-01-01", "campus_id": campus_id(db),
         "agree_terms": True, "agree_privacy": True, "agree_appearance_public": True,
     }
@@ -235,12 +235,17 @@ def test_register_rules(sent_codes, db):
     assert r.status_code == 422
     r, _ = _register(sent_codes, db, "noagree@hufs.ac.kr", agree_appearance_public=False)
     assert r.status_code == 400
+    # 성별·원하는 성별은 필수
+    r, _ = _register(sent_codes, db, "nowant@hufs.ac.kr", preferred_gender=None)
+    assert r.status_code == 422
+    r, _ = _register(sent_codes, db, "badwant@hufs.ac.kr", preferred_gender="BOTH")
+    assert r.status_code == 422
     r, ticket = _register(sent_codes, db, "ok@hufs.ac.kr")
     assert r.status_code == 201
     # 티켓은 한 번만 쓸 수 있다
     r2 = UserClient().post("/api/v1/auth/register", json={
         "verification_ticket": ticket, "password": "goodpass123", "nickname": "또가입", "gender": "MALE",
-        "birth_date": "2003-01-01", "campus_id": campus_id(db),
+        "preferred_gender": "FEMALE", "birth_date": "2003-01-01", "campus_id": campus_id(db),
         "agree_terms": True, "agree_privacy": True, "agree_appearance_public": True,
     })
     assert r2.status_code == 400
@@ -309,11 +314,12 @@ def test_evaluation_change_is_audited_with_before_after(sent_codes, db):
     admin = admin_login(db)
     a = signup(sent_codes, db, "a@hufs.ac.kr")
     photo_id = upload_photo(a)
-    admin.put(f"/api/v1/admin/photo-reviews/{photo_id}/evaluation", json={"decision": "APPROVED", "overall_impression": 5, "style": 5, "grooming": 5, "photo_vibe": 5})
-    admin.put(f"/api/v1/admin/photo-reviews/{photo_id}/evaluation", json={"decision": "APPROVED", "overall_impression": 6, "style": 5, "grooming": 5, "photo_vibe": 5})
+    admin.put(f"/api/v1/admin/photo-reviews/{photo_id}/evaluation", json={"decision": "APPROVED", "overall_impression": 5, "style": 5, "grooming": 5, "photo_vibe": 5, "tier": "MID"})
+    admin.put(f"/api/v1/admin/photo-reviews/{photo_id}/evaluation", json={"decision": "APPROVED", "overall_impression": 6, "style": 5, "grooming": 5, "photo_vibe": 5, "tier": "HIGH"})
     log = db.query(AuditLog).filter(AuditLog.action == "EVALUATION_UPDATE").one()
     assert log.metadata_json["before"]["overall_impression"] == 5
     assert log.metadata_json["after"]["overall_impression"] == 6
+    assert log.metadata_json["before"]["tier"] == "MID" and log.metadata_json["after"]["tier"] == "HIGH"
     assert a.get("/api/v1/me/evaluation").json()["scores"]["overall_impression"] == 6
     # 사진 조회는 워터마크된 이미지 + 기록
     r = admin.get(f"/api/v1/admin/photo-reviews/{photo_id}/image")

@@ -52,6 +52,7 @@
   "password": "8자 이상, 영문+숫자/기호",
   "nickname": "익명의 대학생",
   "gender": "MALE | FEMALE",
+  "preferred_gender": "MALE | FEMALE | ANY",
   "birth_date": "2003-05-01",
   "campus_id": "uuid",
   "real_name": "(선택)",
@@ -63,6 +64,7 @@
 ```
 → `201 { "message": "...", "csrf_token": "..." }` + 로그인 쿠키
 - 만 19세 미만 거부. 외적 평가 공개 동의 필수.
+- **성별(`gender`)과 원하는 성별(`preferred_gender`)은 필수**이고, 가입 후 본인은 바꿀 수 없다 (2026-09-30). 잘못 골랐으면 가입한 학교 메일로 요청 → 관리자가 `PATCH /admin/users/{user_id}/gender`로 변경.
 - **재가입 제한** (verify와 register 둘 다에서 확인, 403): 같은 메일의 예전 계정이 영구 정지(BANNED)면 가입 불가, 탈퇴 후 `REJOIN_COOLDOWN_DAYS`(기본 7일) 동안 가입 불가. 메일 주인임이 확인된 뒤라서 이유를 알려준다.
 - 재가입하면 예전 계정의 차단 관계(내가 차단한 사람, 나를 차단한 사람)를 새 계정으로 이어받는다.
 
@@ -124,7 +126,6 @@
 **PUT /me/preferences**
 ```json
 {
-  "preferred_gender": "MALE | FEMALE | ANY",
   "min_age": 20,
   "max_age": 27,
   "campus_mode": "MY | ALL | SELECTED",
@@ -132,6 +133,7 @@
   "exclude_same_department": false
 }
 ```
+- 원하는 성별은 여기서 바꿀 수 없다 (가입 때 정함, 보내도 무시). GET 응답에는 `preferred_gender`(읽기 전용)와 `gender_locked_message`(운영진 메일 안내)가 온다. 조건을 아직 저장하지 않았어도(`configured: false`) `preferred_gender`는 온다.
 - 같은 과 제외: 둘 중 한 명이라도 켰고 학과가 같으면 서로 추천되지 않는다 (Hard Filter, 양방향).
 - 베타에서는 임의 학과 제외·선호 학과 가산을 쓰지 않는다 (DB 테이블만 남겨둠).
 - 처음 저장 이후에는 24시간에 3번까지만 바꿀 수 있다 (429). 내용이 같으면 세지 않는다. GET 응답의 `changes_left_today`로 남은 횟수 확인.
@@ -147,11 +149,11 @@
 | 메서드 | 주소 | 설명 |
 |---|---|---|
 | GET | /discover?limit=10 | 추천 카드 (최대 20) |
-| POST | /likes | `{ "profile_id" }` → `{ "matched", "match_id" }` |
+| POST | /likes | `{ "profile_id" }` → `{ "matched", "match_id", "likes_left_today" }` |
 | POST | /passes | `{ "profile_id" }` |
 | DELETE | /passes/{profile_id} | PASS 취소 (향후 Undo용) |
 
-**GET /discover** → `{ "profiles": [카드...], "empty": false }`
+**GET /discover** → `{ "profiles": [카드...], "empty": false, "likes_left_today": 5, "daily_like_limit": 5 }`
 
 공개 카드 형식 (다른 사용자에게 보내는 유일한 형식):
 ```json
@@ -169,11 +171,15 @@
   "appearance": { "overall_impression": 8, "style": 7, "grooming": 8, "photo_vibe": 9 }
 }
 ```
-- 추천 전 필요 조건: 공개 프로필, 매칭 조건, 승인된 사진. 없으면 409 + `PROFILE_REQUIRED` / `PREFERENCES_REQUIRED` / `PHOTO_APPROVAL_REQUIRED`.
+- 추천 전 필요 조건: 공개 프로필, 매칭 조건, 승인된 사진, 외모 등급. 없으면 409 + `PROFILE_REQUIRED` / `DEPARTMENT_REQUIRED` / `PREFERENCES_REQUIRED` / `PHOTO_APPROVAL_REQUIRED` / `EVALUATION_REQUIRED`(사진은 승인됐지만 등급이 아직 없음).
 - 조건은 **양방향**으로 확인한다 (내 조건에 맞고, 상대 조건에도 내가 맞아야 추천).
 - 후보가 없으면 `empty: true`. 조건을 자동으로 넓히지 않는다.
 - LIKE도 같은 조건을 확인하므로 profile_id를 직접 넣어도 조건 밖의 사람에게는 LIKE할 수 없다(404).
-- 사용자가 외적 점수로 필터·정렬하는 기능은 없다. 점수는 서버 추천 순위에 일부(기본 20%, 상한 30%)만 반영된다.
+- 사용자가 외적 점수로 필터·정렬하는 기능은 없다.
+- **추천 순서 (2026-09-30)**: ① 관리자가 정한 외모 등급(상/중/하)이 나와 같은 사람 → 한 단계 차이 → 두 단계 차이, ② 같은 묶음 안에서는 관심사·프로필 완성도·MBTI 점수 순. 외모 숫자 점수는 순서에 쓰지 않는다. 자세한 내용은 `07_MATCHING_DESIGN.md`.
+- **나를 LIKE한 사람 우대**: 한 페이지에 최대 2자리(`LIKED_ME_SLOTS`), 위치는 매번 랜덤, 30%는 우대하지 않음(`LIKED_ME_PROBABILITY=0.7`). 등급이 두 단계 차이인 사람은 우대하지 않는다. 카드에는 LIKE 여부가 표시되지 않는다.
+- **외모 등급은 어떤 사용자 API 응답에도 들어가지 않는다** (본인 포함).
+- **하루 LIKE 한도**: 5개 (`DAILY_LIKE_LIMIT`), 한국 시간 자정에 다시 충전. 넘으면 429. DB에 쌓인 LIKE로 세므로 서버를 재시작해도 초기화되지 않는다. PASS는 하루 한도 없음.
 
 ## 6. 매칭·채팅
 
@@ -219,6 +225,9 @@ MVP는 폴링(몇 초마다 조회) 방식. 사용자 증가 후 WebSocket 검�
 | GET | /admin/users?status=&nickname= | users:read |
 | GET | /admin/users/{user_id}?include_private=false | users:read (+ users:private:read) |
 | PATCH | /admin/users/{user_id}/status | users:status |
+| PATCH | /admin/users/{user_id}/department | users:department |
+| PATCH | /admin/users/{user_id}/gender | users:gender |
+| PATCH | /admin/users/{user_id}/appearance-tier | photos:evaluate |
 | GET | /admin/reports?status=OPEN | reports:read |
 | PATCH | /admin/reports/{report_id} | reports:update |
 | GET | /admin/users/{user_id}/matches | chats:read |
@@ -233,17 +242,27 @@ MVP는 폴링(몇 초마다 조회) 방식. 사용자 증가 후 WebSocket 검�
   "style": 7,
   "grooming": 8,
   "photo_vibe": 9,
+  "tier": "HIGH | MID | LOW",
   "note": "관리자 전용 메모",
   "reject_reason": "반려 시 사용자에게 보여줄 사유"
 }
 ```
-- 승인 시 4개 점수(1~10) 필수, 반려 시 사유 필수. 수정할 때마다 이력이 쌓이고 감사 로그에 이전/새 점수가 남는다.
+- 승인 시 4개 점수(1~10)와 **외모 등급(`tier`: 상 HIGH / 중 MID / 하 LOW)** 필수, 반려 시 사유 필수. 수정할 때마다 이력이 쌓이고 감사 로그에 이전/새 점수·등급이 남는다.
+- 등급은 내부 전용: 추천 순서에만 쓰고 사용자에게는 보여주지 않는다. 관리자 응답(`evaluation_history`, 평가 결과)에만 나온다.
 - 사진 이미지는 서버가 직접 전달(영구 URL 없음), 캐시 금지, 조회한 관리자 이메일·시각 워터마크, 조회 기록.
 - PHOTO_REVIEWER는 사진과 가명 코드(`U1A2B3C`)만 본다.
 
 **PATCH /admin/users/{user_id}/status** `{ "status": "ACTIVE | SUSPENDED | BANNED | DELETED", "reason": "..." }` — 정지 시 즉시 로그아웃.
 - 탈퇴한 계정은 `BANNED`(재가입 차단) ↔ `DELETED`(정지 해제)만 가능. 멀쩡한 계정을 `DELETED`로 바꿀 수는 없다 (탈퇴는 본인만).
 - `GET /admin/users/{user_id}` 응답에 `deleted_at`, `linked_accounts`(같은 학교 메일로 가입했던 다른 계정, 이메일 제외)가 포함된다.
+
+**PATCH /admin/users/{user_id}/gender** `{ "gender": "MALE | FEMALE | null", "preferred_gender": "MALE | FEMALE | ANY | null", "reason": "..." }`
+- 바꿀 항목만 보낸다 (둘 다 비우면 422). 요청 메일이 가입한 학교 메일인지 먼저 확인할 것. 감사 로그 `USER_GENDER_CHANGE`, 사용자에게 알림.
+- 이미 생긴 LIKE·매칭은 그대로 두고, 이후 추천부터 새 값을 쓴다.
+
+**PATCH /admin/users/{user_id}/appearance-tier** `{ "tier": "HIGH | MID | LOW", "reason": "..." }`
+- 점수는 그대로 두고 등급만 다시 정한다 (점수를 복사한 새 평가 행을 추가해 이력 유지). 등급 기능 이전에 평가된 사용자를 채울 때도 쓴다. 감사 로그 `EVALUATION_TIER_CHANGE`, 사용자에게 알리지 않음.
+- `GET /admin/users/{user_id}` 응답에 `gender`, `preferred_gender`, `appearance_tier`(없으면 null → 추천에 안 나옴)가 포함된다.
 
 **PATCH /admin/reports/{report_id}** `{ "status": "IN_REVIEW | RESOLVED | DISMISSED", "admin_note": "..." }`
 
@@ -261,6 +280,7 @@ MVP는 폴링(몇 초마다 조회) 방식. 사용자 증가 후 WebSocket 검�
 | photos:read / photos:evaluate | ✅ | | ✅ |
 | users:read / users:status | ✅ | ✅ | |
 | users:private:read (실명·이메일 등) | ✅ | | |
+| users:department / users:gender (학과·성별 변경) | ✅ | | |
 | reports:read / reports:update | ✅ | ✅ | |
 | chats:read (모든 대화 열람) | ✅ | ✅ | |
 | audit:read | ✅ | | |
@@ -278,7 +298,7 @@ MVP는 폴링(몇 초마다 조회) 방식. 사용자 증가 후 WebSocket 검�
 | 관리자 로그인 / 2FA | IP당 10회/15분 / 5회/5분 |
 | 사진 업로드 | 5회/시간 |
 | 추천 | 60회/분 |
-| LIKE | 60회/분, 300회/일 |
+| LIKE | 60회/분 + **하루 5개** (한국 시간 자정 기준, DB로 셈) |
 | 메시지 | 30회/분 |
 | 신고 | 5회/시간 |
 

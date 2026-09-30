@@ -86,6 +86,7 @@ private_profiles
 - phone_number
 - student_id
 - birth_date
+- preferred_gender (MALE / FEMALE / ANY, 가입 때 정함, 본인 변경 불가 — 2026-09-30)
 - student_email
 - university_id (FK)
 - campus_id (FK)
@@ -105,6 +106,7 @@ appearance_evaluations
 - style
 - grooming
 - photo_vibe
+- tier (HIGH / MID / LOW, 외모 등급, 내부 전용·공개 금지 — 2026-09-30)
 - evaluator_admin_id (FK)
 - evaluation_note
 - created_at
@@ -131,7 +133,7 @@ photo_reviews
 matching_preferences
 - id (PK)
 - user_id (FK unique)
-- preferred_gender
+  (preferred_gender는 2026-09-30에 private_profiles로 이동)
 - min_age
 - max_age
 - preferred_campus_mode

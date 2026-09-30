@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Button, Checkbox, Field, Input, Notice, Segmented } from "@/components/ui";
+import { Button, Checkbox, Field, Input, Notice } from "@/components/ui";
 import { api, errorMessage } from "@/lib/api";
 import type { CampusWithDepts } from "@/lib/catalog";
-import type { MyProfile, Preferences } from "@/lib/types";
+import { GENDER_LABEL, type MyProfile, type Preferences } from "@/lib/types";
 
 const EMPTY: Preferences = {
   configured: false,
@@ -16,19 +16,18 @@ const EMPTY: Preferences = {
   exclude_same_department: false,
 };
 
-/** 매칭 조건. 이 내용은 본인만 볼 수 있다. */
+/** 매칭 조건. 이 내용은 본인만 볼 수 있다.
+ *  원하는 성별은 가입할 때 정해서 여기서는 보여주기만 한다 (바꾸려면 운영진에게 메일). */
 export function PreferencesForm({
   campuses,
-  defaultGender,
   submitLabel = "저장",
   onSaved,
 }: {
   campuses: CampusWithDepts[];
-  defaultGender?: "MALE" | "FEMALE" | "ANY";
   submitLabel?: string;
   onSaved?: () => void;
 }) {
-  const [p, setP] = useState<Preferences>({ ...EMPTY, preferred_gender: defaultGender ?? "ANY" });
+  const [p, setP] = useState<Preferences>(EMPTY);
   // 만날 캠퍼스: 체크한 캠퍼스 목록 (전부 체크 = 모든 캠퍼스)
   const [campusIds, setCampusIds] = useState<string[]>([]);
   const [error, setError] = useState("");
@@ -38,7 +37,8 @@ export function PreferencesForm({
   useEffect(() => {
     Promise.all([api<Preferences>("/me/preferences"), api<MyProfile>("/me/profile")])
       .then(([res, profile]) => {
-        if (res.configured) setP(res);
+        // 설정 전이어도 가입할 때 고른 원하는 성별은 온다
+        setP((prev) => (res.configured ? res : { ...prev, preferred_gender: res.preferred_gender, gender_locked_message: res.gender_locked_message }));
         const mode = res.configured ? res.campus_mode : "ALL";
         // 예전 방식("내 캠퍼스만")도 체크박스로 보여준다
         if (mode === "ALL") setCampusIds(campuses.map((c) => c.id));
@@ -68,7 +68,6 @@ export function PreferencesForm({
       const res = await api<Preferences>("/me/preferences", {
         method: "PUT",
         body: {
-          preferred_gender: p.preferred_gender,
           min_age: p.min_age,
           max_age: p.max_age,
           campus_mode: all ? "ALL" : "SELECTED",
@@ -100,17 +99,13 @@ export function PreferencesForm({
         )}
       </Notice>
 
-      <Field label="만나고 싶은 상대">
-        <Segmented
-          value={p.preferred_gender}
-          onChange={(v) => change({ preferred_gender: v })}
-          options={[
-            { value: "MALE", label: "남성" },
-            { value: "FEMALE", label: "여성" },
-            { value: "ANY", label: "상관없음" },
-          ]}
-        />
-      </Field>
+      <div className="space-y-1.5">
+        <p className="text-[13px] font-medium text-ink-soft">만나고 싶은 상대</p>
+        <div className="rounded-md border border-line bg-paper-card px-4 py-3 text-[14.5px]">{GENDER_LABEL[p.preferred_gender]}</div>
+        <p className="text-[12.5px] leading-relaxed text-ink-faint">
+          {p.gender_locked_message ?? "가입할 때 고른 값이에요. 바꾸려면 운영진에게 메일로 요청해주세요."}
+        </p>
+      </div>
 
       <Field label="나이">
         <div className="flex items-center gap-3">

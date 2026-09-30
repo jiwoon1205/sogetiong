@@ -28,9 +28,11 @@ class ProfileUpdateRequest(BaseModel):
 
 
 class PreferencesRequest(BaseModel):
-    """PUT /me/preferences — 매칭 조건 전체를 한 번에 저장한다."""
+    """PUT /me/preferences — 매칭 조건 전체를 한 번에 저장한다.
 
-    preferred_gender: Literal["MALE", "FEMALE", "ANY"]
+    원하는 성별은 여기서 바꿀 수 없다 (가입할 때 정함). 보내도 무시된다.
+    """
+
     min_age: int = Field(ge=19, le=60)
     max_age: int = Field(ge=19, le=60)
     campus_mode: Literal["MY", "ALL", "SELECTED"] = "ALL"

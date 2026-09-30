@@ -80,6 +80,8 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         # 학과 변경: 사용자는 학과를 바꿀 수 없고, 가입 메일로 요청하면 운영진이 확인 후 바꾼다.
         # 본인 확인에 가입 이메일을 봐야 하므로 개인정보 조회 권한이 있는 최고 관리자만.
         "users:department",
+        # 성별·원하는 성별 변경: 학과와 같은 이유로 최고 관리자만 (가입 메일로 본인 확인)
+        "users:gender",
         "reports:read",
         "reports:update",
         "chats:read",

@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { AuthFrame } from "@/components/AuthFrame";
 import { PhotoUpload } from "@/components/PhotoUpload";
 import { PreferencesForm } from "@/components/PreferencesForm";
@@ -10,8 +10,6 @@ import { Steps } from "@/components/Steps";
 import { PageTitle, Spinner } from "@/components/ui";
 import { useCatalog } from "@/lib/catalog";
 import { SessionGate, useSession } from "@/lib/session";
-import type { MyProfile } from "@/lib/types";
-import { api } from "@/lib/api";
 
 export default function OnboardingPage() {
   return (
@@ -26,11 +24,6 @@ function Onboarding() {
   const { me, refresh } = useSession();
   const { campuses, interests, loaded } = useCatalog(me.university_id);
   const [step, setStep] = useState(0);
-  const [gender, setGender] = useState<"MALE" | "FEMALE">();
-
-  useEffect(() => {
-    api<MyProfile>("/me/profile").then((p) => setGender(p.gender));
-  }, []);
 
   if (!loaded) return <Spinner />;
 
@@ -48,12 +41,7 @@ function Onboarding() {
       {step === 1 && (
         <>
           <PageTitle title="어떤 사람을 만나고 싶나요" />
-          <PreferencesForm
-            campuses={campuses}
-            defaultGender={gender === "MALE" ? "FEMALE" : gender === "FEMALE" ? "MALE" : "ANY"}
-            submitLabel="다음"
-            onSaved={() => setStep(2)}
-          />
+          <PreferencesForm campuses={campuses} submitLabel="다음" onSaved={() => setStep(2)} />
         </>
       )}
 

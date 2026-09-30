@@ -54,12 +54,20 @@ class Settings(BaseSettings):
     # --- 매칭 ---
     discover_page_size: int = 10
     require_approved_photo_to_discover: bool = True
-    # 베타: 선호 학과 가산(15%)을 없애고 나머지 항목에 비율대로 나눴다 (합계 1.0)
-    weight_interest: float = 0.47
-    weight_appearance: float = 0.23  # 외적 평가는 "일부만" 반영 (설계도 §19)
-    weight_completeness: float = 0.18
-    weight_mbti: float = 0.12
-    weight_appearance_max: float = 0.30  # 외적 평가 가중치 상한
+    # 추천 순서 (2026-09-30 결정)
+    # 1순위: 외모 등급(상/중/하)이 같은 사람 → 한 단계 차이 → 두 단계 차이
+    # 2순위: 같은 등급 안에서는 아래 세부 점수로 정렬 (외모 숫자 점수는 등급과 겹치므로 쓰지 않음)
+    weight_interest: float = 0.60
+    weight_completeness: float = 0.25
+    weight_mbti: float = 0.15
+
+    # 나를 LIKE한 사람 우대: 추천 한 페이지에 최대 이만큼 자리를 준다 (위치는 매번 랜덤)
+    liked_me_slots: int = 2
+    # 우대를 적용할 확률. 항상 넣으면 "이 카드 = 나를 좋아하는 사람"이라고 티가 난다.
+    liked_me_probability: float = 0.7
+
+    # 하루(한국 시간 자정 기준)에 보낼 수 있는 LIKE 수 (베타: 5개)
+    daily_like_limit: int = 5
 
     # 매칭 조건은 하루(24시간)에 이 횟수만큼만 바꿀 수 있다 (처음 저장은 세지 않음)
     preferences_changes_per_day: int = 3
@@ -94,8 +102,8 @@ class Settings(BaseSettings):
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
 
     def validate_settings(self) -> None:
-        if self.weight_appearance > self.weight_appearance_max:
-            raise ValueError("WEIGHT_APPEARANCE가 상한(WEIGHT_APPEARANCE_MAX)을 넘습니다")
+        if not 0 <= self.liked_me_probability <= 1:
+            raise ValueError("LIKED_ME_PROBABILITY는 0~1 사이여야 합니다")
         if self.environment != "prod":
             return
         if self.secret_key in PUBLIC_EXAMPLE_SECRETS:

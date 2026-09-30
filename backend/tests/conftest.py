@@ -142,7 +142,10 @@ def jpeg_with_exif() -> bytes:
     return out.getvalue()
 
 
-def signup(sent_codes, db, email, *, gender="FEMALE", birth=date(2003, 5, 1), campus="서울캠퍼스", nickname=None) -> UserClient:
+def signup(
+    sent_codes, db, email, *, gender="FEMALE", want="ANY", birth=date(2003, 5, 1), campus="서울캠퍼스", nickname=None
+) -> UserClient:
+    """가입. want = 원하는 성별 (가입할 때 정하고 이후 본인은 못 바꿈)."""
     client = UserClient()
     r = client.post("/api/v1/auth/email/send-code", json={"email": email})
     assert r.status_code == 202, r.text
@@ -155,6 +158,7 @@ def signup(sent_codes, db, email, *, gender="FEMALE", birth=date(2003, 5, 1), ca
             "password": "goodpass123",
             "nickname": nickname or ("user_" + email.split("@")[0]),
             "gender": gender,
+            "preferred_gender": want,
             "birth_date": birth.isoformat(),
             "campus_id": campus_id(db, campus),
             "agree_terms": True,
@@ -168,7 +172,8 @@ def signup(sent_codes, db, email, *, gender="FEMALE", birth=date(2003, 5, 1), ca
 
 
 def set_preferences(client: UserClient, **overrides):
-    body = {"preferred_gender": "ANY", "min_age": 19, "max_age": 30, "campus_mode": "ALL"}
+    """매칭 조건 저장 (원하는 성별은 가입 때 정하므로 여기 없음)."""
+    body = {"min_age": 19, "max_age": 30, "campus_mode": "ALL"}
     body.update(overrides)
     r = client.put("/api/v1/me/preferences", json=body)
     assert r.status_code == 200, r.text
@@ -200,7 +205,7 @@ def upload_photo(client: UserClient) -> str:
     return r.json()["photo_id"]
 
 
-def approve(admin: AdminClient, photo_id: str, scores=(7, 7, 7, 7)):
+def approve(admin: AdminClient, photo_id: str, scores=(7, 7, 7, 7), tier="MID"):
     r = admin.put(
         f"/api/v1/admin/photo-reviews/{photo_id}/evaluation",
         json={
@@ -209,6 +214,7 @@ def approve(admin: AdminClient, photo_id: str, scores=(7, 7, 7, 7)):
             "style": scores[1],
             "grooming": scores[2],
             "photo_vibe": scores[3],
+            "tier": tier,
         },
     )
     assert r.status_code == 200, r.text
@@ -230,14 +236,18 @@ def choose_department(client: UserClient, db, name: str, *, show_campus=True, sh
 
 def ready_user(sent_codes, db, admin, email, **kw) -> UserClient:
     """가입 + 학과 + 매칭 조건 + 사진 승인까지 끝난 사용자."""
-    prefs = kw.pop("prefs", {})
+    prefs = dict(kw.pop("prefs", {}))
+    # 원하는 성별은 가입 단계에서 받는다 (예전 테스트처럼 prefs에 넣어도 동작하게)
+    if "preferred_gender" in prefs:
+        kw.setdefault("want", prefs.pop("preferred_gender"))
+    tier = kw.pop("tier", "MID")
     dept = kw.pop("dept", None) or DEFAULT_DEPARTMENT[kw.get("campus", "서울캠퍼스")]
     show_campus = kw.pop("show_campus", True)
     show_department = kw.pop("show_department", True)
     client = signup(sent_codes, db, email, **kw)
     choose_department(client, db, dept, show_campus=show_campus, show_department=show_department)
     set_preferences(client, **prefs)
-    approve(admin, upload_photo(client))
+    approve(admin, upload_photo(client), tier=tier)
     return client
 
 

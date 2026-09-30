@@ -8,7 +8,10 @@ import { Button, Field, Input, Notice, Segmented, Select, Spinner } from "@/comp
 import { USER_STATUS_LABEL, adminApi, useAdmin } from "@/lib/admin";
 import { api, errorMessage } from "@/lib/api";
 import { dateTime } from "@/lib/format";
-import type { Card } from "@/lib/types";
+import { GENDER_LABEL, TIER_LABEL, TIER_OPTIONS, type AppearanceTier, type Card } from "@/lib/types";
+
+type Gender = "MALE" | "FEMALE";
+type WantGender = Gender | "ANY";
 
 type Detail = {
   user_id: string;
@@ -18,6 +21,10 @@ type Detail = {
   profile: Card | null;
   campus: { id: string; name: string } | null;
   department: { id: string; name: string } | null;
+  gender: Gender | null;
+  preferred_gender: WantGender | null;
+  /** 외모 등급 (내부 전용). null = 없음 → 추천에 나오지 않음 */
+  appearance_tier: AppearanceTier | null;
   reports_received: number;
   deleted_at: string | null;
   linked_accounts: { user_id: string; subject_code: string; status: string; created_at: string; deleted_at: string | null }[];
@@ -65,6 +72,13 @@ export default function UserDetail() {
               <span className="block text-[12px] text-ink-faint">카드에는 본인 공개 설정에 따라 숨겨질 수 있어요.</span>
             </p>
           )}
+          {d.profile && (
+            <p className="text-[13px] text-ink-soft">
+              성별 {d.gender ? GENDER_LABEL[d.gender] : "—"} · 원하는 상대 {d.preferred_gender ? GENDER_LABEL[d.preferred_gender] : "—"} · 외모 등급{" "}
+              {d.appearance_tier ? TIER_LABEL[d.appearance_tier] : <span className="text-brick">없음 (추천에 안 나옴)</span>}
+              <span className="block text-[12px] text-ink-faint">외모 등급은 내부 전용이에요. 사용자에게 보이지 않아요.</span>
+            </p>
+          )}
         </div>
         <div className="space-y-10">
           {admin.can("users:status") && (
@@ -73,6 +87,20 @@ export default function UserDetail() {
 
           {admin.can("users:department") && d.campus && !d.deleted_at && (
             <DepartmentForm key={`${d.user_id}-${d.department?.id}`} userId={d.user_id} campusId={d.campus.id} current={d.department} onDone={() => load(!!d.private)} />
+          )}
+
+          {admin.can("users:gender") && d.profile && !d.deleted_at && (
+            <GenderForm
+              key={`${d.user_id}-${d.gender}-${d.preferred_gender}`}
+              userId={d.user_id}
+              gender={d.gender ?? "FEMALE"}
+              want={d.preferred_gender ?? "ANY"}
+              onDone={() => load(!!d.private)}
+            />
+          )}
+
+          {admin.can("photos:evaluate") && d.profile && !d.deleted_at && (
+            <TierForm key={`${d.user_id}-${d.appearance_tier}`} userId={d.user_id} current={d.appearance_tier} onDone={() => load(!!d.private)} />
           )}
 
           {admin.can("chats:read") && <UserChats userId={d.user_id} />}
@@ -312,6 +340,114 @@ function DepartmentForm({
       {ok && <Notice tone="ok">변경했어요. 사용자에게 알림이 갔어요.</Notice>}
       <Button type="submit" loading={loading} disabled={!deptId || deptId === current?.id || reason.trim().length < 2}>
         학과 변경
+      </Button>
+    </form>
+  );
+}
+
+/** 성별·원하는 성별 변경: 사용자는 가입 후 직접 못 바꾸고, 가입한 학교 메일로 요청하면 여기서 바꾼다 */
+function GenderForm({ userId, gender, want, onDone }: { userId: string; gender: Gender; want: WantGender; onDone: () => void }) {
+  const [g, setG] = useState<Gender>(gender);
+  const [w, setW] = useState<WantGender>(want);
+  const [reason, setReason] = useState("");
+  const [error, setError] = useState("");
+  const [ok, setOk] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setLoading(true);
+    setError("");
+    setOk(false);
+    try {
+      await adminApi(`/users/${userId}/gender`, {
+        method: "PATCH",
+        body: { gender: g !== gender ? g : null, preferred_gender: w !== want ? w : null, reason },
+      });
+      setOk(true);
+      setReason("");
+      onDone();
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <form onSubmit={submit} className="space-y-4">
+      <p className="eyebrow">성별 · 원하는 상대 변경</p>
+      <Notice>요청 메일이 이 사용자가 가입한 학교 메일에서 왔는지 먼저 확인하세요. 이미 생긴 좋아요·매칭은 그대로 남아요.</Notice>
+      <Field label="성별">
+        <Segmented<Gender>
+          value={g}
+          onChange={setG}
+          options={[
+            { value: "FEMALE", label: "여성" },
+            { value: "MALE", label: "남성" },
+          ]}
+        />
+      </Field>
+      <Field label="원하는 상대">
+        <Segmented<WantGender>
+          value={w}
+          onChange={setW}
+          options={[
+            { value: "MALE", label: "남성" },
+            { value: "FEMALE", label: "여성" },
+            { value: "ANY", label: "상관없음" },
+          ]}
+        />
+      </Field>
+      <Field label="사유 (감사 로그에 남아요)" htmlFor="gender-reason">
+        <Input id="gender-reason" value={reason} onChange={(e) => setReason(e.target.value)} maxLength={300} placeholder="가입 메일로 요청 (잘못 선택)" />
+      </Field>
+      {error && <Notice tone="error">{error}</Notice>}
+      {ok && <Notice tone="ok">변경했어요. 사용자에게 알림이 갔어요.</Notice>}
+      <Button type="submit" loading={loading} disabled={(g === gender && w === want) || reason.trim().length < 2}>
+        변경
+      </Button>
+    </form>
+  );
+}
+
+/** 외모 등급만 다시 정하기 (점수는 그대로). 등급 기능 이전에 평가된 사용자도 여기서 채운다 */
+function TierForm({ userId, current, onDone }: { userId: string; current: AppearanceTier | null; onDone: () => void }) {
+  const [tier, setTier] = useState<AppearanceTier | "">(current ?? "");
+  const [reason, setReason] = useState("");
+  const [error, setError] = useState("");
+  const [ok, setOk] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setLoading(true);
+    setError("");
+    setOk(false);
+    try {
+      await adminApi(`/users/${userId}/appearance-tier`, { method: "PATCH", body: { tier, reason } });
+      setOk(true);
+      setReason("");
+      onDone();
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <form onSubmit={submit} className="space-y-4">
+      <p className="eyebrow">외모 등급 (내부 전용)</p>
+      <Segmented<AppearanceTier | ""> value={tier} onChange={setTier} options={TIER_OPTIONS} />
+      <Field label="사유 (감사 로그에 남아요)" htmlFor="tier-reason">
+        <Input id="tier-reason" value={reason} onChange={(e) => setReason(e.target.value)} maxLength={300} placeholder="등급 기준 재검토" />
+      </Field>
+      <p className="text-[12.5px] text-ink-faint">사용자에게 알림이 가지 않아요. 평가 점수는 그대로 두고 등급만 바꿔요.</p>
+      {error && <Notice tone="error">{error}</Notice>}
+      {ok && <Notice tone="ok">변경했어요.</Notice>}
+      <Button type="submit" loading={loading} disabled={!tier || tier === current || reason.trim().length < 2}>
+        등급 저장
       </Button>
     </form>
   );

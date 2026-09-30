@@ -27,6 +27,13 @@ const BLOCKED_COPY: Record<string, { title: string; body: string; href: string; 
     href: "/profile",
     cta: "검수 상태 보기",
   },
+  // 사진은 승인됐지만 운영진 평가가 아직 끝나지 않음 (추천은 평가가 끝나야 열린다)
+  EVALUATION_REQUIRED: {
+    title: "평가가 진행 중이에요",
+    body: "운영진이 평가를 마무리하고 있어요. 끝나면 바로 추천이 열려요.",
+    href: "/profile",
+    cta: "내 프로필 보기",
+  },
 };
 
 export default function DiscoverPage() {
@@ -34,11 +41,14 @@ export default function DiscoverPage() {
   const [busy, setBusy] = useState(false);
   const [matched, setMatched] = useState<{ card: Card; matchId: string } | null>(null);
   const [error, setError] = useState("");
+  // 오늘 남은 좋아요 (한국 시간 자정에 다시 충전)
+  const [likes, setLikes] = useState<{ left: number; limit: number } | null>(null);
 
   const load = useCallback(async () => {
     setState({ kind: "loading" });
     try {
-      const res = await api<{ profiles: Card[] }>("/discover");
+      const res = await api<{ profiles: Card[]; likes_left_today: number; daily_like_limit: number }>("/discover");
+      setLikes({ left: res.likes_left_today, limit: res.daily_like_limit });
       setState({ kind: "cards", cards: res.profiles });
     } catch (err) {
       if (err instanceof ApiError && err.status === 409) setState({ kind: "blocked", code: err.code });
@@ -53,12 +63,20 @@ export default function DiscoverPage() {
   const act = useCallback(
     async (action: "like" | "pass") => {
       if (state.kind !== "cards" || !state.cards[0] || busy) return;
+      if (action === "like" && likes && likes.left <= 0) {
+        setError("오늘 좋아요를 모두 사용했어요. 자정(한국 시간)에 다시 충전돼요.");
+        return;
+      }
       const card = state.cards[0];
       setBusy(true);
       setError("");
       try {
         if (action === "like") {
-          const res = await api<{ matched: boolean; match_id: string | null }>("/likes", { method: "POST", body: { profile_id: card.profile_id } });
+          const res = await api<{ matched: boolean; match_id: string | null; likes_left_today: number }>("/likes", {
+            method: "POST",
+            body: { profile_id: card.profile_id },
+          });
+          setLikes((prev) => (prev ? { ...prev, left: res.likes_left_today } : prev));
           if (res.matched && res.match_id) setMatched({ card, matchId: res.match_id });
         } else {
           await api("/passes", { method: "POST", body: { profile_id: card.profile_id } });
@@ -67,12 +85,14 @@ export default function DiscoverPage() {
         if (rest.length === 0) await load();
         else setState({ kind: "cards", cards: rest });
       } catch (err) {
+        // 하루 한도를 다 쓴 경우 (다른 기기에서 쓴 경우 등)
+        if (action === "like" && err instanceof ApiError && err.status === 429) setLikes((prev) => (prev ? { ...prev, left: 0 } : prev));
         setError(errorMessage(err));
       } finally {
         setBusy(false);
       }
     },
-    [state, busy, load],
+    [state, busy, load, likes],
   );
 
   // 키보드: ← 넘기기, → 좋아요
@@ -114,7 +134,15 @@ export default function DiscoverPage() {
     <div className="mx-auto max-w-app">
       <div className="mb-5 flex items-baseline justify-between">
         <p className="eyebrow">오늘의 추천</p>
-        <p className="num text-[12.5px] text-ink-faint">{state.cards.length}명 남음</p>
+        <p className="text-[12.5px] text-ink-faint">
+          {likes && (
+            <>
+              오늘 남은 좋아요 <span className="num">{likes.left}</span>/<span className="num">{likes.limit}</span>
+              {" · "}
+            </>
+          )}
+          <span className="num">{state.cards.length}</span>명 남음
+        </p>
       </div>
 
       <SwipeCard key={current.profile_id} onSwipe={act} disabled={busy}>
@@ -128,10 +156,13 @@ export default function DiscoverPage() {
         <Button variant="secondary" size="lg" onClick={() => act("pass")} disabled={busy}>
           넘기기
         </Button>
-        <Button size="lg" onClick={() => act("like")} disabled={busy}>
+        <Button size="lg" onClick={() => act("like")} disabled={busy || (likes !== null && likes.left <= 0)}>
           좋아요
         </Button>
       </div>
+      {likes && likes.left <= 0 && (
+        <p className="mt-3 text-center text-[12.5px] text-ink-soft">오늘 좋아요를 모두 사용했어요. 자정에 다시 충전돼요.</p>
+      )}
       <p className="mt-4 hidden text-center text-[12px] text-ink-faint sm:block">키보드 ← 넘기기 · → 좋아요</p>
       <p className="mt-4 text-center text-[12px] text-ink-faint sm:hidden">카드를 옆으로 밀어도 돼요</p>
 

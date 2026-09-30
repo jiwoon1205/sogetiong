@@ -26,8 +26,8 @@ PUBLIC_CARD_KEYS = {
 
 def test_full_flow_signup_to_chat(sent_codes, db):
     admin = admin_login(db)
-    a = signup(sent_codes, db, "alice@hufs.ac.kr", gender="FEMALE")
-    b = signup(sent_codes, db, "bob@hufs.ac.kr", gender="MALE")
+    a = signup(sent_codes, db, "alice@hufs.ac.kr", gender="FEMALE", want="MALE")
+    b = signup(sent_codes, db, "bob@hufs.ac.kr", gender="MALE", want="FEMALE")
     choose_department(b, db, "경영학부")
 
     # 프로필 작성
@@ -49,8 +49,8 @@ def test_full_flow_signup_to_chat(sent_codes, db):
     # 조건이 없으면 추천 불가
     assert a.get("/api/v1/discover").status_code == 409
 
-    set_preferences(a, preferred_gender="MALE")
-    set_preferences(b, preferred_gender="FEMALE")
+    set_preferences(a)
+    set_preferences(b)
 
     # 사진 승인 전에는 추천 불가
     photo_a = upload_photo(a)
@@ -60,13 +60,13 @@ def test_full_flow_signup_to_chat(sent_codes, db):
     # 관리자 평가 (4개 항목)
     r = admin.put(
         f"/api/v1/admin/photo-reviews/{photo_a}/evaluation",
-        json={"decision": "APPROVED", "overall_impression": 8, "style": 7, "grooming": 8, "photo_vibe": 9},
+        json={"decision": "APPROVED", "overall_impression": 8, "style": 7, "grooming": 8, "photo_vibe": 9, "tier": "HIGH"},
     )
     assert r.status_code == 200, r.text
     photo_b = upload_photo(b)
     admin.put(
         f"/api/v1/admin/photo-reviews/{photo_b}/evaluation",
-        json={"decision": "APPROVED", "overall_impression": 6, "style": 6, "grooming": 7, "photo_vibe": 6},
+        json={"decision": "APPROVED", "overall_impression": 6, "style": 6, "grooming": 7, "photo_vibe": 6, "tier": "MID"},
     )
     assert a.get("/api/v1/me/evaluation").json()["scores"] == {
         "overall_impression": 8, "style": 7, "grooming": 8, "photo_vibe": 9
@@ -83,7 +83,7 @@ def test_full_flow_signup_to_chat(sent_codes, db):
 
     # LIKE → 아직 매칭 아님 → 상대도 LIKE → 매칭
     r = a.post("/api/v1/likes", json={"profile_id": b.profile_id})
-    assert r.json() == {"matched": False, "match_id": None}
+    assert r.json() == {"matched": False, "match_id": None, "likes_left_today": 4}
     r = b.post("/api/v1/likes", json={"profile_id": a.profile_id})
     assert r.json()["matched"] is True
     match_id = r.json()["match_id"]

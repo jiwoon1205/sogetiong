@@ -34,6 +34,10 @@ def _viewer(db: Session, current: CurrentUser) -> matching_service.Person:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="PREFERENCES_REQUIRED")
     if get_settings().require_approved_photo_to_discover and not profile_service.has_approved_photo(db, current.id):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="PHOTO_APPROVAL_REQUIRED")
+    # 추천은 "나와 외모 등급이 비슷한 사람" 순서라서, 내 등급이 정해져야 추천을 볼 수 있다.
+    # (사진은 승인됐지만 등급이 없는 예전 평가 → 관리자가 다시 정할 때까지 "평가 중"으로 안내)
+    if profile_service.current_tier(db, current.id) is None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="EVALUATION_REQUIRED")
     return profile_service.people_from_profiles(db, [profile])[0]
 
 
@@ -57,16 +61,26 @@ def discover(
         query = query.filter(PublicProfile.gender == viewer.preferences.preferred_gender)
     profiles = query.all()
 
+    settings = get_settings()
     by_user = {p.user_id: p for p in profiles}
     ranked = matching_service.rank(
         viewer,
         profile_service.people_from_profiles(db, profiles),
         profile_service.matching_weights(),
-        limit or get_settings().discover_page_size,
+        limit or settings.discover_page_size,
+        liked_me=profile_service.liked_me_ids(db, current.id),
+        liked_me_slots=settings.liked_me_slots,
+        liked_me_probability=settings.liked_me_probability,
     )
+    # 카드에는 외모 등급도, "나를 LIKE했는지"도 들어가지 않는다 (build_cards가 보내는 항목만 나감)
     cards = profile_service.build_cards(db, [by_user[p.user_id] for p in ranked])
     # 후보가 없을 때 조건을 자동으로 넓히지 않는다 (설계도 §56, §57)
-    return {"profiles": cards, "empty": not cards}
+    return {
+        "profiles": cards,
+        "empty": not cards,
+        "likes_left_today": profile_service.likes_left_today(db, current.id),
+        "daily_like_limit": settings.daily_like_limit,
+    }
 
 
 # ---------- LIKE / PASS ----------
@@ -89,7 +103,6 @@ def _upsert_action(db: Session, from_id: uuid.UUID, to_id: uuid.UUID, action: st
 @router.post("/likes")
 def like(payload: TargetRequest, current: CurrentUser = Depends(get_current_user), db: Session = Depends(get_db)):
     enforce_rate_limit(f"like:{current.id}", 60, 60)
-    enforce_rate_limit(f"like-daily:{current.id}", 300, 86400)
     target = _target(db, current, payload.profile_id)
     viewer = _viewer(db, current)
 
@@ -99,6 +112,14 @@ def like(payload: TargetRequest, current: CurrentUser = Depends(get_current_user
     candidates = profile_service.people_from_profiles(db, [target])
     if not candidates or not matching_service.mutually_compatible(viewer, candidates[0]):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="프로필을 찾을 수 없습니다.")
+
+    # 하루 LIKE 한도 (한국 시간 자정에 다시 채워짐). DB로 세므로 서버를 재시작해도 초기화되지 않는다.
+    limit = get_settings().daily_like_limit
+    if profile_service.likes_sent_today(db, current.id) >= limit:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"오늘 LIKE {limit}개를 모두 사용했어요. 자정(한국 시간)에 다시 충전돼요.",
+        )
 
     _upsert_action(db, current.id, target.user_id, "LIKE")
     db.flush()
@@ -125,7 +146,11 @@ def like(payload: TargetRequest, current: CurrentUser = Depends(get_current_user
         match = db.query(Match).filter(Match.user_a_id == a, Match.user_b_id == b).first()
 
     # 매칭되기 전에는 상대가 나를 LIKE했는지 알려주지 않는다 (설계도 §23)
-    return {"matched": match is not None, "match_id": str(match.id) if match else None}
+    return {
+        "matched": match is not None,
+        "match_id": str(match.id) if match else None,
+        "likes_left_today": profile_service.likes_left_today(db, current.id),
+    }
 
 
 @router.post("/passes")

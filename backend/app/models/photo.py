@@ -8,6 +8,9 @@ from app.db.base import Base
 from app.models._common import created_at, pk, updated_at
 
 PHOTO_STATUSES = ("PENDING", "IN_REVIEW", "APPROVED", "REJECTED", "SUPERSEDED")
+# 외모 등급 (상/중/하). 관리자가 평가할 때 직접 고르고, 추천 순서에만 쓴다.
+# ⚠️ 내부 데이터: 다른 사용자는 물론 본인에게도 절대 보내지 않는다.
+APPEARANCE_TIERS = ("HIGH", "MID", "LOW")
 
 
 class UserPhoto(Base):
@@ -40,7 +43,7 @@ class AppearanceEvaluation(Base):
     __table_args__ = tuple(
         CheckConstraint(f"{col} BETWEEN 1 AND 10", name=f"ck_eval_{col}")
         for col in ("overall_impression", "style", "grooming", "photo_vibe")
-    )
+    ) + (CheckConstraint("tier IS NULL OR tier IN ('HIGH', 'MID', 'LOW')", name="ck_eval_tier"),)
 
     id: Mapped[uuid.UUID] = pk()
     user_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("users.id"), nullable=False, index=True)
@@ -51,6 +54,8 @@ class AppearanceEvaluation(Base):
     photo_vibe: Mapped[int] = mapped_column(Integer, nullable=False)  # 사진 분위기
     evaluator_admin_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("admin_users.id"), nullable=False)
     evaluation_note: Mapped[str | None] = mapped_column(Text, nullable=True)  # 관리자 전용 메모
+    # 외모 등급 HIGH/MID/LOW (내부 전용, 공개 금지). 예전 평가는 비어 있을 수 있다 → 다시 평가해야 추천에 나온다
+    tier: Mapped[str | None] = mapped_column(String(10), nullable=True)
     created_at: Mapped[datetime] = created_at()
 
     def scores(self) -> dict[str, int]:

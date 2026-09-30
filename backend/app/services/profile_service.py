@@ -11,7 +11,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
-from app.core.time import age_on
+from app.core.time import age_on, kst_day_start
 from app.models.matching import (
     Block,
     Like,
@@ -105,16 +105,26 @@ def build_card(db: Session, profile: PublicProfile) -> dict:
 
 # ---------- 매칭 엔진용 ----------
 
+def preferred_genders_of(db: Session, user_ids: list[uuid.UUID]) -> dict[uuid.UUID, str]:
+    """원하는 성별 (가입할 때 정한 값, PrivateProfile에 있음)."""
+    if not user_ids:
+        return {}
+    rows = db.query(PrivateProfile.user_id, PrivateProfile.preferred_gender).filter(PrivateProfile.user_id.in_(user_ids)).all()
+    return dict(rows)
+
+
 def preferences_of(db: Session, user_ids: list[uuid.UUID]) -> dict[uuid.UUID, Preferences]:
+    """매칭 조건. 매칭 조건 화면에서 저장한 적이 없으면(행이 없으면) 결과에 없다."""
     if not user_ids:
         return {}
     prefs = db.query(MatchingPreference).filter(MatchingPreference.user_id.in_(user_ids)).all()
+    genders = preferred_genders_of(db, [p.user_id for p in prefs])
     campuses = defaultdict(set)
     for uid, cid in db.query(PreferredCampus.user_id, PreferredCampus.campus_id).filter(PreferredCampus.user_id.in_(user_ids)):
         campuses[uid].add(cid)
     return {
         p.user_id: Preferences(
-            preferred_gender=p.preferred_gender,
+            preferred_gender=genders.get(p.user_id, "ANY"),
             min_age=p.min_age,
             max_age=p.max_age,
             campus_mode=p.campus_mode,
@@ -148,8 +158,7 @@ def people_from_profiles(db: Session, profiles: list[PublicProfile]) -> list[Per
                 mbti=p.mbti,
                 has_bio=bool(p.bio),
                 has_ideal_type=bool(p.ideal_type),
-                shows_department=p.show_department,
-                appearance_scores=evaluation.scores() if evaluation else None,
+                tier=evaluation.tier if evaluation else None,
             )
         )
     return people
@@ -165,9 +174,13 @@ def has_approved_photo(db: Session, user_id: uuid.UUID) -> bool:
 
 
 def discoverable_profiles_query(db: Session, university_id: uuid.UUID):
-    """추천 후보가 될 수 있는 프로필: 활성 계정 + 같은 학교 + 승인된 사진 + 외적 평가 + 매칭 조건 설정."""
+    """추천 후보가 될 수 있는 프로필: 활성 계정 + 같은 학교 + 승인된 사진 + 외모 등급 + 매칭 조건 설정.
+
+    외모 등급은 "가장 최근 평가"에 있어야 한다 → 등급 없는 예전 평가만 있는 사람은
+    추천 엔진(people_from_profiles → tier=None)에서 가장 뒤로 가고, API에서 한 번 더 거른다.
+    """
     approved = db.query(UserPhoto.user_id).filter(UserPhoto.review_status == "APPROVED")
-    evaluated = db.query(AppearanceEvaluation.user_id)
+    evaluated = db.query(AppearanceEvaluation.user_id).filter(AppearanceEvaluation.tier.isnot(None))
     with_prefs = db.query(MatchingPreference.user_id)
     return (
         db.query(PublicProfile)
@@ -223,12 +236,36 @@ def matching_weights():
     from app.services.matching_service import Weights
 
     s = get_settings()
-    return Weights(
-        interest=s.weight_interest,
-        appearance=min(s.weight_appearance, s.weight_appearance_max),
-        completeness=s.weight_completeness,
-        mbti=s.weight_mbti,
+    return Weights(interest=s.weight_interest, completeness=s.weight_completeness, mbti=s.weight_mbti)
+
+
+def current_tier(db: Session, user_id: uuid.UUID) -> str | None:
+    """가장 최근 외모 평가의 등급 (내부 전용 — API 응답에 넣지 말 것)."""
+    evaluation = latest_evaluations(db, [user_id]).get(user_id)
+    return evaluation.tier if evaluation else None
+
+
+def liked_me_ids(db: Session, user_id: uuid.UUID) -> set[uuid.UUID]:
+    """나에게 LIKE를 보낸 사람들 (추천 우대용, 사용자에게는 절대 알려주지 않는다)."""
+    return {r[0] for r in db.query(Like.from_user_id).filter(Like.to_user_id == user_id, Like.action == "LIKE")}
+
+
+def likes_sent_today(db: Session, user_id: uuid.UUID) -> int:
+    """오늘(한국 시간 0시 이후) 보낸 LIKE 수.
+
+    LIKE는 항상 새 행으로 생긴다 (이미 LIKE/PASS한 상대에게는 다시 LIKE할 수 없음 → excluded_user_ids).
+    PASS를 취소하면 행이 지워지므로, 그 뒤의 LIKE도 새 행이다. 그래서 created_at으로 셀 수 있다.
+    """
+    return (
+        db.query(func.count(Like.id))
+        .filter(Like.from_user_id == user_id, Like.action == "LIKE", Like.created_at >= kst_day_start())
+        .scalar()
+        or 0
     )
+
+
+def likes_left_today(db: Session, user_id: uuid.UUID) -> int:
+    return max(0, get_settings().daily_like_limit - likes_sent_today(db, user_id))
 
 
 def count(db: Session, query) -> int:

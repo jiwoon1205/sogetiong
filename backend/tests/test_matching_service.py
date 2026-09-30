@@ -1,15 +1,16 @@
 """매칭 엔진 단위 테스트 (DB 없이)."""
 
+import random
 import uuid
 
-from app.services.matching_service import Person, Preferences, Weights, mutually_compatible, rank, score
+from app.services.matching_service import Person, Preferences, Weights, mutually_compatible, rank, score, tier_gap
 
 CAMPUS_A, CAMPUS_B = uuid.uuid4(), uuid.uuid4()
 DEPT_BIZ, DEPT_CS = uuid.uuid4(), uuid.uuid4()
-W = Weights(interest=0.47, appearance=0.23, completeness=0.18, mbti=0.12)
+W = Weights(interest=0.60, completeness=0.25, mbti=0.15)
 
 
-def person(gender="FEMALE", age=22, campus=CAMPUS_A, dept=DEPT_CS, **prefs_kw) -> Person:
+def person(gender="FEMALE", age=22, campus=CAMPUS_A, dept=DEPT_CS, tier="MID", **prefs_kw) -> Person:
     prefs = Preferences(
         preferred_gender=prefs_kw.pop("want", "ANY"),
         min_age=prefs_kw.pop("min_age", 19),
@@ -18,7 +19,7 @@ def person(gender="FEMALE", age=22, campus=CAMPUS_A, dept=DEPT_CS, **prefs_kw) -
         campus_ids=prefs_kw.pop("campus_ids", set()),
         exclude_same_department=prefs_kw.pop("exclude_same", False),
     )
-    return Person(user_id=uuid.uuid4(), gender=gender, age=age, campus_id=campus, department_id=dept, preferences=prefs, **prefs_kw)
+    return Person(user_id=uuid.uuid4(), gender=gender, age=age, campus_id=campus, department_id=dept, preferences=prefs, tier=tier, **prefs_kw)
 
 
 def test_self_is_never_compatible():
@@ -76,19 +77,109 @@ def test_candidate_without_preferences_is_skipped():
     assert not mutually_compatible(a, b)
 
 
-def test_ranking_prefers_shared_interests_over_appearance():
+# ---------- 정렬: 외모 등급이 1순위 ----------
+
+def test_tier_gap():
+    assert tier_gap("MID", "MID") == 0
+    assert tier_gap("HIGH", "MID") == 1
+    assert tier_gap("LOW", "HIGH") == 2
+    assert tier_gap(None, "MID") == 3  # 등급을 모르면 가장 뒤
+
+
+def test_same_tier_comes_first_even_with_fewer_shared_interests():
+    viewer = person(tier="MID", interests={"카페", "영화", "여행"})
+    same_tier = person(tier="MID", interests={"게임"})
+    other_tier_similar = person(tier="HIGH", interests={"카페", "영화", "여행"})
+    assert rank(viewer, [other_tier_similar, same_tier], W, 10) == [same_tier, other_tier_similar]
+
+
+def test_tier_order_same_then_one_step_then_two_steps():
+    viewer = person(tier="HIGH")
+    low, mid, high = person(tier="LOW"), person(tier="MID"), person(tier="HIGH")
+    assert rank(viewer, [low, mid, high], W, 10) == [high, mid, low]
+
+
+def test_within_same_tier_shared_interests_win():
     viewer = person(interests={"카페", "영화", "여행"})
-    similar = person(interests={"카페", "영화", "여행"}, appearance_scores={"a": 5, "b": 5, "c": 5, "d": 5})
-    attractive = person(interests={"게임"}, appearance_scores={"a": 10, "b": 10, "c": 10, "d": 10})
-    assert rank(viewer, [attractive, similar], W, 10) == [similar, attractive]
+    similar = person(interests={"카페", "영화", "여행"})
+    different = person(interests={"게임"})
+    assert rank(viewer, [different, similar], W, 10) == [similar, different]
 
 
-def test_appearance_is_only_partially_reflected():
+def test_picking_many_interests_is_not_an_advantage():
+    # 예전 방식(합집합으로 나눔)은 관심사를 많이 고를수록 유리했다
+    viewer = person(interests={"카페", "영화", "여행"})
+    focused = person(interests={"카페", "영화", "여행"})
+    everything = person(interests={"카페", "영화", "여행", "게임", "요리", "사진", "전시", "공연", "맛집", "등산"})
+    assert score(viewer, focused, W) == score(viewer, everything, W)
+
+
+def test_hiding_department_or_mbti_is_not_penalized_twice():
     viewer = person()
-    low = person(appearance_scores={"a": 1, "b": 1, "c": 1, "d": 1})
-    high = person(appearance_scores={"a": 10, "b": 10, "c": 10, "d": 10})
-    gap = score(viewer, high, W) - score(viewer, low, W)
-    assert 0 < gap <= W.appearance
+    a = person(interests={"카페", "영화", "여행"}, has_bio=True)
+    b = person(interests={"카페", "영화", "여행"}, has_bio=True)
+    # 학과 공개 여부는 Person에 없고(점수에 안 씀), MBTI가 없으면 MBTI 유사도만 0
+    assert score(viewer, a, W) == score(viewer, b, W)
+
+
+# ---------- 나를 LIKE한 사람 우대 ----------
+
+def _pool(n, tier="MID"):
+    return [person(tier=tier) for _ in range(n)]
+
+
+def test_liked_me_gets_a_slot_on_the_first_page():
+    viewer = person()
+    pool = _pool(15)
+    fan = pool[-1]  # 원래 순서로는 1페이지(5명)에 못 들어가는 사람
+    page = rank(viewer, pool, W, 5, liked_me={fan.user_id}, liked_me_slots=2, liked_me_probability=1.0, rng=random.Random(1))
+    assert fan in page
+    assert len(page) == 5
+
+
+def test_liked_me_slots_are_limited():
+    viewer = person()
+    pool = _pool(15)
+    fans = {p.user_id for p in pool[5:]}
+    page = rank(viewer, pool, W, 5, liked_me=fans, liked_me_slots=2, liked_me_probability=1.0, rng=random.Random(1))
+    assert sum(1 for p in page if p.user_id in fans) == 2
+
+
+def test_liked_me_position_is_random():
+    viewer = person()
+    pool = _pool(15)
+    fan = pool[-1]
+    positions = {
+        rank(viewer, pool, W, 5, liked_me={fan.user_id}, liked_me_slots=1, liked_me_probability=1.0, rng=random.Random(seed)).index(fan)
+        for seed in range(30)
+    }
+    assert len(positions) > 1
+
+
+def test_liked_me_boost_is_sometimes_skipped():
+    viewer = person()
+    pool = _pool(15)
+    fan = pool[-1]
+    shown = [
+        fan in rank(viewer, pool, W, 5, liked_me={fan.user_id}, liked_me_slots=1, liked_me_probability=0.7, rng=random.Random(seed))
+        for seed in range(200)
+    ]
+    assert 0 < sum(shown) < len(shown)
+
+
+def test_liked_me_two_tiers_away_is_not_boosted():
+    viewer = person(tier="HIGH")
+    pool = _pool(10, tier="HIGH")
+    fan = person(tier="LOW")
+    page = rank(viewer, pool + [fan], W, 5, liked_me={fan.user_id}, liked_me_slots=2, liked_me_probability=1.0, rng=random.Random(1))
+    assert fan not in page
+
+
+def test_liked_me_still_needs_hard_filters():
+    viewer = person(want="MALE")
+    fan = person(gender="FEMALE")  # 원하는 성별이 아님
+    page = rank(viewer, [fan], W, 5, liked_me={fan.user_id}, liked_me_slots=2, liked_me_probability=1.0)
+    assert page == []
 
 
 def test_default_weights_sum_to_one():
@@ -96,5 +187,5 @@ def test_default_weights_sum_to_one():
 
     # .env 파일 값이 아니라 코드에 적힌 기본값을 확인한다
     d = {name: f.default for name, f in Settings.model_fields.items()}
-    assert abs(d["weight_interest"] + d["weight_appearance"] + d["weight_completeness"] + d["weight_mbti"] - 1.0) < 1e-9
-    assert d["weight_appearance"] <= d["weight_appearance_max"]
+    assert abs(d["weight_interest"] + d["weight_completeness"] + d["weight_mbti"] - 1.0) < 1e-9
+    assert d["daily_like_limit"] == 5

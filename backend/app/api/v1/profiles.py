@@ -55,6 +55,13 @@ def department_locked_message() -> str:
     )
 
 
+def gender_locked_message() -> str:
+    return (
+        "성별과 원하는 성별은 가입할 때 정하면 바꿀 수 없어요. 잘못 선택했다면 가입한 학교 메일로 "
+        f"{get_settings().support_email} 에 바꿀 내용을 알려주세요. 운영진이 확인 후 바꿔드려요."
+    )
+
+
 # ---------- 계정 ----------
 
 @router.get("/me")
@@ -183,11 +190,14 @@ def update_my_profile(
 @router.get("/me/preferences")
 def get_my_preferences(current: CurrentUser = Depends(get_current_user), db: Session = Depends(get_db)):
     prefs = profile_service.preferences_of(db, [current.id]).get(current.id)
+    # 원하는 성별은 가입할 때 정해서 바꿀 수 없다 → 보여주기만 한다
+    preferred_gender = profile_service.preferred_genders_of(db, [current.id]).get(current.id, "ANY")
     if prefs is None:
-        return {"configured": False}
+        return {"configured": False, "preferred_gender": preferred_gender, "gender_locked_message": gender_locked_message()}
     return {
         "configured": True,
-        "preferred_gender": prefs.preferred_gender,
+        "preferred_gender": preferred_gender,
+        "gender_locked_message": gender_locked_message(),
         "min_age": prefs.min_age,
         "max_age": prefs.max_age,
         "campus_mode": prefs.campus_mode,
@@ -235,14 +245,12 @@ def put_my_preferences(
     else:
         before = profile_service.preferences_of(db, [current.id]).get(current.id)
         changed = before is None or (
-            before.preferred_gender,
             before.min_age,
             before.max_age,
             before.campus_mode,
             before.campus_ids,
             before.exclude_same_department,
         ) != (
-            payload.preferred_gender,
             payload.min_age,
             payload.max_age,
             payload.campus_mode,
@@ -263,7 +271,6 @@ def put_my_preferences(
             )
         pref.changes_in_window += 1
 
-    pref.preferred_gender = payload.preferred_gender
     pref.min_age = payload.min_age
     pref.max_age = payload.max_age
     pref.campus_mode = payload.campus_mode

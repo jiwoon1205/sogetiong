@@ -139,6 +139,7 @@ def register(payload: RegisterRequest, request: Request, response: Response, db:
         PrivateProfile(
             user_id=user.id,
             birth_date=payload.birth_date,
+            preferred_gender=payload.preferred_gender,
             real_name=payload.real_name,
             student_id=payload.student_id,
             verification_data_json={

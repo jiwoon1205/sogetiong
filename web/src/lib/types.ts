@@ -52,7 +52,9 @@ export type Me = {
 
 export type Preferences = {
   configured: boolean;
+  /** 가입할 때 정함. 본인은 못 바꾸고 운영진에게 메일로 요청 */
   preferred_gender: "MALE" | "FEMALE" | "ANY";
+  gender_locked_message?: string;
   min_age: number;
   max_age: number;
   campus_mode: "MY" | "ALL" | "SELECTED";
@@ -96,3 +98,14 @@ export const REPORT_REASONS: { value: string; label: string }[] = [
 ];
 
 export const GENDER_LABEL = { MALE: "남성", FEMALE: "여성", ANY: "상관없음" } as const;
+
+/** 외모 등급 (상/중/하). 관리자 화면 전용 — 사용자 화면에는 절대 쓰지 않는다. */
+export type AppearanceTier = "HIGH" | "MID" | "LOW";
+
+export const TIER_OPTIONS: { value: AppearanceTier; label: string }[] = [
+  { value: "HIGH", label: "상" },
+  { value: "MID", label: "중" },
+  { value: "LOW", label: "하" },
+];
+
+export const TIER_LABEL: Record<AppearanceTier, string> = { HIGH: "상", MID: "중", LOW: "하" };

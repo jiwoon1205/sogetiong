@@ -7,7 +7,7 @@ import { Button, Field, Input, Notice, Segmented, Spinner, Textarea } from "@/co
 import { adminApi, useAdmin } from "@/lib/admin";
 import { errorMessage } from "@/lib/api";
 import { cn, dateTime } from "@/lib/format";
-import { SCORE_LABELS, type Scores } from "@/lib/types";
+import { SCORE_LABELS, TIER_LABEL, TIER_OPTIONS, type AppearanceTier, type Scores } from "@/lib/types";
 
 type Detail = {
   photo_id: string;
@@ -15,7 +15,7 @@ type Detail = {
   review_status: string;
   uploaded_at: string;
   image_url: string;
-  evaluation_history: (Scores & { note: string | null; created_at: string })[];
+  evaluation_history: (Scores & { tier: AppearanceTier | null; note: string | null; created_at: string })[];
 };
 
 const PHOTO_STATUS: Record<string, string> = { PENDING: "대기", IN_REVIEW: "확인 중", APPROVED: "승인", REJECTED: "반려", SUPERSEDED: "대체됨" };
@@ -36,6 +36,8 @@ export default function PhotoReview() {
   const [detail, setDetail] = useState<Detail | null>(null);
   const [decision, setDecision] = useState<"APPROVED" | "REJECTED">("APPROVED");
   const [scores, setScores] = useState<Partial<Scores>>({});
+  // 외모 등급 (내부 전용). 추천 순서에만 쓰이고 사용자에게는 보이지 않는다
+  const [tier, setTier] = useState<AppearanceTier | "">("");
   const [note, setNote] = useState("");
   const [reason, setReason] = useState("");
   const [error, setError] = useState("");
@@ -46,7 +48,10 @@ export default function PhotoReview() {
       .then((d) => {
         setDetail(d);
         const last = d.evaluation_history[0];
-        if (last) setScores({ overall_impression: last.overall_impression, style: last.style, grooming: last.grooming, photo_vibe: last.photo_vibe });
+        if (last) {
+          setScores({ overall_impression: last.overall_impression, style: last.style, grooming: last.grooming, photo_vibe: last.photo_vibe });
+          if (last.tier) setTier(last.tier);
+        }
       })
       .catch((e) => setError(errorMessage(e)));
   }, [photoId]);
@@ -57,7 +62,10 @@ export default function PhotoReview() {
     try {
       await adminApi(`/photo-reviews/${photoId}/evaluation`, {
         method: "PUT",
-        body: decision === "APPROVED" ? { decision, ...scores, note: note || null } : { decision, reject_reason: reason, note: note || null },
+        body:
+          decision === "APPROVED"
+            ? { decision, ...scores, tier, note: note || null }
+            : { decision, reject_reason: reason, note: note || null },
       });
       router.push("/admin/photos");
     } catch (err) {
@@ -67,7 +75,7 @@ export default function PhotoReview() {
   }
 
   if (!detail) return error ? <Notice tone="error">{error}</Notice> : <Spinner />;
-  const complete = SCORE_LABELS.every((s) => scores[s.key]);
+  const complete = SCORE_LABELS.every((s) => scores[s.key]) && tier !== "";
   const canEvaluate = admin.can("photos:evaluate");
 
   return (
@@ -128,6 +136,16 @@ export default function PhotoReview() {
                       </div>
                     </div>
                   ))}
+                  <div>
+                    <div className="mb-2 flex items-baseline justify-between">
+                      <p className="text-[14.5px] font-semibold">외모 등급</p>
+                      <p className="text-[12px] text-ink-faint">내부 전용 · 사용자에게 보이지 않음</p>
+                    </div>
+                    <Segmented<AppearanceTier | ""> value={tier} onChange={setTier} options={TIER_OPTIONS} />
+                    <p className="mt-2 text-[12px] leading-relaxed text-ink-faint">
+                      같은 등급끼리 추천에 먼저 나와요. 점수와 별개로 운영진이 직접 정하고, 본인을 포함해 누구에게도 공개되지 않아요.
+                    </p>
+                  </div>
                   <details className="rounded-md border border-line bg-paper-card px-4 py-3 text-[13px]">
                     <summary className="cursor-pointer font-medium text-ink-soft">평가 기준표</summary>
                     <dl className="mt-3 space-y-1.5">
@@ -172,6 +190,7 @@ export default function PhotoReview() {
                         {s.label.slice(0, 2)}
                       </th>
                     ))}
+                    <th className="pb-2 text-right font-normal">등급</th>
                   </tr>
                 </thead>
                 <tbody className="num">
@@ -183,6 +202,7 @@ export default function PhotoReview() {
                           {h[s.key]}
                         </td>
                       ))}
+                      <td className="py-2 text-right font-semibold">{h.tier ? TIER_LABEL[h.tier] : "—"}</td>
                     </tr>
                   ))}
                 </tbody>

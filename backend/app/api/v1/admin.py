@@ -2,6 +2,7 @@
 
 import logging
 import uuid
+from datetime import timedelta
 from io import BytesIO
 
 import pyotp
@@ -12,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from app.core.rate_limit import client_ip, enforce_rate_limit
 from app.core.security import pseudonymous_code, verify_password
-from app.core.time import utcnow
+from app.core.time import as_utc, utcnow
 from app.db.session import get_db
 from app.deps import CurrentAdmin, get_admin_pending_mfa, get_current_admin, require_permission
 from app.models.admin import AdminUser, AuditLog
@@ -26,7 +27,9 @@ from app.schemas.admin import (
     AdminTwoFactorRequest,
     EvaluationRequest,
     ReportUpdateRequest,
+    AppearanceTierRequest,
     UserDepartmentRequest,
+    UserGenderRequest,
     UserStatusRequest,
 )
 from app.services import admin_alert_service, profile_service
@@ -168,7 +171,9 @@ def get_photo_review(
     return {
         **_photo_summary(photo),
         "image_url": f"/api/v1/admin/photo-reviews/{photo.id}/image",
-        "evaluation_history": [{**e.scores(), "note": e.evaluation_note, "created_at": e.created_at.isoformat()} for e in history],
+        "evaluation_history": [
+            {**e.scores(), "tier": e.tier, "note": e.evaluation_note, "created_at": e.created_at.isoformat()} for e in history
+        ],
     }
 
 
@@ -224,7 +229,7 @@ def evaluate_photo(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="새 사진으로 대체된 사진입니다.")
 
     previous = profile_service.latest_evaluations(db, [photo.user_id]).get(photo.user_id)
-    before = previous.scores() if previous else None
+    before = {**previous.scores(), "tier": previous.tier} if previous else None
     now = utcnow()
     photo.reviewed_at = now
     photo.reviewed_by = admin.id
@@ -239,11 +244,12 @@ def evaluate_photo(
             style=payload.style,
             grooming=payload.grooming,
             photo_vibe=payload.photo_vibe,
+            tier=payload.tier,
             evaluator_admin_id=admin.id,
             evaluation_note=payload.note,
         )
         db.add(evaluation)
-        after = evaluation.scores()
+        after = {**evaluation.scores(), "tier": evaluation.tier}
         action = "EVALUATION_UPDATE" if before else "EVALUATION_CREATE"
         notify(db, photo.user_id, "PHOTO_REVIEWED", "사진 검수가 완료되었어요", "외적 특징 평가가 프로필에 반영되었습니다.", photo.id)
     else:
@@ -274,7 +280,12 @@ def evaluate_photo(
             background.add_task(_send_quietly, EmailService.send_photo_approved, owner.email)
         else:
             background.add_task(_send_quietly, EmailService.send_photo_rejected, owner.email, payload.reject_reason)
-    return {**_photo_summary(photo), "scores": after}
+    # 관리자 응답이라 등급을 보여줘도 된다 (사용자 쪽 API에는 절대 넣지 않음)
+    return {
+        **_photo_summary(photo),
+        "scores": {k: v for k, v in after.items() if k != "tier"} if after else None,
+        "tier": after["tier"] if after else None,
+    }
 
 
 def _send_quietly(send, *args) -> None:
@@ -339,6 +350,7 @@ def get_user(
 ):
     user = _user_or_404(db, user_id)
     profile = db.query(PublicProfile).filter(PublicProfile.user_id == user.id).first()
+    private = db.query(PrivateProfile).filter(PrivateProfile.user_id == user.id).first()
     result = {
         "user_id": str(user.id),
         "subject_code": pseudonymous_code(user.id),
@@ -350,6 +362,11 @@ def get_user(
         "department": (
             {"id": str(profile.department_id), "name": profile.department.name} if profile and profile.department else None
         ),
+        # 성별·원하는 성별 (사용자는 못 바꾸고, 메일 요청을 받아 관리자가 바꾼다)
+        "gender": profile.gender if profile else None,
+        "preferred_gender": private.preferred_gender if private else None,
+        # 외모 등급 (내부 전용). None = 아직 없음 → 추천에 나오지 않는다
+        "appearance_tier": profile_service.current_tier(db, user.id),
         "reports_received": profile_service.count(db, db.query(Report.id).filter(Report.reported_user_id == user.id)),
         "deleted_at": user.deleted_at.isoformat() if user.deleted_at else None,
         # 같은 학교 메일로 가입했던 다른 계정 (탈퇴 후 재가입 등). 이메일 자체는 보여주지 않는다.
@@ -378,7 +395,6 @@ def get_user(
         if "users:private:read" not in admin.permissions:
             db.commit()
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="개인정보 조회 권한이 없습니다.")
-        private = db.query(PrivateProfile).filter(PrivateProfile.user_id == user.id).first()
         result["private"] = {
             "email": user.email,
             "real_name": private.real_name if private else None,
@@ -455,6 +471,99 @@ def update_user_department(
     )
     db.commit()
     return {"user_id": str(user.id), "department": {"id": str(dept.id), "name": dept.name}}
+
+
+GENDER_LABEL = {"MALE": "남성", "FEMALE": "여성", "ANY": "상관없음"}
+
+
+@router.patch("/users/{user_id}/gender")
+def update_user_gender(
+    user_id: uuid.UUID,
+    payload: UserGenderRequest,
+    request: Request,
+    admin: CurrentAdmin = Depends(require_permission("users:gender")),
+    db: Session = Depends(get_db),
+):
+    """성별·원하는 성별 변경 (사용자는 직접 못 바꾼다). 요청 메일이 가입한 학교 메일에서 왔는지 먼저 확인할 것.
+
+    이미 생긴 LIKE·매칭은 그대로 두고, 이후 추천부터 새 값이 적용된다.
+    """
+    user = _user_or_404(db, user_id)
+    profile = db.query(PublicProfile).filter(PublicProfile.user_id == user.id).first()
+    private = db.query(PrivateProfile).filter(PrivateProfile.user_id == user.id).first()
+    if profile is None or private is None or user.deleted_at is not None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="프로필이 없는 계정입니다.")
+
+    before = {"gender": profile.gender, "preferred_gender": private.preferred_gender}
+    changes = []
+    if payload.gender is not None and payload.gender != profile.gender:
+        profile.gender = payload.gender
+        changes.append(f"성별: {GENDER_LABEL[payload.gender]}")
+    if payload.preferred_gender is not None and payload.preferred_gender != private.preferred_gender:
+        private.preferred_gender = payload.preferred_gender
+        changes.append(f"원하는 성별: {GENDER_LABEL[payload.preferred_gender]}")
+    after = {"gender": profile.gender, "preferred_gender": private.preferred_gender}
+
+    if changes:
+        notify(db, user.id, "PROFILE_UPDATED", "성별 정보가 변경되었어요", "요청하신 대로 바꿨어요. " + ", ".join(changes))
+        AuditService.record(
+            db,
+            admin_id=admin.id,
+            action="USER_GENDER_CHANGE",
+            target_type="USER",
+            target_id=user.id,
+            request=request,
+            metadata={"before": before, "after": after, "reason": payload.reason},
+        )
+    db.commit()
+    return {"user_id": str(user.id), **after}
+
+
+@router.patch("/users/{user_id}/appearance-tier")
+def update_user_appearance_tier(
+    user_id: uuid.UUID,
+    payload: AppearanceTierRequest,
+    request: Request,
+    admin: CurrentAdmin = Depends(require_permission("photos:evaluate")),
+    db: Session = Depends(get_db),
+):
+    """외모 등급만 다시 정한다 (점수는 그대로). 등급이 없는 예전 평가를 채울 때도 쓴다.
+
+    평가 기록은 지우거나 고치지 않고, 점수를 복사한 새 평가 행을 추가해 이력을 남긴다.
+    사용자에게는 알리지 않는다 (등급은 내부 데이터).
+    """
+    user = _user_or_404(db, user_id)
+    latest = profile_service.latest_evaluations(db, [user.id]).get(user.id)
+    if latest is None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="아직 외모 평가를 받지 않은 사용자입니다. 사진 검수에서 먼저 평가해주세요.")
+    before = latest.tier
+    if before != payload.tier:
+        db.add(
+            AppearanceEvaluation(
+                user_id=user.id,
+                photo_id=latest.photo_id,
+                overall_impression=latest.overall_impression,
+                style=latest.style,
+                grooming=latest.grooming,
+                photo_vibe=latest.photo_vibe,
+                tier=payload.tier,
+                evaluator_admin_id=admin.id,
+                evaluation_note=latest.evaluation_note,
+                # 같은 시각이면 "최신" 판단이 흔들리므로 이전 평가보다 확실히 뒤로
+                created_at=max(utcnow(), as_utc(latest.created_at) + timedelta(microseconds=1)),
+            )
+        )
+        AuditService.record(
+            db,
+            admin_id=admin.id,
+            action="EVALUATION_TIER_CHANGE",
+            target_type="USER",
+            target_id=user.id,
+            request=request,
+            metadata={"before": before, "after": payload.tier, "reason": payload.reason},
+        )
+    db.commit()
+    return {"user_id": str(user.id), "appearance_tier": payload.tier}
 
 
 # ---------- 대화 열람 ----------

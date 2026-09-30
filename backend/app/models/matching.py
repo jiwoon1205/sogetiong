@@ -16,7 +16,7 @@ class MatchingPreference(Base):
 
     id: Mapped[uuid.UUID] = pk()
     user_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("users.id"), unique=True, nullable=False)
-    preferred_gender: Mapped[str] = mapped_column(String(10), nullable=False)  # MALE / FEMALE / ANY
+    # 원하는 성별은 여기 없다 → PrivateProfile.preferred_gender (가입 때 정하고 본인은 못 바꿈)
     min_age: Mapped[int] = mapped_column(Integer, nullable=False)
     max_age: Mapped[int] = mapped_column(Integer, nullable=False)
     campus_mode: Mapped[str] = mapped_column(String(20), default="ALL", nullable=False)  # MY / ALL / SELECTED
