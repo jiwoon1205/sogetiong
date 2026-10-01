@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { PageTitle, Spinner } from "@/components/ui";
+import GenderPie from "@/components/GenderPie";
 import { adminApi } from "@/lib/admin";
 
 type Stats = {
@@ -12,6 +13,8 @@ type Stats = {
   users_normal: number;
   users_male: number;
   users_female: number;
+  users_active_male: number;
+  users_active_female: number;
   users_suspended: number;
   photos_pending: number;
   matches_total: number;
@@ -21,7 +24,7 @@ type Stats = {
 const TILES: { key: keyof Stats; label: string; hint?: string; href?: string; urgent?: boolean }[] = [
   { key: "photos_pending", label: "사진 검수 대기", href: "/admin/photos", urgent: true },
   { key: "reports_open", label: "처리할 신고", href: "/admin/reports", urgent: true },
-  { key: "users_active", label: "활성 사용자", hint: "최근 7일 안에 접속" },
+  { key: "users_active", label: "활성 사용자", hint: "사진 검수 완료 + 최근 7일 접속" },
   { key: "users_active_today", label: "오늘 접속" },
   { key: "users_total", label: "전체 가입자", hint: "탈퇴·정지 포함" },
   { key: "users_male", label: "남자", hint: "정상 계정", href: "/admin/users?gender=MALE" },
@@ -48,7 +51,10 @@ export default function AdminDashboard() {
   return (
     <>
       <PageTitle eyebrow="현황" title="오늘의 운영" desc="개인정보 없이 숫자만 보여줍니다." />
-      {genderRatio(stats) && <p className="mb-4 text-[14px] text-ink-soft">성비 {genderRatio(stats)}</p>}
+      <div className="mb-4 flex flex-wrap items-center gap-x-6 gap-y-3">
+        <GenderPie male={stats.users_active_male ?? 0} female={stats.users_active_female ?? 0} />
+        {genderRatio(stats) && <p className="text-[14px] text-ink-soft">전체 성비 {genderRatio(stats)}</p>}
+      </div>
       <div className="grid grid-cols-2 gap-px overflow-hidden rounded-card border border-line bg-line lg:grid-cols-3">
         {TILES.map((t) => {
           const value = stats[t.key];

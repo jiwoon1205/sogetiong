@@ -45,25 +45,31 @@ def test_one_row_per_day(sent_codes, db):
     assert sorted(v.visit_date for v in _visits(db, user.id)) == [kst_today() - timedelta(days=1), kst_today()]
 
 
-def test_dashboard_active_means_visited_in_last_7_days(sent_codes, db):
-    signup(sent_codes, db, "m@hufs.ac.kr", gender="MALE")
-    signup(sent_codes, db, "f@hufs.ac.kr", gender="FEMALE")
-    signup(sent_codes, db, "old@hufs.ac.kr", gender="FEMALE")
+def test_dashboard_active_means_photo_approved_and_visited_in_last_7_days(sent_codes, db):
+    admin = admin_login(db)
+    # 사진 검수까지 끝난 사람: 남 1, 여 2 (그중 여자 old는 10일 전에 마지막 접속)
+    ready_user(sent_codes, db, admin, "m@hufs.ac.kr", gender="MALE")
+    ready_user(sent_codes, db, admin, "f@hufs.ac.kr", gender="FEMALE")
+    ready_user(sent_codes, db, admin, "old@hufs.ac.kr", gender="FEMALE")
+    # 사진 검수 전인 사람: 오늘 접속했어도 활성 아님
+    signup(sent_codes, db, "nophoto@hufs.ac.kr", gender="MALE")
 
-    # old는 10일 전에 마지막으로 왔다
     old = _user(db, "old@hufs.ac.kr")
     db.query(UserDailyVisit).filter(UserDailyVisit.user_id == old.id).delete()
     db.add(UserDailyVisit(user_id=old.id, visit_date=kst_today() - timedelta(days=10)))
     old.last_active_at = utcnow() - timedelta(days=10)
     db.commit()
 
-    stats = admin_login(db).get("/api/v1/admin/dashboard").json()
-    assert stats["users_total"] == 3
-    assert stats["users_normal"] == 3
-    assert stats["users_active"] == 2  # old는 빠진다
-    assert stats["users_active_today"] == 2
-    assert stats["users_male"] == 1
+    stats = admin.get("/api/v1/admin/dashboard").json()
+    assert stats["users_total"] == 4
+    assert stats["users_normal"] == 4
+    assert stats["users_active"] == 2  # old(오래 안 옴)와 nophoto(사진 검수 전)는 빠진다
+    assert stats["users_active_today"] == 3  # 오늘 접속은 사진과 상관없이 센다
+    assert stats["users_male"] == 2
     assert stats["users_female"] == 2
+    # 원그래프: 활성 사용자만
+    assert stats["users_active_male"] == 1
+    assert stats["users_active_female"] == 1
 
 
 def test_admin_user_list_gender_filter(sent_codes, db):

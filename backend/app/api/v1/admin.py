@@ -105,28 +105,44 @@ def dashboard(admin: CurrentAdmin = Depends(require_permission("dashboard:read")
     today = kst_today()
     active_users = db.query(User.id).filter(User.status == "ACTIVE")
 
-    def visited_since(day):
-        """이 날(한국 시간) 이후로 한 번이라도 접속한 정상 계정 수"""
-        visitors = db.query(UserDailyVisit.user_id).filter(UserDailyVisit.visit_date >= day)
-        return c(active_users.filter(User.id.in_(visitors)))
+    # 사진 검수까지 끝난 사람 (승인된 사진이 있음)
+    approved = db.query(UserPhoto.user_id).filter(UserPhoto.review_status == "APPROVED")
 
-    def gender_count(gender):
-        return c(
+    def visitors_since(day):
+        return db.query(UserDailyVisit.user_id).filter(UserDailyVisit.visit_date >= day)
+
+    def visited_since(day, *, photo_approved=False):
+        """이 날(한국 시간) 이후로 한 번이라도 접속한 정상 계정 수"""
+        q = active_users.filter(User.id.in_(visitors_since(day)))
+        if photo_approved:
+            q = q.filter(User.id.in_(approved))
+        return c(q)
+
+    def gender_count(gender, since=None):
+        q = (
             db.query(User.id)
             .join(PublicProfile, PublicProfile.user_id == User.id)
             .filter(User.status == "ACTIVE", PublicProfile.gender == gender)
         )
+        if since is not None:  # 활성 사용자만: 이 날 이후 접속 + 사진 검수 완료
+            q = q.filter(User.id.in_(visitors_since(since)), User.id.in_(approved))
+        return c(q)
+
+    week_start = today - timedelta(days=6)
 
     return {
         "users_total": c(db.query(User.id)),
-        # 활성 = 최근 7일(오늘 포함) 안에 접속한 정상 계정 (2026-10-01 변경).
+        # 활성 = 사진 검수까지 끝났고, 최근 7일(오늘 포함) 안에 접속한 정상 계정 (2026-10-01 변경).
         # 예전에는 "탈퇴·정지 안 한 계정"이라 전체 가입자와 거의 같았다 → 그 숫자는 users_normal로 옮김
-        "users_active": visited_since(today - timedelta(days=6)),
+        "users_active": visited_since(week_start, photo_approved=True),
         "users_active_today": visited_since(today),
         "users_normal": c(active_users),
         # 성비 (정상 계정 중 프로필을 만든 사람 기준)
         "users_male": gender_count("MALE"),
         "users_female": gender_count("FEMALE"),
+        # 활성 사용자(최근 7일 접속)의 남녀 분포 — 대시보드 원그래프용
+        "users_active_male": gender_count("MALE", week_start),
+        "users_active_female": gender_count("FEMALE", week_start),
         "users_suspended": c(db.query(User.id).filter(User.status.in_(["SUSPENDED", "BANNED"]))),
         "photos_pending": admin_alert_service.pending_photo_query(db).count(),
         "matches_total": c(db.query(Match.id)),
