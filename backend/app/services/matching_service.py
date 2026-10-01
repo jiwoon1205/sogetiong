@@ -152,16 +152,23 @@ def score(viewer: Person, candidate: Person, weights: Weights) -> float:
 
 
 def order(
-    viewer: Person, candidates: list[Person], weights: Weights, rng: random.Random | None = None
+    viewer: Person,
+    candidates: list[Person],
+    weights: Weights,
+    rng: random.Random | None = None,
+    seen_before: set[uuid.UUID] | None = None,
 ) -> list[Person]:
-    """조건을 통과한 후보를 등급 차이 → 세부 점수 순으로 정렬. 점수가 같으면 랜덤.
+    """조건을 통과한 후보를 처음 보는 사람 먼저 → 등급 차이 → 세부 점수 순으로 정렬. 점수가 같으면 랜덤.
+
+    seen_before: 예전에 PASS했다가 48시간이 지나 다시 나온 사람. 처음 보는 사람을 다 본 뒤에 나온다 (2026-10-02).
 
     먼저 섞은 뒤 정렬한다. 파이썬 정렬은 "같은 값이면 원래 순서 유지"라서,
     섞어 두면 점수가 같은 사람끼리는 랜덤 순서가 된다 (가입 순서가 결과에 영향을 주지 않음).
     """
     eligible = [c for c in candidates if mutually_compatible(viewer, c)]
     (rng or random.Random()).shuffle(eligible)
-    eligible.sort(key=lambda c: (tier_gap(viewer.tier, c.tier), -score(viewer, c, weights)))
+    seen = seen_before or set()
+    eligible.sort(key=lambda c: (c.user_id in seen, tier_gap(viewer.tier, c.tier), -score(viewer, c, weights)))
     return eligible
 
 
@@ -216,9 +223,10 @@ def rank(
     liked_me_slots: int = 0,
     liked_me_probability: float = 0.0,
     rng: random.Random | None = None,
+    seen_before: set[uuid.UUID] | None = None,
 ) -> list[Person]:
     rng = rng or random.Random()
-    ordered = order(viewer, candidates, weights, rng)
+    ordered = order(viewer, candidates, weights, rng, seen_before)
     return _boost_liked_me(
         viewer,
         ordered,

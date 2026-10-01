@@ -80,6 +80,7 @@ def discover(
         liked_me=profile_service.liked_me_ids(db, current.id),
         liked_me_slots=settings.liked_me_slots,
         liked_me_probability=settings.liked_me_probability,
+        seen_before=profile_service.passed_before_ids(db, current.id),
     )
     # 카드에는 외모 등급도, "나를 LIKE했는지"도 들어가지 않는다 (build_cards가 보내는 항목만 나감)
     cards = profile_service.build_cards(db, [by_user[p.user_id] for p in ranked])
@@ -103,10 +104,18 @@ def _target(db: Session, current: CurrentUser, profile_id: uuid.UUID) -> PublicP
 
 def _upsert_action(db: Session, from_id: uuid.UUID, to_id: uuid.UUID, action: str) -> None:
     row = db.query(Like).filter(Like.from_user_id == from_id, Like.to_user_id == to_id).first()
-    if row:
-        row.action = action
-    else:
+    if row is None:
         db.add(Like(from_user_id=from_id, to_user_id=to_id, action=action))
+    elif action == "LIKE":
+        # PASS 48시간이 지나 다시 나온 사람에게 LIKE하는 경우: PASS 행을 지우고 새로 만든다.
+        # 하루 LIKE 개수는 created_at으로 세기 때문 (행을 고쳐 쓰면 예전 PASS 날짜가 남아서 개수에 안 잡힌다 → 하루 5개 제한을 피할 수 있음)
+        db.delete(row)
+        db.flush()
+        db.add(Like(from_user_id=from_id, to_user_id=to_id, action=action))
+    else:
+        # 다시 PASS: 값이 같으면 SQLAlchemy가 updated_at을 안 바꾸므로 직접 바꾼다 (48시간을 이때부터 다시 셈)
+        row.action = action
+        row.updated_at = utcnow()
 
 
 @router.post("/likes")

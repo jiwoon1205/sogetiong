@@ -41,6 +41,11 @@ class Settings(BaseSettings):
     # 보관 기간이 지난 탈퇴자 정보를 지우는 작업을 몇 분마다 돌릴지 (0이면 끔, 테스트에서는 자동으로 끔)
     withdrawn_purge_interval_minutes: int = 60
 
+    # --- 추천 ---
+    # PASS한 사람이 다시 추천에 나오기까지 걸리는 시간 (2026-10-02). PASS를 누른 시각부터 센다.
+    # 다시 나온 사람은 "처음 보는 사람" 뒤에 나온다. 다시 PASS하면 또 이 시간만큼 안 나온다.
+    pass_cooldown_hours: int = 48
+
     # --- 이메일 ---
     # smtp: 실제 발송 / console: 서버 콘솔에 코드 출력 (dev 전용)
     email_backend: Literal["smtp", "console"] = "smtp"
@@ -80,11 +85,6 @@ class Settings(BaseSettings):
     # 하루(한국 시간 자정 기준)에 보낼 수 있는 LIKE 수 (베타: 5개)
     daily_like_limit: int = 5
 
-    # VIP 기능 테스트용 계정 (2026-10-02). 여기 적힌 학교 메일로 가입한 계정은
-    #   ① 하루 LIKE 제한 없음  ② PASS한 사람도 새로고침하면 다시 추천에 나옴
-    # 여러 개는 쉼표로 구분. 기능을 끄려면 .env에 VIP_TEST_EMAILS= (빈 값)
-    vip_test_emails: str = "wldns051205@hufs.ac.kr"
-
     # 매칭 조건은 하루(24시간)에 이 횟수만큼만 바꿀 수 있다 (처음 저장은 세지 않음)
     preferences_changes_per_day: int = 3
 
@@ -116,10 +116,6 @@ class Settings(BaseSettings):
     @property
     def cors_origin_list(self) -> list[str]:
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
-
-    @property
-    def vip_test_email_set(self) -> set[str]:
-        return {e.strip().lower() for e in self.vip_test_emails.split(",") if e.strip()}
 
     def validate_settings(self) -> None:
         if self.activity_window_days < 1:

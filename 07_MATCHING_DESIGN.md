@@ -15,7 +15,7 @@
 - 가장 최근 평가의 등급을 쓴다. 등급이 없는 사람(등급 기능 이전 평가)은 추천에 나오지 않고, 본인도 추천을 볼 수 없다(`EVALUATION_REQUIRED`). 관리자가 사용자 상세 화면에서 등급만 채우면 된다.
 
 ### 추천 순서
-1. **Hard Filter** (양방향, 이전과 같음): 같은 학교, 활성 계정, 사진 승인, 등급 있음, 매칭 조건 있음, 이미 LIKE/PASS/매칭/차단 제외, 성별·나이·캠퍼스·같은 과 제외
+1. **Hard Filter** (양방향, 이전과 같음): 같은 학교, 활성 계정, 사진 승인, 등급 있음, 매칭 조건 있음, 이미 LIKE/매칭/차단 제외, **최근 48시간 안에 PASS한 사람 제외**, 성별·나이·캠퍼스·같은 과 제외
 2. **등급 차이로 묶기**: 같은 등급 → 한 단계 차이(상↔중, 중↔하) → 두 단계 차이(상↔하, 막지 않고 맨 뒤)
 3. **같은 묶음 안 세부 점수** (`WEIGHT_*`):
    - 관심사 60%: 겹친 수 ÷ 둘 중 적게 고른 사람의 관심사 수 (많이 고를수록 유리하던 문제 제거)
@@ -24,7 +24,15 @@
    - **활동 +0.20** (2026-10-01 추가): 최근 14일(오늘 포함, 한국 시간) 중 접속한 날 수 ÷ 14. 매일 온 사람 +0.20, 안 온 사람 +0. `user_daily_visits` 표로 센다
    - 외모 숫자 점수는 등급과 겹치므로 쓰지 않는다
    - **점수까지 같으면 랜덤** (2026-10-01): 예전에는 DB에서 꺼낸 순서(= 가입 순서)가 남아서 먼저 가입한 사람이 항상 먼저 떴다. 이제 섞은 뒤 정렬한다
+   - **처음 보는 사람이 먼저** (2026-10-02): PASS 후 48시간이 지나 다시 나온 사람은 등급·점수와 상관없이 처음 보는 사람을 다 본 뒤에 나온다
 4. **나를 LIKE한 사람 우대**: 한 페이지(10장)에 최대 2자리, 위치는 매번 랜덤, 30%는 우대 안 함. 등급이 같거나 한 단계 차이인 사람만. 카드에 LIKE 여부는 표시하지 않는다 (매칭 전 LIKE 비공개 원칙 유지).
+
+### PASS 다시 보기 (2026-10-02)
+- PASS한 사람은 **PASS 후 48시간**(`PASS_COOLDOWN_HOURS`)이 지나면 다시 추천에 나온다. 베타라 사람이 적어 추천이 금방 바닥나기 때문.
+- 시각은 `likes.updated_at`으로 센다 → DB 구조 변경 없음. **업데이트 전에 남긴 PASS도 같은 규칙**이 적용된다 (배포하자마자 48시간 지난 PASS는 다시 나옴).
+- 같은 사람을 다시 PASS하면 그때부터 또 48시간 (횟수 제한 없음, 매번 48시간).
+- 다시 나온 사람에게 LIKE하면 PASS 기록을 지우고 새 LIKE 기록을 만든다 → 하루 LIKE 개수에 정상적으로 들어간다.
+- LIKE한 사람은 지금처럼 다시 나오지 않는다. 48시간 안에는 ID를 직접 넣어도 LIKE할 수 없다(404).
 
 ### 하루 LIKE 한도
 - 베타: **하루 5개** (`DAILY_LIKE_LIMIT`), 한국 시간 자정에 충전. 넘으면 429.
@@ -40,6 +48,7 @@
 | LIKED_ME_SLOTS | 2 | 나를 LIKE한 사람에게 주는 최대 자리 수 |
 | LIKED_ME_PROBABILITY | 0.7 | 우대를 적용할 확률 |
 | DAILY_LIKE_LIMIT | 5 | 하루 LIKE 수 |
+| PASS_COOLDOWN_HOURS | 48 | PASS한 사람이 다시 추천에 나오기까지 걸리는 시간 |
 
 ### 이번 범위에서 뺀 것
 - 동시에 LIKE했을 때 매칭 누락 가능성 (운영 DB가 SQLite라 쓰기가 한 번에 하나씩 처리되어 실제로는 거의 생기지 않음)
@@ -176,7 +185,7 @@ Example message:
 
 ### Pass
 - action recorded as pass
-- prevent repeated recommendation until undo or reset policy is enabled
+- not recommended again for 48 hours after the pass (2026-10-02, `PASS_COOLDOWN_HOURS`); afterwards shown again, after never-seen candidates
 
 ### Match creation
 - if both user A and user B like each other, a match is created

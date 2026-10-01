@@ -6,13 +6,13 @@
 
 import uuid
 from collections import defaultdict
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
-from app.core.time import age_on, kst_day_start, kst_today
+from app.core.time import age_on, kst_day_start, kst_today, utcnow
 from app.models.matching import (
     Block,
     Like,
@@ -251,14 +251,25 @@ def is_vip_tester(user: User) -> bool:
     return (user.email or "").strip().lower() in get_settings().vip_test_email_set
 
 
+def _pass_cutoff() -> datetime:
+    """이 시각 이후에 PASS한 사람은 아직 추천에서 뺀다 (PASS 후 pass_cooldown_hours 동안)."""
+    return utcnow() - timedelta(hours=get_settings().pass_cooldown_hours)
+
+
 def excluded_user_ids(db: Session, user_id: uuid.UUID, *, include_passed: bool = True) -> set[uuid.UUID]:
-    """추천에서 빼야 할 사람: 이미 LIKE/PASS한 사람, 차단 관계(양방향), 매칭 이력이 있는 사람.
+    """추천에서 빼야 할 사람: 이미 LIKE한 사람, 최근(48시간 안)에 PASS한 사람, 차단 관계(양방향), 매칭 이력이 있는 사람.
+
+    PASS는 영원히 빼지 않는다 (2026-10-02). 베타라 사람이 적어서 추천이 금방 바닥나기 때문.
+    PASS 시각은 updated_at으로 본다 (같은 사람을 다시 PASS하면 그때 시각으로 바뀐다 → _upsert_action).
+    업데이트 전에 남긴 PASS도 updated_at이 있으므로 같은 규칙이 그대로 적용된다.
 
     include_passed=False: PASS한 사람은 빼지 않는다 (VIP 테스트 계정 — PASS해도 다시 나옴).
     """
     ids: set[uuid.UUID] = {user_id}
     sent = db.query(Like.to_user_id).filter(Like.from_user_id == user_id)
-    if not include_passed:
+    if include_passed:
+        sent = sent.filter((Like.action != "PASS") | (Like.updated_at > _pass_cutoff()))
+    else:
         sent = sent.filter(Like.action == "LIKE")
     ids.update(r[0] for r in sent)
     ids.update(r[0] for r in db.query(Block.blocked_user_id).filter(Block.blocker_user_id == user_id))
@@ -266,6 +277,16 @@ def excluded_user_ids(db: Session, user_id: uuid.UUID, *, include_passed: bool =
     for a, b in db.query(Match.user_a_id, Match.user_b_id).filter((Match.user_a_id == user_id) | (Match.user_b_id == user_id)):
         ids.update((a, b))
     return ids
+
+
+def passed_before_ids(db: Session, user_id: uuid.UUID) -> set[uuid.UUID]:
+    """예전에 PASS했고 48시간이 지나 다시 추천될 수 있는 사람. 추천 순서에서 "처음 보는 사람" 뒤로 보낸다."""
+    return {
+        r[0]
+        for r in db.query(Like.to_user_id).filter(
+            Like.from_user_id == user_id, Like.action == "PASS", Like.updated_at <= _pass_cutoff()
+        )
+    }
 
 
 def is_blocked_between(db: Session, a: uuid.UUID, b: uuid.UUID) -> bool:
@@ -327,8 +348,9 @@ def liked_me_ids(db: Session, user_id: uuid.UUID) -> set[uuid.UUID]:
 def likes_sent_today(db: Session, user_id: uuid.UUID) -> int:
     """오늘(한국 시간 0시 이후) 보낸 LIKE 수.
 
-    LIKE는 항상 새 행으로 생긴다 (이미 LIKE/PASS한 상대에게는 다시 LIKE할 수 없음 → excluded_user_ids).
-    PASS를 취소하면 행이 지워지므로, 그 뒤의 LIKE도 새 행이다. 그래서 created_at으로 셀 수 있다.
+    LIKE는 항상 새 행으로 생긴다 (이미 LIKE한 상대에게는 다시 LIKE할 수 없음 → excluded_user_ids).
+    PASS 48시간이 지나 다시 나온 사람에게 LIKE하면, PASS 행을 지우고 새 행을 만든다 (_upsert_action).
+    PASS를 취소해도 행이 지워진다. 그래서 created_at으로 셀 수 있다.
     """
     return (
         db.query(func.count(Like.id))
