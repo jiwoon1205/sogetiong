@@ -13,14 +13,7 @@ from app.core.security import verify_password
 from app.core.time import as_utc, utcnow
 from app.db.session import get_db
 from app.deps import CurrentUser, get_current_user
-# ExcludedDepartment·PreferredDepartment는 베타에서 안 쓰지만, 탈퇴할 때 예전 데이터를 지우는 데 쓴다
-from app.models.matching import (
-    ExcludedDepartment,
-    Match,
-    MatchingPreference,
-    PreferredCampus,
-    PreferredDepartment,
-)
+from app.models.matching import Match, MatchingPreference, PreferredCampus
 from app.models.photo import AppearanceEvaluation, UserPhoto
 from app.models.profile import Interest, PublicProfile, UserInterest
 from app.models.university import Campus, Department
@@ -93,25 +86,24 @@ def delete_me(
     current: CurrentUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """회원 탈퇴 (설계도 §45).
+    """회원 탈퇴 (설계도 §45, 2026-10-01 변경).
 
-    즉시 삭제: 공개 프로필, 관심사, 매칭 조건, 사진 파일, 로그인 세션
-    익명화: 이메일 → 가짜 주소 + 지문(email_hash)만 보관 (재가입 허용, 정지 이력·차단 관계 확인용)
-    보존(법률 검토 후 보유기간 확정): 계정 기본정보, private profile, 신고·채팅 기록
-    TODO(법률 검토): 보유기간이 지나면 자동 파기하는 작업 추가
+    바로: 로그인 세션 삭제, 진행 중인 대화 종료, 이메일 익명화(지문만 보관), 상태 DELETED
+          → 다른 사용자에게는 바로 보이지 않는다 (추천·프로필은 정상 계정만 보여줌)
+    7일 보관 후 자동 삭제: 공개 프로필, 관심사, 매칭 조건, 사진 파일 (withdrawal_service.purge_expired)
+          → 그동안 관리자가 신고·분쟁 확인용으로 열람할 수 있다
+    계속 보관: 계정 기본정보, private profile, 신고·채팅 기록, 탈퇴 전 닉네임·성별(관리자 검색용)
+    TODO(정식 배포 전): 계속 보관하는 정보의 보관 기간을 정하고 자동 파기 추가
     """
     if not verify_password(payload.password, current.user.password_hash):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="비밀번호가 올바르지 않습니다.")
 
     uid = current.id
-    storage = get_storage()
-    for photo in db.query(UserPhoto).filter(UserPhoto.user_id == uid):
-        if photo.storage_key:
-            storage.delete(photo.storage_key)
-        photo.storage_key = ""
-        photo.upload_status = "DELETED"
-    for model in (UserInterest, PreferredCampus, ExcludedDepartment, PreferredDepartment, MatchingPreference, PublicProfile):
-        db.query(model).filter(model.user_id == uid).delete(synchronize_session=False)
+    # 7일 뒤 공개 프로필이 지워져도 관리자가 찾을 수 있게 닉네임·성별을 따로 남겨 둔다
+    profile = db.query(PublicProfile).filter(PublicProfile.user_id == uid).first()
+    if profile is not None:
+        current.user.deleted_nickname = profile.nickname
+        current.user.deleted_gender = profile.gender
     now = utcnow()
     db.query(Match).filter(((Match.user_a_id == uid) | (Match.user_b_id == uid)) & (Match.status == "ACTIVE")).update(
         {"status": "UNMATCHED", "ended_at": now}, synchronize_session=False

@@ -30,6 +30,10 @@ class User(Base):
     # 마지막 접속 (관리자 확인용). 로그인할 때, 그리고 사이트를 쓰는 동안 10분에 한 번씩 기록한다.
     # 세션은 로그아웃하면 지워지므로 여기에 따로 남긴다.
     last_active_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # 탈퇴할 때 지워지는 공개 프로필에서 닉네임·성별만 관리자용으로 남긴다 (2026-10-01, 마이그레이션 0012).
+    # 이게 없으면 관리자 화면에서 닉네임 검색·성별 필터로 탈퇴한 사람을 찾을 수 없다.
+    deleted_nickname: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    deleted_gender: Mapped[str | None] = mapped_column(String(10), nullable=True)
 
     public_profile = relationship("PublicProfile", back_populates="user", uselist=False)
     private_profile = relationship("PrivateProfile", back_populates="user", uselist=False)

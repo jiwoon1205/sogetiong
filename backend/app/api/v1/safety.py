@@ -12,6 +12,7 @@ from app.db.session import get_db
 from app.deps import CurrentUser, get_current_user
 from app.models.matching import Block, Match, Notification, Report
 from app.models.profile import PublicProfile
+from app.models.user import User
 from app.schemas.matching import NotificationUpdateRequest, ReportRequest, TargetRequest
 from app.services import admin_alert_service, profile_service
 from app.services.email_service import EmailService
@@ -20,9 +21,14 @@ router = APIRouter()
 
 
 def _target_user_id(db: Session, current: CurrentUser, profile_id: uuid.UUID) -> uuid.UUID:
-    """차단·신고는 정지된 사용자에게도 할 수 있어야 하므로 계정 상태는 따지지 않는다."""
+    """차단·신고는 정지된 사용자에게도 할 수 있어야 하므로 계정 상태는 따지지 않는다.
+
+    단, 탈퇴한 사람은 7일 동안 프로필이 남아 있어도(관리자 확인용) 없는 것으로 본다.
+    탈퇴한 상대는 대화방 기준(match_id)으로 신고한다.
+    """
     profile = db.get(PublicProfile, profile_id)
-    if profile is None or profile.user_id == current.id:
+    owner = db.get(User, profile.user_id) if profile is not None else None
+    if profile is None or profile.user_id == current.id or owner is None or owner.deleted_at is not None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="프로필을 찾을 수 없습니다.")
     return profile.user_id
 
@@ -47,9 +53,11 @@ def block(payload: TargetRequest, current: CurrentUser = Depends(get_current_use
 
 @router.get("/blocks")
 def list_blocks(current: CurrentUser = Depends(get_current_user), db: Session = Depends(get_db)):
+    # 탈퇴한 사람은 7일 동안 프로필이 남아 있지만(관리자 확인용), 여기서는 "탈퇴한 사용자"로 보여준다
     rows = (
         db.query(Block, PublicProfile)
-        .outerjoin(PublicProfile, PublicProfile.user_id == Block.blocked_user_id)
+        .outerjoin(User, User.id == Block.blocked_user_id)
+        .outerjoin(PublicProfile, (PublicProfile.user_id == Block.blocked_user_id) & User.deleted_at.is_(None))
         .filter(Block.blocker_user_id == current.id)
         .order_by(Block.created_at.desc())
         .all()

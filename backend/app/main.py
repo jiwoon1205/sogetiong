@@ -1,4 +1,7 @@
+import asyncio
+import logging
 import os
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -6,12 +9,46 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.v1 import admin_router, auth_router, catalog_router, matching_router, me_router, safety_router
 from app.core.config import get_settings
 from app.core.dev_bootstrap import prepare_dev_database
+from app.db.session import SessionLocal
+from app.services import withdrawal_service
+
+logger = logging.getLogger(__name__)
 
 settings = get_settings()
 settings.validate_settings()
 prepare_dev_database()  # 개발 환경이면 DB 테이블·기본 데이터 자동 준비
 
+def _purge_withdrawn_once() -> None:
+    db = SessionLocal()
+    try:
+        withdrawal_service.purge_expired(db)
+    except Exception:  # 실패해도 서버는 계속 돌고, 다음 차례에 다시 시도한다
+        logger.exception("withdrawn purge failed")
+        db.rollback()
+    finally:
+        db.close()
+
+
+async def _purge_withdrawn_loop(minutes: int) -> None:
+    """탈퇴 후 보관 기간(7일)이 지난 정보를 주기적으로 지운다. 서버가 켜질 때 한 번, 그 뒤로 minutes분마다."""
+    while True:
+        await asyncio.to_thread(_purge_withdrawn_once)
+        await asyncio.sleep(minutes * 60)
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    minutes = settings.withdrawn_purge_interval_minutes
+    task = None
+    if minutes > 0 and settings.environment != "test":
+        task = asyncio.create_task(_purge_withdrawn_loop(minutes))
+    yield
+    if task is not None:
+        task.cancel()
+
+
 app = FastAPI(
+    lifespan=lifespan,
     title="Sogetiong API",
     description="대학생 전용 익명 데이팅 서비스 백엔드",
     version="0.2.0",

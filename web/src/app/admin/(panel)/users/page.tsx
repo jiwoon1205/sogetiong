@@ -42,7 +42,12 @@ export default function UsersPage() {
 function UsersList() {
   const searchParams = useSearchParams();
   const [items, setItems] = useState<UserRow[] | null>(null);
-  const [status, setStatus] = useState("");
+  const [total, setTotal] = useState(0);
+  // 대시보드의 "탈퇴한 사용자" 칸을 누르면 ?status=DELETED 로 들어온다
+  const [status, setStatus] = useState(() => {
+    const st = searchParams.get("status");
+    return st && st in USER_STATUS_LABEL ? st : "";
+  });
   // 대시보드의 "남자/여자" 칸을 누르면 ?gender=MALE 처럼 들어온다
   const [gender, setGender] = useState(() => {
     const g = searchParams.get("gender");
@@ -56,7 +61,10 @@ function UsersList() {
       if (status) params.set("status", status);
       if (gender) params.set("gender", gender);
       if (q.trim()) params.set("nickname", q.trim());
-      adminApi<{ users: UserRow[] }>(`/users?${params}`).then((r) => setItems(r.users));
+      adminApi<{ users: UserRow[]; total?: number }>(`/users?${params}`).then((r) => {
+        setItems(r.users);
+        setTotal(r.total ?? r.users.length);
+      });
     }, 250);
     return () => clearTimeout(t);
   }, [status, gender, q]);
@@ -80,6 +88,11 @@ function UsersList() {
           ))}
         </Select>
       </div>
+      {items && (
+        <p className="mb-2 text-[12.5px] text-ink-faint">
+          {total > items.length ? `${total}명 중 최근 가입한 ${items.length}명` : `${total}명`}
+        </p>
+      )}
       {!items ? (
         <Spinner />
       ) : (

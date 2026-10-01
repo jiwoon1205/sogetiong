@@ -16,12 +16,14 @@ type Stats = {
   users_active_male: number;
   users_active_female: number;
   users_suspended: number;
+  users_deleted?: number;
+  users_deleted_recent?: number;
   photos_pending: number;
   matches_total: number;
   reports_open: number;
 };
 
-const TILES: { key: keyof Stats; label: string; hint?: string; href?: string; urgent?: boolean }[] = [
+const TILES: { key: keyof Stats; label: string; hint?: string | ((s: Stats) => string); href?: string; urgent?: boolean }[] = [
   { key: "photos_pending", label: "사진 검수 대기", href: "/admin/photos", urgent: true },
   { key: "reports_open", label: "처리할 신고", href: "/admin/reports", urgent: true },
   { key: "users_active", label: "활성 사용자", hint: "사진 검수 완료 + 최근 7일 접속" },
@@ -31,7 +33,16 @@ const TILES: { key: keyof Stats; label: string; hint?: string; href?: string; ur
   { key: "users_female", label: "여자", hint: "정상 계정", href: "/admin/users?gender=FEMALE" },
   { key: "matches_total", label: "누적 매칭" },
   { key: "users_suspended", label: "정지된 계정" },
+  {
+    key: "users_deleted",
+    label: "탈퇴한 사용자",
+    // 탈퇴 후 7일 동안은 프로필·사진을 볼 수 있고, 그 뒤 자동 삭제된다
+    hint: (s) => `최근 7일 ${(s.users_deleted_recent ?? 0).toLocaleString()}명 · 이 사람들은 정보 열람 가능`,
+    href: "/admin/users?status=DELETED",
+  },
 ];
+// 넓은 화면(3칸)에서 마지막 줄이 비면 회색 칸이 보이므로 빈 칸을 채운다
+const LG_FILLERS = (3 - (TILES.length % 3)) % 3;
 
 // 성비: 남자 : 여자 = 1 : x
 function genderRatio(s: Stats): string | null {
@@ -57,12 +68,13 @@ export default function AdminDashboard() {
       </div>
       <div className="grid grid-cols-2 gap-px overflow-hidden rounded-card border border-line bg-line lg:grid-cols-3">
         {TILES.map((t) => {
-          const value = stats[t.key];
+          const value = stats[t.key] ?? 0;
+          const hint = typeof t.hint === "function" ? t.hint(stats) : t.hint;
           const body = (
             <div className="h-full bg-paper-card p-6">
               <p className="text-[13px] text-ink-soft">{t.label}</p>
               <p className={`num mt-3 font-serif text-[34px] font-semibold leading-none ${t.urgent && value > 0 ? "text-brick" : "text-ink"}`}>{value.toLocaleString()}</p>
-              {t.hint && <p className="mt-2 text-[12px] text-ink-faint">{t.hint}</p>}
+              {hint && <p className="mt-2 text-[12px] text-ink-faint">{hint}</p>}
               {t.href && <p className="mt-4 text-[12.5px] text-ink-faint">바로가기 →</p>}
             </div>
           );
@@ -74,6 +86,9 @@ export default function AdminDashboard() {
             <div key={t.key}>{body}</div>
           );
         })}
+        {Array.from({ length: LG_FILLERS }, (_, i) => (
+          <div key={`filler-${i}`} className="hidden bg-paper-card lg:block" aria-hidden />
+        ))}
       </div>
     </>
   );

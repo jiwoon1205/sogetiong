@@ -36,6 +36,10 @@ class Settings(BaseSettings):
     verification_code_minutes: int = 10
     verification_ticket_minutes: int = 30
     rejoin_cooldown_days: int = 7  # 탈퇴 후 재가입까지 기다려야 하는 기간 (0이면 바로 가능)
+    # 탈퇴 후 프로필·사진 등을 관리자 확인용으로 보관하는 기간 (2026-10-01). 지나면 자동 삭제된다.
+    withdrawn_retention_days: int = 7
+    # 보관 기간이 지난 탈퇴자 정보를 지우는 작업을 몇 분마다 돌릴지 (0이면 끔, 테스트에서는 자동으로 끔)
+    withdrawn_purge_interval_minutes: int = 60
 
     # --- 이메일 ---
     # smtp: 실제 발송 / console: 서버 콘솔에 코드 출력 (dev 전용)

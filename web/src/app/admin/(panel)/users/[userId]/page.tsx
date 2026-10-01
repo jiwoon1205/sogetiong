@@ -28,6 +28,11 @@ type Detail = {
   appearance_tier: AppearanceTier | null;
   reports_received: number;
   deleted_at: string | null;
+  /** 탈퇴한 사람의 예전 닉네임 (공개 프로필이 지워져도 남겨 둔 값) */
+  deleted_nickname?: string | null;
+  /** 탈퇴자의 프로필·사진이 지워지는(지워진) 시각 */
+  data_purge_at?: string | null;
+  photos?: { photo_id: string; review_status: string; uploaded_at: string | null; image_url: string }[];
   linked_accounts: { user_id: string; subject_code: string; status: string; created_at: string; deleted_at: string | null }[];
   private?: { email: string; real_name: string | null; phone_number: string | null; student_id: string | null; birth_date: string };
 };
@@ -65,9 +70,22 @@ export default function UserDetail() {
         </p>
       </div>
 
+      {d.deleted_at && d.data_purge_at && (
+        <div className="mb-6">
+          <WithdrawnNotice purgeAt={d.data_purge_at} purged={!d.profile && !(d.photos?.length ?? 0)} />
+        </div>
+      )}
+
       <div className="grid gap-8 lg:grid-cols-[minmax(0,24rem)_1fr]">
         <div className="space-y-4">
-          {d.profile ? <ProfileCard card={d.profile} /> : <Notice>공개 프로필이 없습니다 (탈퇴 등).</Notice>}
+          {d.profile ? <ProfileCard card={d.profile} /> : <Notice>
+              공개 프로필이 없습니다 (탈퇴 등).
+              {(d.deleted_nickname || d.gender) && (
+                <span className="mt-1 block">
+                  탈퇴 전 닉네임 {d.deleted_nickname ?? "—"} · 성별 {d.gender ? GENDER_LABEL[d.gender] : "—"}
+                </span>
+              )}
+            </Notice>}
           {d.campus && (
             <p className="text-[13px] text-ink-soft">
               실제 소속: {d.campus.name} · {d.department?.name ?? "학과 미선택"}
@@ -104,6 +122,8 @@ export default function UserDetail() {
           {admin.can("photos:evaluate") && d.profile && !d.deleted_at && (
             <TierForm key={`${d.user_id}-${d.appearance_tier}`} userId={d.user_id} current={d.appearance_tier} onDone={() => load(!!d.private)} />
           )}
+
+          {admin.can("photos:read") && (d.photos?.length ?? 0) > 0 && <UserPhotos key={d.user_id} photos={d.photos!} />}
 
           {admin.can("chats:read") && <UserChats userId={d.user_id} />}
 
@@ -173,6 +193,54 @@ type MatchRow = {
 const MATCH_STATUS_LABEL: Record<string, string> = { ACTIVE: "대화 중", UNMATCHED: "매칭 해제", BLOCKED: "차단으로 종료" };
 
 /** 이 사용자의 모든 대화방 (목록만. 내용은 눌러서 열면 감사 로그에 기록됨) */
+const PHOTO_STATUS_LABEL: Record<string, string> = {
+  PENDING: "검수 대기",
+  IN_REVIEW: "확인 중",
+  APPROVED: "승인",
+  REJECTED: "반려",
+  SUPERSEDED: "예전 사진",
+};
+
+// 탈퇴 후 7일 동안은 프로필·사진을 볼 수 있고, 그 뒤 자동 삭제된다 (2026-10-01)
+function WithdrawnNotice({ purgeAt, purged }: { purgeAt: string; purged: boolean }) {
+  if (purged) {
+    return <Notice>탈퇴한 사용자예요. 보관 기간(7일)이 지나 프로필·사진은 삭제됐어요 ({dateTime(purgeAt)}).</Notice>;
+  }
+  return (
+    <Notice>
+      탈퇴한 사용자예요. 프로필·사진은 <b className="font-semibold">{dateTime(purgeAt)}</b>에 자동 삭제돼요. 그 전까지만 볼 수 있어요.
+    </Notice>
+  );
+}
+
+// 사진은 '보기'를 눌러야 불러온다. 볼 때마다 감사 로그(PHOTO_VIEW)가 남는다.
+function UserPhotos({ photos }: { photos: NonNullable<Detail["photos"]> }) {
+  const [show, setShow] = useState(false);
+  return (
+    <section>
+      <p className="eyebrow mb-3">사진</p>
+      {!show ? (
+        <Button variant="secondary" size="sm" onClick={() => setShow(true)}>
+          사진 보기 ({photos.length}장) · 감사 로그가 남아요
+        </Button>
+      ) : (
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+          {photos.map((p) => (
+            <figure key={p.photo_id} className="overflow-hidden rounded-card border border-line bg-paper-card">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={p.image_url} alt="사용자 사진" draggable={false} className="w-full select-none" />
+              <figcaption className="px-3 py-2 text-[12px] text-ink-faint">
+                {PHOTO_STATUS_LABEL[p.review_status] ?? p.review_status}
+                {p.uploaded_at && <> · {dateTime(p.uploaded_at)}</>}
+              </figcaption>
+            </figure>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
 function UserChats({ userId }: { userId: string }) {
   const [rows, setRows] = useState<MatchRow[] | null>(null);
   const [error, setError] = useState("");

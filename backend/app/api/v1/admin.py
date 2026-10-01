@@ -11,6 +11,7 @@ from PIL import Image, ImageDraw, ImageFont
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app.core.config import get_settings
 from app.core.rate_limit import client_ip, enforce_rate_limit
 from app.core.security import pseudonymous_code, verify_password
 from app.core.time import as_utc, kst_today, utcnow
@@ -32,7 +33,7 @@ from app.schemas.admin import (
     UserGenderRequest,
     UserStatusRequest,
 )
-from app.services import admin_alert_service, profile_service
+from app.services import admin_alert_service, profile_service, withdrawal_service
 from app.services.email_service import EmailDeliveryError, EmailService
 from app.services.audit_service import AuditService
 from app.services.notification_service import notify
@@ -144,6 +145,14 @@ def dashboard(admin: CurrentAdmin = Depends(require_permission("dashboard:read")
         "users_active_male": gender_count("MALE", week_start),
         "users_active_female": gender_count("FEMALE", week_start),
         "users_suspended": c(db.query(User.id).filter(User.status.in_(["SUSPENDED", "BANNED"]))),
+        # 탈퇴한 사용자 (탈퇴 후 영구 정지한 계정 포함). recent = 최근 7일 안에 탈퇴 → 아직 프로필·사진 열람 가능
+        "users_deleted": c(db.query(User.id).filter(User.deleted_at.isnot(None))),
+        "users_deleted_recent": c(
+            db.query(User.id).filter(
+                User.deleted_at.isnot(None),
+                User.deleted_at > utcnow() - timedelta(days=get_settings().withdrawn_retention_days),
+            )
+        ),
         "photos_pending": admin_alert_service.pending_photo_query(db).count(),
         "matches_total": c(db.query(Match.id)),
         "reports_open": c(db.query(Report.id).filter(Report.status.in_(["OPEN", "IN_REVIEW"]))),
@@ -293,6 +302,10 @@ def evaluate_photo(
     db: Session = Depends(get_db),
 ):
     photo = _photo_or_404(db, photo_id)
+    owner = db.get(User, photo.user_id)
+    if owner is not None and owner.deleted_at is not None:
+        # 탈퇴 후 7일 동안 사진은 열람만 할 수 있다 (평가하면 탈퇴한 사람에게 알림·추천이 생길 수 있음)
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="탈퇴한 사용자의 사진은 평가할 수 없습니다.")
     if photo.review_status == "SUPERSEDED":
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="새 사진으로 대체된 사진입니다.")
     # 묶음으로 낸 사진은 대표 사진 기준으로 함께 평가한다
@@ -385,6 +398,9 @@ def _user_or_404(db: Session, user_id: uuid.UUID) -> User:
     return user
 
 
+USER_LIST_LIMIT = 1000
+
+
 @router.get("/users")
 def list_users(
     status_filter: str | None = Query(default=None, alias="status"),
@@ -396,20 +412,28 @@ def list_users(
     report_counts = (
         db.query(Report.reported_user_id, func.count(Report.id)).group_by(Report.reported_user_id).subquery()
     )
+    # 탈퇴하면 공개 프로필이 지워지므로, 탈퇴할 때 남겨 둔 닉네임·성별(users.deleted_*)로 대신한다.
+    # 이렇게 해야 닉네임 검색·성별 필터에서도 탈퇴한 사람이 나온다.
+    nick_col = func.coalesce(PublicProfile.nickname, User.deleted_nickname)
+    gender_col = func.coalesce(PublicProfile.gender, User.deleted_gender)
     query = (
-        db.query(User, PublicProfile.nickname, PublicProfile.gender, report_counts.c[1])
+        db.query(User, nick_col, gender_col, report_counts.c[1])
         .outerjoin(PublicProfile, PublicProfile.user_id == User.id)
         .outerjoin(report_counts, report_counts.c.reported_user_id == User.id)
     )
     if status_filter:
         query = query.filter(User.status == status_filter)
     if nickname:
-        query = query.filter(PublicProfile.nickname.contains(nickname))
+        query = query.filter(nick_col.contains(nickname))
     if gender:
-        query = query.filter(PublicProfile.gender == gender)
-    rows = query.order_by(User.created_at.desc()).limit(100).all()
+        query = query.filter(gender_col == gender)
+    # 예전에는 최근 100명만 보여서, 가입자가 100명을 넘으면 오래된 사람(탈퇴자 포함)이 목록에서 사라졌다.
+    # 베타 예상 최대 인원(~500명)을 넉넉히 넘게 보여주고, 전체 수(total)를 함께 알려준다.
+    total = query.count()
+    rows = query.order_by(User.created_at.desc()).limit(USER_LIST_LIMIT).all()
     stages = _onboarding_stages(db, [u.id for u, _, _, _ in rows])
     return {
+        "total": total,
         "users": [
             {
                 "user_id": str(u.id),
@@ -493,12 +517,29 @@ def get_user(
             {"id": str(profile.department_id), "name": profile.department.name} if profile and profile.department else None
         ),
         # 성별·원하는 성별 (사용자는 못 바꾸고, 메일 요청을 받아 관리자가 바꾼다)
-        "gender": profile.gender if profile else None,
+        "gender": profile.gender if profile else user.deleted_gender,
+        # 탈퇴한 사람의 예전 닉네임 (공개 프로필이 지워져서 따로 남겨 둔 값, 관리자만 봄)
+        "deleted_nickname": user.deleted_nickname,
         "preferred_gender": private.preferred_gender if private else None,
         # 외모 등급 (내부 전용). None = 아직 없음 → 추천에 나오지 않는다
         "appearance_tier": profile_service.current_tier(db, user.id),
         "reports_received": profile_service.count(db, db.query(Report.id).filter(Report.reported_user_id == user.id)),
         "deleted_at": user.deleted_at.isoformat() if user.deleted_at else None,
+        # 탈퇴자: 프로필·사진이 지워지는(지워진) 시각. 그 전까지는 관리자가 열람할 수 있다 (2026-10-01)
+        "data_purge_at": (withdrawal_service.purge_at(user.deleted_at).isoformat() if user.deleted_at else None),
+        # 사진 (파일이 남아 있는 것만, 최근 순). 화면에서 '사진 보기'를 눌러야 불러오고, 볼 때마다 감사 로그가 남는다
+        "photos": [
+            {
+                "photo_id": str(p.id),
+                "review_status": p.review_status,
+                "uploaded_at": p.uploaded_at.isoformat() if p.uploaded_at else None,
+                "image_url": f"/api/v1/admin/photo-reviews/{p.id}/image",
+            }
+            for p in db.query(UserPhoto)
+            .filter(UserPhoto.user_id == user.id, UserPhoto.upload_status != "DELETED", UserPhoto.storage_key != "")
+            .order_by(UserPhoto.uploaded_at.desc(), UserPhoto.position)
+            .limit(12)
+        ],
         # 같은 학교 메일로 가입했던 다른 계정 (탈퇴 후 재가입 등). 이메일 자체는 보여주지 않는다.
         "linked_accounts": [
             {
@@ -663,6 +704,8 @@ def update_user_appearance_tier(
     사용자에게는 알리지 않는다 (등급은 내부 데이터).
     """
     user = _user_or_404(db, user_id)
+    if user.deleted_at is not None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="탈퇴한 사용자는 등급을 바꿀 수 없습니다.")
     latest = profile_service.latest_evaluations(db, [user.id]).get(user.id)
     if latest is None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="아직 외모 평가를 받지 않은 사용자입니다. 사진 검수에서 먼저 평가해주세요.")
@@ -703,7 +746,14 @@ def update_user_appearance_tier(
 
 def _nicknames(db: Session, user_ids: list[uuid.UUID]) -> dict[uuid.UUID, str]:
     rows = db.query(PublicProfile.user_id, PublicProfile.nickname).filter(PublicProfile.user_id.in_(user_ids)).all()
-    return dict(rows)
+    result = dict(rows)
+    # 탈퇴한 사람은 공개 프로필이 없으니, 탈퇴할 때 남겨 둔 닉네임으로 채운다 (관리자 화면 전용)
+    missing = [uid for uid in user_ids if uid not in result]
+    if missing:
+        result.update(
+            db.query(User.id, User.deleted_nickname).filter(User.id.in_(missing), User.deleted_nickname.isnot(None)).all()
+        )
+    return result
 
 
 def _person(user_id: uuid.UUID, nicknames: dict[uuid.UUID, str]) -> dict:
@@ -743,7 +793,11 @@ def list_all_matches(
         query = query.filter(Match.status == status_filter)
     if nickname:
         members = db.query(PublicProfile.user_id).filter(PublicProfile.nickname.contains(nickname))
-        query = query.filter(Match.user_a_id.in_(members) | Match.user_b_id.in_(members))
+        # 탈퇴한 사람은 탈퇴할 때 남겨 둔 닉네임으로 찾는다
+        left = db.query(User.id).filter(User.deleted_nickname.contains(nickname))
+        query = query.filter(
+            Match.user_a_id.in_(members) | Match.user_b_id.in_(members) | Match.user_a_id.in_(left) | Match.user_b_id.in_(left)
+        )
     rows = query.order_by(activity.desc(), Match.id).offset(offset).limit(limit + 1).all()
     has_more = len(rows) > limit
     rows = rows[:limit]

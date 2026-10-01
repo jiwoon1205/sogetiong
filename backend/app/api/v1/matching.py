@@ -289,8 +289,12 @@ def list_ended_matches(current: CurrentUser = Depends(get_current_user), db: Ses
         .all()
     )
     partner_ids = [m.partner_of(current.id) for m in matches]
+    # 탈퇴한 사람은 7일 동안 프로필이 남아 있지만(관리자 확인용), 다른 사용자에게는 "탈퇴한 사용자"로 보여준다
     nicknames = dict(
-        db.query(PublicProfile.user_id, PublicProfile.nickname).filter(PublicProfile.user_id.in_(partner_ids)).all()
+        db.query(PublicProfile.user_id, PublicProfile.nickname)
+        .join(User, User.id == PublicProfile.user_id)
+        .filter(PublicProfile.user_id.in_(partner_ids), User.deleted_at.is_(None))
+        .all()
     ) if partner_ids else {}
     reported = {
         uid
