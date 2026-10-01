@@ -41,6 +41,10 @@ function Shell({ children }: { children: React.ReactNode }) {
     [path],
   );
 
+  // 채팅방은 화면 전체를 쓰는 별도 창이라 위쪽 머리말·아래 탭·여백을 그리지 않는다.
+  // (예전에는 아래 탭을 숨겨도 그 자리 여백 pb-20(80px)이 남아서, 모바일에서 화면 전체가 한 번 더 스크롤되는 문제가 있었다)
+  if (inChat) return <>{children}</>;
+
   return (
     <div className="min-h-dvh pb-20 sm:pb-0">
       <header className="sticky top-0 z-30 border-b border-line bg-paper/95 backdrop-blur">
@@ -60,18 +64,16 @@ function Shell({ children }: { children: React.ReactNode }) {
         </div>
       </header>
 
-      <main className={cn("mx-auto max-w-3xl px-5", inChat ? "py-0" : "py-8 sm:py-12")}>{children}</main>
+      <main className="mx-auto max-w-3xl px-5 py-8 sm:py-12">{children}</main>
 
       {/* 모바일 하단 탭 */}
-      {!inChat && (
-        <nav className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-4 border-t border-line bg-paper sm:hidden">
-          {NAV.map((n) => (
-            <Link key={n.href} href={n.href} className={cn("flex h-16 items-center justify-center text-[13px]", path.startsWith(n.href) ? "font-semibold text-ink" : "text-ink-faint")}>
-              {n.label}
-            </Link>
-          ))}
-        </nav>
-      )}
+      <nav className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-4 border-t border-line bg-paper sm:hidden">
+        {NAV.map((n) => (
+          <Link key={n.href} href={n.href} className={cn("flex h-16 items-center justify-center text-[13px]", path.startsWith(n.href) ? "font-semibold text-ink" : "text-ink-faint")}>
+            {n.label}
+          </Link>
+        ))}
+      </nav>
     </div>
   );
 }

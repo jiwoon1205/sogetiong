@@ -29,7 +29,8 @@
     @apply border-t border-line;
   }
   .field {
-    @apply w-full rounded-md border border-line bg-paper-card px-3.5 py-3 text-[15px] text-ink
+    /* 휴대폰(아이폰)은 글자가 16px보다 작은 입력칸을 누르면 화면을 멋대로 확대한다 → 모바일은 16px, 컴퓨터는 15px */
+    @apply w-full rounded-md border border-line bg-paper-card px-3.5 py-3 text-[16px] sm:text-[15px] text-ink
       placeholder:text-ink-faint transition-colors focus:border-ink focus:outline-none;
   }
   .num {
