@@ -167,18 +167,15 @@ export default function DiscoverPage() {
     const [current, next] = state.cards;
     return (
       <div className="mx-auto max-w-app">
-        <div className="mb-5 flex items-baseline justify-between">
+        <div className="mb-3 flex items-baseline justify-between">
           <p className="eyebrow">오늘의 추천</p>
           <p className="text-[12.5px] text-ink-faint">
-            {likes && (
-              <>
-                오늘 남은 좋아요 <span className="num">{likes.left}</span>/<span className="num">{likes.limit}</span>
-                {" · "}
-              </>
-            )}
             <span className="num">{state.cards.length}</span>명 남음
           </p>
         </div>
+
+        {likes && <LikeMeter left={likes.left} limit={likes.limit} />}
+        {likes && <LikeIntro limit={likes.limit} />}
 
         <SwipeCard key={current.profile_id} onSwipe={act} disabled={busy}>
           <ProfileCard card={current} />
@@ -193,16 +190,98 @@ export default function DiscoverPage() {
           </Button>
           <Button size="lg" onClick={() => act("like")} disabled={busy || (likes !== null && likes.left <= 0)}>
             좋아요
+            {likes && likes.left > 0 && (
+              <span className="ml-1.5 text-[13px] font-normal opacity-80">
+                (<span className="num">{likes.left}</span>개 남음)
+              </span>
+            )}
           </Button>
         </div>
+        {likes && likes.left === 1 && (
+          <p className="mt-3 text-center text-[13px] font-medium text-brick">오늘 마지막 좋아요예요. 신중하게 골라주세요.</p>
+        )}
         {likes && likes.left <= 0 && (
-          <p className="mt-3 text-center text-[12.5px] text-ink-soft">오늘 좋아요를 모두 사용했어요. 자정에 다시 충전돼요.</p>
+          <p className="mt-3 text-center text-[13px] text-ink-soft">오늘 좋아요를 모두 사용했어요. 자정(한국 시간)에 다시 충전돼요. 넘기기는 계속할 수 있어요.</p>
         )}
         <p className="mt-4 hidden text-center text-[12px] text-ink-faint sm:block">키보드 ← 넘기기 · → 좋아요</p>
         <p className="mt-4 text-center text-[12px] text-ink-faint sm:hidden">카드를 옆으로 밀어도 돼요</p>
       </div>
     );
   }
+}
+
+/** 오늘 남은 좋아요를 하트로 크게 보여준다 (하루 한도가 있다는 걸 눈에 띄게) */
+function LikeMeter({ left, limit }: { left: number; limit: number }) {
+  const out = left <= 0;
+  return (
+    <div
+      className={`mb-4 flex items-center justify-between rounded-card border px-4 py-3 ${out ? "border-line bg-paper-deep" : "border-brick/30 bg-brick-wash"}`}
+      aria-label={`오늘 남은 좋아요 ${left}개, 하루 ${limit}개`}
+    >
+      <div>
+        <p className="text-[14px] font-semibold text-ink">
+          오늘 남은 좋아요 <span className="num text-brick">{left}</span>
+          <span className="text-ink-faint">/{limit}</span>
+        </p>
+        <p className="mt-0.5 text-[12px] text-ink-soft">하루 {limit}개까지 · 자정에 다시 충전돼요</p>
+      </div>
+      <div className="flex gap-1" aria-hidden>
+        {Array.from({ length: limit }, (_, i) => (
+          <Heart key={i} filled={i < left} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function Heart({ filled }: { filled: boolean }) {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" className={filled ? "text-brick" : "text-line-strong"}>
+      <path
+        d="M12 20.5s-7.5-4.6-9.3-9.2C1.5 8.1 3.6 4.5 7.2 4.5c2 0 3.6 1.1 4.8 2.8 1.2-1.7 2.8-2.8 4.8-2.8 3.6 0 5.7 3.6 4.5 6.8-1.8 4.6-9.3 9.2-9.3 9.2z"
+        fill={filled ? "currentColor" : "none"}
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+/** 처음 추천을 볼 때 한 번 "좋아요는 하루 N개"를 안내한다 (기기마다 한 번) */
+const LIKE_INTRO_KEY = "likeIntroSeen";
+
+function LikeIntro({ limit }: { limit: number }) {
+  const [show, setShow] = useState(false);
+  useEffect(() => {
+    try {
+      if (!localStorage.getItem(LIKE_INTRO_KEY)) setShow(true);
+    } catch {
+      // 저장소를 못 쓰는 브라우저(사생활 보호 모드 등)에서는 안내를 띄우지 않는다
+    }
+  }, []);
+  if (!show) return null;
+  return (
+    <div className="mb-4 rounded-card border border-line bg-paper-card px-4 py-4">
+      <p className="text-[14.5px] font-semibold">좋아요는 하루 {limit}개만 보낼 수 있어요</p>
+      <p className="mt-1.5 text-[13.5px] leading-relaxed text-ink-soft">
+        마음에 드는 사람에게만 신중하게 눌러주세요. 서로 좋아요를 누르면 매칭돼요. 넘기기는 개수 제한이 없어요.
+      </p>
+      <Button
+        size="sm"
+        variant="secondary"
+        className="mt-3"
+        onClick={() => {
+          try {
+            localStorage.setItem(LIKE_INTRO_KEY, "1");
+          } catch {}
+          setShow(false);
+        }}
+      >
+        알겠어요
+      </Button>
+    </div>
+  );
 }
 
 function EmptyState({ title, body, children }: { title: string; body: string; children?: React.ReactNode }) {

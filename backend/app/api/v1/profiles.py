@@ -314,11 +314,12 @@ def put_my_preferences(
 # ---------- 사진 ----------
 
 def _resubmit_status(db: Session, user_id: uuid.UUID) -> dict:
-    """지금 새 사진을 낼 수 있는지 (2026-09-30 규칙).
+    """지금 새 사진을 낼 수 있는지 (2026-09-30 규칙, 2026-10-01 기간 30일 → 7일).
 
     - 아직 평가를 받은 적 없음(첫 제출, 반려 뒤 다시 내기 등) → 언제든 가능
-    - 마지막 평가 후 30일이 지남 → 가능
-    - 30일 안 → "바로 재검토"를 계정당 평생 1번만 쓸 수 있다.
+    - 마지막 평가 후 PHOTO_RESUBMIT_DAYS(7일)가 지남 → 가능
+    - 그 안 → "바로 재검토"를 계정당 평생 1번만 쓸 수 있다.
+    wait_days: 화면 안내 문구용 (기간을 .env로 바꿔도 문구가 따라 바뀌게)
       바로 재검토로 낸 사진이 승인까지 되면 "사용함"으로 친다.
       (반려되거나, 검수 전에 다른 사진으로 바꾸면 쓴 것으로 치지 않는다)
     """
@@ -335,12 +336,14 @@ def _resubmit_status(db: Session, user_id: uuid.UUID) -> dict:
         .first()
         is not None
     )
+    days = settings.photo_resubmit_days
     if last_eval is None:
-        return {"allowed": True, "uses_free_rereview": False, "free_rereview_left": not free_used, "next_available_at": None}
-    next_at = as_utc(last_eval.created_at) + timedelta(days=settings.photo_resubmit_days)
+        return {"allowed": True, "uses_free_rereview": False, "free_rereview_left": not free_used, "next_available_at": None, "wait_days": days}
+    next_at = as_utc(last_eval.created_at) + timedelta(days=days)
     if utcnow() >= next_at:
-        return {"allowed": True, "uses_free_rereview": False, "free_rereview_left": not free_used, "next_available_at": None}
+        return {"allowed": True, "uses_free_rereview": False, "free_rereview_left": not free_used, "next_available_at": None, "wait_days": days}
     return {
+        "wait_days": days,
         "allowed": not free_used,
         "uses_free_rereview": not free_used,
         "free_rereview_left": not free_used,

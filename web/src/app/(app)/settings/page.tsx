@@ -57,6 +57,14 @@ export default function SettingsPage() {
   );
 }
 
+// 탈퇴 후 다시 가입할 수 있을 때까지 (서버 설정 REJOIN_COOLDOWN_DAYS와 같은 값)
+const REJOIN_DAYS = 7;
+
+function rejoinDate(): string {
+  const d = new Date(Date.now() + REJOIN_DAYS * 24 * 60 * 60 * 1000);
+  return d.toLocaleString("ko-KR", { month: "long", day: "numeric", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Seoul" });
+}
+
 function DeleteAccount({ open, onClose, onDone }: { open: boolean; onClose: () => void; onDone: () => void }) {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -78,11 +86,14 @@ function DeleteAccount({ open, onClose, onDone }: { open: boolean; onClose: () =
   return (
     <Modal open={open} onClose={onClose} title="탈퇴하기">
       <form onSubmit={submit} className="space-y-4">
-        <p className="text-[14px] leading-relaxed text-ink-soft">
-          공개 프로필, 매칭 조건, 사진이 삭제되고 진행 중인 대화가 모두 끝나요. 신고 처리 등 법적으로 보관해야 하는 기록은 정해진 기간 동안만 보관돼요.
-        </p>
+        <p className="text-[14.5px] font-semibold text-brick">탈퇴하면 되돌릴 수 없어요.</p>
+        <ul className="list-disc space-y-1.5 pl-5 text-[14px] leading-relaxed text-ink-soft">
+          <li>공개 프로필, 관심사, 매칭 조건, 사진이 바로 삭제돼요.</li>
+          <li>진행 중인 대화는 모두 끝나요. 다시 가입해도 예전 매칭·대화·사진 평가는 돌아오지 않아요.</li>
+          <li>생년월일·실명·학번 등 가입 정보와 채팅·신고 기록은 분쟁·신고 처리를 위해 일정 기간 보관한 뒤 삭제돼요.</li>
+        </ul>
         <p className="text-[13px] leading-relaxed text-ink-faint">
-          탈퇴 후 7일이 지나면 같은 학교 메일로 다시 가입할 수 있어요. 차단했던 상대는 다시 가입해도 계속 차단된 상태로 유지돼요.
+          <b className="font-semibold text-ink-soft">{rejoinDate()} 이후</b> 같은 학교 메일로 다시 가입할 수 있어요 (탈퇴 후 {REJOIN_DAYS}일). 차단했던 상대는 다시 가입해도 계속 차단돼요.
         </p>
         <Field label="비밀번호 확인" htmlFor="del-pw">
           <Input id="del-pw" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />

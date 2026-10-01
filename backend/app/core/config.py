@@ -52,7 +52,7 @@ class Settings(BaseSettings):
     photo_max_bytes: int = 10 * 1024 * 1024  # 한 장당. 화면에서 먼저 줄여서 보내므로 보통 1~2MB
     photo_max_count: int = 3  # 한 번에 제출할 수 있는 사진 수
     photo_max_side: int = 2048
-    photo_resubmit_days: int = 30  # 승인된 평가 이후 재평가 요청 간격
+    photo_resubmit_days: int = 7  # 평가 이후 새 사진(재검토)을 낼 수 있는 간격 (2026-10-01: 30일 → 7일)
 
     # --- 매칭 ---
     discover_page_size: int = 10

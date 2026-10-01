@@ -1,10 +1,11 @@
 """설계도 §65 '반드시 통과해야 하는 보안 테스트' + 로그인 보안."""
 
 import uuid
-from datetime import date
+from datetime import date, timedelta
 
 import pyotp
 
+from app.core.time import utcnow
 from app.models import AuditLog, UserPhoto
 from tests.conftest import (
     AdminClient,
@@ -329,7 +330,7 @@ def test_evaluation_change_is_audited_with_before_after(sent_codes, db):
 
 
 def test_resubmit_limit_after_evaluation(sent_codes, db):
-    """평가 후 30일 안: 바로 재검토는 계정당 1번. 그 재검토가 승인되면 다음은 30일 뒤 (2026-09-30)."""
+    """평가 후 7일 안: 바로 재검토는 계정당 1번. 그 재검토가 승인되면 다음은 7일 뒤 (2026-10-01: 30일 → 7일)."""
     admin = admin_login(db)
     a = ready_user(sent_codes, db, admin, "a@hufs.ac.kr")
     status_ = a.get("/api/v1/me/photos").json()["resubmit"]
@@ -342,6 +343,17 @@ def test_resubmit_limit_after_evaluation(sent_codes, db):
     assert a.get("/api/v1/me/photos").json()["resubmit"]["allowed"] is False
     r = a.post("/api/v1/me/photos", files={"file": ("x.jpg", jpeg_with_exif(), "image/jpeg")})
     assert r.status_code == 429
+    assert "7일" in r.json()["detail"]
+
+    # 마지막 평가 후 7일이 지나면 다시 낼 수 있다
+    from app.models.photo import AppearanceEvaluation
+    for ev in db.query(AppearanceEvaluation).all():
+        ev.created_at = utcnow() - timedelta(days=7, minutes=1)
+    db.commit()
+    status_ = a.get("/api/v1/me/photos").json()["resubmit"]
+    assert status_["allowed"] and not status_["uses_free_rereview"] and status_["wait_days"] == 7
+    r = a.post("/api/v1/me/photos", files={"file": ("x.jpg", jpeg_with_exif(), "image/jpeg")})
+    assert r.status_code == 201, r.text
 
 
 def test_rejected_free_rereview_is_not_used_up(sent_codes, db):

@@ -30,13 +30,12 @@ export default function GenderPie({ male, female }: { male: number; female: numb
   const values: Record<string, number> = { male, female };
   const pct = (n: number) => (total ? Math.round((n / total) * 100) : 0);
 
-  let angle = 0;
-  const arcs = SLICES.map((s) => {
-    const sweep = total ? (values[s.key] / total) * Math.PI * 2 : 0;
-    const arc = { ...s, value: values[s.key], start: angle, end: angle + sweep };
-    angle += sweep;
-    return arc;
-  }).filter((a) => a.value > 0);
+  // 남자 조각은 12시부터, 여자 조각은 남자 조각이 끝난 곳부터 그린다
+  const maleSweep = total ? (male / total) * Math.PI * 2 : 0;
+  const arcs = [
+    { ...SLICES[0], value: male, start: 0, end: maleSweep },
+    { ...SLICES[1], value: female, start: maleSweep, end: Math.PI * 2 },
+  ].filter((a) => a.value > 0);
 
   return (
     <div className="flex items-center gap-5 rounded-card border border-line bg-paper-card px-5 py-4">

@@ -19,8 +19,14 @@ type Photo = {
   uploaded_at: string;
   reviewed_at: string | null;
 };
-// 새 사진을 지금 낼 수 있는지 (서버가 알려줌). 평가 후 30일 안에는 "바로 재검토"를 계정당 1번만 쓸 수 있다
-type Resubmit = { allowed: boolean; uses_free_rereview: boolean; free_rereview_left: boolean; next_available_at: string | null };
+// 새 사진을 지금 낼 수 있는지 (서버가 알려줌). 평가 후 wait_days(7일) 안에는 "바로 재검토"를 계정당 1번만 쓸 수 있다
+type Resubmit = {
+  allowed: boolean;
+  uses_free_rereview: boolean;
+  free_rereview_left: boolean;
+  next_available_at: string | null;
+  wait_days?: number;
+};
 
 const PHOTO_STATUS: Record<string, string> = {
   PENDING: "검수 대기 중",
@@ -124,7 +130,7 @@ export default function ProfilePage() {
             <div className="mt-6">
               {resubmit?.uses_free_rereview ? (
                 <Notice>
-                  평가 후 30일 안에 바로 재검토를 요청할 수 있는 기회는 <b>계정당 한 번</b>이에요. 새 사진이 승인되면 기회를 쓴 것으로 처리돼요 (반려되면 다시 쓸 수 있어요).
+                  평가 후 {resubmit.wait_days ?? 7}일 안에 바로 재검토를 요청할 수 있는 기회는 <b>계정당 한 번</b>이에요. 새 사진이 승인되면 기회를 쓴 것으로 처리돼요 (반려되면 다시 쓸 수 있어요).
                 </Notice>
               ) : (
                 <Notice>한 번에 최대 3장까지 제출할 수 있어요. 검수 전인 이전 사진은 새 사진으로 바뀌어요.</Notice>

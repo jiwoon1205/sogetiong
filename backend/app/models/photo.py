@@ -34,7 +34,7 @@ class UserPhoto(Base):
     # position 0 = 묶음의 대표 사진 (관리자 대기열·평가 기록은 대표 사진 기준)
     submission_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True, index=True)
     position: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    # 평가 후 30일이 안 지났는데 "바로 재검토"(계정당 평생 1번)를 써서 낸 사진인지
+    # 평가 후 7일(PHOTO_RESUBMIT_DAYS)이 안 지났는데 "바로 재검토"(계정당 평생 1번)를 써서 낸 사진인지
     free_rereview: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     uploaded_at: Mapped[datetime] = created_at()
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
