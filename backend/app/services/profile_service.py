@@ -246,10 +246,21 @@ def discoverable_profiles_query(db: Session, university_id: uuid.UUID):
     )
 
 
-def excluded_user_ids(db: Session, user_id: uuid.UUID) -> set[uuid.UUID]:
-    """추천에서 빼야 할 사람: 이미 LIKE/PASS한 사람, 차단 관계(양방향), 매칭 이력이 있는 사람."""
+def is_vip_tester(user: User) -> bool:
+    """VIP 테스트 계정인가? (설정 VIP_TEST_EMAILS에 적힌 학교 메일, 2026-10-02)"""
+    return (user.email or "").strip().lower() in get_settings().vip_test_email_set
+
+
+def excluded_user_ids(db: Session, user_id: uuid.UUID, *, include_passed: bool = True) -> set[uuid.UUID]:
+    """추천에서 빼야 할 사람: 이미 LIKE/PASS한 사람, 차단 관계(양방향), 매칭 이력이 있는 사람.
+
+    include_passed=False: PASS한 사람은 빼지 않는다 (VIP 테스트 계정 — PASS해도 다시 나옴).
+    """
     ids: set[uuid.UUID] = {user_id}
-    ids.update(r[0] for r in db.query(Like.to_user_id).filter(Like.from_user_id == user_id))
+    sent = db.query(Like.to_user_id).filter(Like.from_user_id == user_id)
+    if not include_passed:
+        sent = sent.filter(Like.action == "LIKE")
+    ids.update(r[0] for r in sent)
     ids.update(r[0] for r in db.query(Block.blocked_user_id).filter(Block.blocker_user_id == user_id))
     ids.update(r[0] for r in db.query(Block.blocker_user_id).filter(Block.blocked_user_id == user_id))
     for a, b in db.query(Match.user_a_id, Match.user_b_id).filter((Match.user_a_id == user_id) | (Match.user_b_id == user_id)):
@@ -327,8 +338,12 @@ def likes_sent_today(db: Session, user_id: uuid.UUID) -> int:
     )
 
 
-def likes_left_today(db: Session, user_id: uuid.UUID) -> int:
-    return max(0, get_settings().daily_like_limit - likes_sent_today(db, user_id))
+def likes_left_today(db: Session, user_id: uuid.UUID, *, unlimited: bool = False) -> int:
+    limit = get_settings().daily_like_limit
+    if unlimited:
+        # VIP 테스트 계정: 화면의 하트가 줄지 않도록 항상 "가득 참"으로 보낸다
+        return limit
+    return max(0, limit - likes_sent_today(db, user_id))
 
 
 def count(db: Session, query) -> int:

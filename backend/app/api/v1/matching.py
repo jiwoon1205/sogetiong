@@ -58,7 +58,9 @@ def discover(
 ):
     enforce_rate_limit(f"discover:{current.id}", 60, 60)
     viewer = _viewer(db, current)
-    excluded = profile_service.excluded_user_ids(db, current.id)
+    # VIP 테스트 계정은 PASS한 사람도 다시 추천에 나온다 (2026-10-02)
+    vip = profile_service.is_vip_tester(current.user)
+    excluded = profile_service.excluded_user_ids(db, current.id, include_passed=not vip)
 
     query = profile_service.discoverable_profiles_query(db, current.user.university_id).filter(
         PublicProfile.user_id.notin_(excluded)
@@ -85,7 +87,7 @@ def discover(
     return {
         "profiles": cards,
         "empty": not cards,
-        "likes_left_today": profile_service.likes_left_today(db, current.id),
+        "likes_left_today": profile_service.likes_left_today(db, current.id, unlimited=vip),
         "daily_like_limit": settings.daily_like_limit,
     }
 
@@ -112,17 +114,20 @@ def like(payload: TargetRequest, current: CurrentUser = Depends(get_current_user
     enforce_rate_limit(f"like:{current.id}", 60, 60)
     target = _target(db, current, payload.profile_id)
     viewer = _viewer(db, current)
+    vip = profile_service.is_vip_tester(current.user)
 
     # ID를 직접 넣어도, 추천 조건에 맞지 않는 사람에게는 LIKE할 수 없다 (설계도 금지사항 #18)
-    if target.user_id in profile_service.excluded_user_ids(db, current.id):
+    # (VIP 테스트 계정은 PASS했던 사람이 다시 나오므로, 그 사람에게 LIKE도 할 수 있어야 한다)
+    if target.user_id in profile_service.excluded_user_ids(db, current.id, include_passed=not vip):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="프로필을 찾을 수 없습니다.")
     candidates = profile_service.people_from_profiles(db, [target])
     if not candidates or not matching_service.mutually_compatible(viewer, candidates[0]):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="프로필을 찾을 수 없습니다.")
 
     # 하루 LIKE 한도 (한국 시간 자정에 다시 채워짐). DB로 세므로 서버를 재시작해도 초기화되지 않는다.
+    # VIP 테스트 계정은 한도 없음 (2026-10-02)
     limit = get_settings().daily_like_limit
-    if profile_service.likes_sent_today(db, current.id) >= limit:
+    if not vip and profile_service.likes_sent_today(db, current.id) >= limit:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail=f"오늘 LIKE {limit}개를 모두 사용했어요. 자정(한국 시간)에 다시 충전돼요.",
@@ -133,7 +138,7 @@ def like(payload: TargetRequest, current: CurrentUser = Depends(get_current_user
     # 한 번 더 확인: LIKE를 여러 개 "동시에" 보내면 위의 확인을 모두 통과할 수 있다.
     # 방금 기록한 LIKE를 포함해 세고, 한도를 넘으면 취소한다.
     # (SQLite는 쓰기를 한 번에 하나씩만 하므로, 여기서 세는 숫자에는 먼저 끝난 요청이 모두 들어 있다)
-    if profile_service.likes_sent_today(db, current.id) > limit:
+    if not vip and profile_service.likes_sent_today(db, current.id) > limit:
         db.rollback()
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
@@ -165,7 +170,7 @@ def like(payload: TargetRequest, current: CurrentUser = Depends(get_current_user
     return {
         "matched": match is not None,
         "match_id": str(match.id) if match else None,
-        "likes_left_today": profile_service.likes_left_today(db, current.id),
+        "likes_left_today": profile_service.likes_left_today(db, current.id, unlimited=vip),
     }
 
 
