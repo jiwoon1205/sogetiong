@@ -85,6 +85,12 @@ class Settings(BaseSettings):
     # 하루(한국 시간 자정 기준)에 보낼 수 있는 LIKE 수 (베타: 5개)
     daily_like_limit: int = 5
 
+    # VIP 기능 테스트용 계정 (2026-10-02). 여기 적힌 학교 메일로 가입한 계정은
+    #   ① 하루 LIKE 제한 없음  ② PASS한 사람도 새로고침하면 다시 추천에 나옴
+    # 그리고 다른 사람이 이 계정을 PASS하면, 그 PASS는 그날 하루(한국 시간)만 유효하다 → 매일 다시 추천된다.
+    # 여러 개는 쉼표로 구분. 기능을 끄려면 .env에 VIP_TEST_EMAILS= (빈 값)
+    vip_test_emails: str = "wldns051205@hufs.ac.kr"
+
     # 매칭 조건은 하루(24시간)에 이 횟수만큼만 바꿀 수 있다 (처음 저장은 세지 않음)
     preferences_changes_per_day: int = 3
 
@@ -116,6 +122,10 @@ class Settings(BaseSettings):
     @property
     def cors_origin_list(self) -> list[str]:
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
+
+    @property
+    def vip_test_email_set(self) -> set[str]:
+        return {e.strip().lower() for e in self.vip_test_emails.split(",") if e.strip()}
 
     def validate_settings(self) -> None:
         if self.activity_window_days < 1:

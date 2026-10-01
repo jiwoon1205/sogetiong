@@ -12,7 +12,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
-from app.core.time import age_on, kst_day_start, kst_today, utcnow
+from app.core.time import age_on, as_utc, kst_day_start, kst_today, utcnow
 from app.models.matching import (
     Block,
     Like,
@@ -256,22 +256,53 @@ def _pass_cutoff() -> datetime:
     return utcnow() - timedelta(hours=get_settings().pass_cooldown_hours)
 
 
+def vip_tester_ids(db: Session) -> set[uuid.UUID]:
+    """VIP 테스트 계정들의 user_id (이메일은 가입할 때 소문자로 저장된다)."""
+    emails = get_settings().vip_test_email_set
+    if not emails:
+        return set()
+    return {r[0] for r in db.query(User.id).filter(func.lower(User.email).in_(emails))}
+
+
+# 서버가 켜진 시각 (= 이 업데이트를 배포한 시각).
+# 이보다 먼저 VIP 테스트 계정을 PASS한 기록은 무시한다 → 배포하자마자 모두에게 다시 추천된다.
+VIP_PASS_RESET_FROM = utcnow()
+
+
+def _pass_still_hides(to_id: uuid.UUID, passed_at, vip_ids: set[uuid.UUID]) -> bool:
+    """이 PASS가 아직 상대를 추천에서 숨기는가?
+
+    - 일반 사용자에게 한 PASS: 48시간(pass_cooldown_hours) 동안
+    - VIP 테스트 계정에 한 PASS: 그날 하루(한국 시간 자정까지)만, 그리고 서버가 켜진 뒤에 한 것만 (2026-10-02)
+    """
+    if passed_at is None:
+        return False
+    passed_at = as_utc(passed_at)
+    if to_id in vip_ids:
+        return passed_at >= max(kst_day_start(), VIP_PASS_RESET_FROM)
+    return passed_at > _pass_cutoff()
+
+
+def _passes(db: Session, user_id: uuid.UUID):
+    return db.query(Like.to_user_id, Like.updated_at).filter(Like.from_user_id == user_id, Like.action == "PASS")
+
+
 def excluded_user_ids(db: Session, user_id: uuid.UUID, *, include_passed: bool = True) -> set[uuid.UUID]:
-    """추천에서 빼야 할 사람: 이미 LIKE한 사람, 최근(48시간 안)에 PASS한 사람, 차단 관계(양방향), 매칭 이력이 있는 사람.
+    """추천에서 빼야 할 사람: 이미 LIKE한 사람, 최근에 PASS한 사람, 차단 관계(양방향), 매칭 이력이 있는 사람.
 
     PASS는 영원히 빼지 않는다 (2026-10-02). 베타라 사람이 적어서 추천이 금방 바닥나기 때문.
+    - 보통: PASS 후 48시간 동안만 뺀다
+    - VIP 테스트 계정을 PASS한 경우: 그날 하루만 뺀다 → 매일 다시 추천된다
     PASS 시각은 updated_at으로 본다 (같은 사람을 다시 PASS하면 그때 시각으로 바뀐다 → _upsert_action).
     업데이트 전에 남긴 PASS도 updated_at이 있으므로 같은 규칙이 그대로 적용된다.
 
-    include_passed=False: PASS한 사람은 빼지 않는다 (VIP 테스트 계정 — PASS해도 다시 나옴).
+    include_passed=False: PASS한 사람은 빼지 않는다 (VIP 테스트 계정 본인 — PASS해도 다시 나옴).
     """
     ids: set[uuid.UUID] = {user_id}
-    sent = db.query(Like.to_user_id).filter(Like.from_user_id == user_id)
+    ids.update(r[0] for r in db.query(Like.to_user_id).filter(Like.from_user_id == user_id, Like.action == "LIKE"))
     if include_passed:
-        sent = sent.filter((Like.action != "PASS") | (Like.updated_at > _pass_cutoff()))
-    else:
-        sent = sent.filter(Like.action == "LIKE")
-    ids.update(r[0] for r in sent)
+        vip_ids = vip_tester_ids(db)
+        ids.update(to_id for to_id, at in _passes(db, user_id) if _pass_still_hides(to_id, at, vip_ids))
     ids.update(r[0] for r in db.query(Block.blocked_user_id).filter(Block.blocker_user_id == user_id))
     ids.update(r[0] for r in db.query(Block.blocker_user_id).filter(Block.blocked_user_id == user_id))
     for a, b in db.query(Match.user_a_id, Match.user_b_id).filter((Match.user_a_id == user_id) | (Match.user_b_id == user_id)):
@@ -280,13 +311,9 @@ def excluded_user_ids(db: Session, user_id: uuid.UUID, *, include_passed: bool =
 
 
 def passed_before_ids(db: Session, user_id: uuid.UUID) -> set[uuid.UUID]:
-    """예전에 PASS했고 48시간이 지나 다시 추천될 수 있는 사람. 추천 순서에서 "처음 보는 사람" 뒤로 보낸다."""
-    return {
-        r[0]
-        for r in db.query(Like.to_user_id).filter(
-            Like.from_user_id == user_id, Like.action == "PASS", Like.updated_at <= _pass_cutoff()
-        )
-    }
+    """예전에 PASS했지만 이제 다시 추천될 수 있는 사람. 추천 순서에서 "처음 보는 사람" 뒤로 보낸다."""
+    vip_ids = vip_tester_ids(db)
+    return {to_id for to_id, at in _passes(db, user_id) if not _pass_still_hides(to_id, at, vip_ids)}
 
 
 def is_blocked_between(db: Session, a: uuid.UUID, b: uuid.UUID) -> bool:
