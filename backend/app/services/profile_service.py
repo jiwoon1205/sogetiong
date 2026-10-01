@@ -6,12 +6,13 @@
 
 import uuid
 from collections import defaultdict
+from datetime import timedelta
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
-from app.core.time import age_on, kst_day_start
+from app.core.time import age_on, kst_day_start, kst_today
 from app.models.matching import (
     Block,
     Like,
@@ -22,7 +23,7 @@ from app.models.matching import (
 from app.models.photo import AppearanceEvaluation, UserPhoto
 from app.models.profile import Interest, PrivateProfile, PublicProfile, UserInterest
 from app.models.university import Campus, Department
-from app.models.user import User
+from app.models.user import User, UserDailyVisit
 from app.services.matching_service import Person, Preferences
 
 
@@ -150,9 +151,28 @@ def preferences_of(db: Session, user_ids: list[uuid.UUID]) -> dict[uuid.UUID, Pr
     }
 
 
+def activity_of(db: Session, user_ids: list[uuid.UUID]) -> dict[uuid.UUID, float]:
+    """활동 점수 0~1 = 최근 N일(오늘 포함, 한국 시간) 중 접속한 날 수 ÷ N.
+
+    사람 수만큼 DB를 부르지 않도록 한 번에 센다 (하루 한 줄이라 가볍다).
+    """
+    if not user_ids:
+        return {}
+    days = get_settings().activity_window_days
+    since = kst_today() - timedelta(days=days - 1)
+    rows = (
+        db.query(UserDailyVisit.user_id, func.count())
+        .filter(UserDailyVisit.user_id.in_(user_ids), UserDailyVisit.visit_date >= since)
+        .group_by(UserDailyVisit.user_id)
+        .all()
+    )
+    return {uid: min(n / days, 1.0) for uid, n in rows}
+
+
 def people_from_profiles(db: Session, profiles: list[PublicProfile]) -> list[Person]:
     user_ids = [p.user_id for p in profiles]
     prefs = preferences_of(db, user_ids)
+    activity = activity_of(db, user_ids)
     births = birth_dates_of(db, user_ids)
     interests = interests_of(db, user_ids)
     evaluations = latest_evaluations(db, user_ids)
@@ -174,6 +194,7 @@ def people_from_profiles(db: Session, profiles: list[PublicProfile]) -> list[Per
                 has_bio=bool(p.bio),
                 has_ideal_type=bool(p.ideal_type),
                 tier=evaluation.tier if evaluation else None,
+                activity=activity.get(p.user_id, 0.0),
             )
         )
     return people
@@ -273,7 +294,12 @@ def matching_weights():
     from app.services.matching_service import Weights
 
     s = get_settings()
-    return Weights(interest=s.weight_interest, completeness=s.weight_completeness, mbti=s.weight_mbti)
+    return Weights(
+        interest=s.weight_interest,
+        completeness=s.weight_completeness,
+        mbti=s.weight_mbti,
+        activity=s.weight_activity,
+    )
 
 
 def current_tier(db: Session, user_id: uuid.UUID) -> str | None:

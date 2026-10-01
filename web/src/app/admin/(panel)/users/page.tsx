@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useState } from "react";
 import { Input, PageTitle, Select, Spinner } from "@/components/ui";
 import { USER_STATUS_LABEL, adminApi } from "@/lib/admin";
 import { cn, dateTime, timeAgo } from "@/lib/format";
@@ -10,6 +11,7 @@ type UserRow = {
   user_id: string;
   subject_code: string;
   nickname: string | null;
+  gender: string | null;
   status: string;
   onboarding_stage?: string;
   reports_received: number;
@@ -26,26 +28,49 @@ const STAGE_LABEL: Record<string, string> = {
   DONE: "완료",
 };
 
+const GENDER_LABEL: Record<string, string> = { MALE: "남", FEMALE: "여" };
+
+// useSearchParams는 Suspense 안에서만 쓸 수 있다 (Next.js 규칙)
 export default function UsersPage() {
+  return (
+    <Suspense fallback={<Spinner />}>
+      <UsersList />
+    </Suspense>
+  );
+}
+
+function UsersList() {
+  const searchParams = useSearchParams();
   const [items, setItems] = useState<UserRow[] | null>(null);
   const [status, setStatus] = useState("");
+  // 대시보드의 "남자/여자" 칸을 누르면 ?gender=MALE 처럼 들어온다
+  const [gender, setGender] = useState(() => {
+    const g = searchParams.get("gender");
+    return g === "MALE" || g === "FEMALE" ? g : "";
+  });
   const [q, setQ] = useState("");
 
   useEffect(() => {
     const t = setTimeout(() => {
       const params = new URLSearchParams();
       if (status) params.set("status", status);
+      if (gender) params.set("gender", gender);
       if (q.trim()) params.set("nickname", q.trim());
       adminApi<{ users: UserRow[] }>(`/users?${params}`).then((r) => setItems(r.users));
     }, 250);
     return () => clearTimeout(t);
-  }, [status, q]);
+  }, [status, gender, q]);
 
   return (
     <>
       <PageTitle eyebrow="사용자" title="사용자 관리" desc="실명·이메일 등 개인정보는 목록에 나오지 않아요." />
-      <div className="mb-5 grid gap-3 sm:grid-cols-[1fr_11rem]">
+      <div className="mb-5 grid gap-3 sm:grid-cols-[1fr_8rem_11rem]">
         <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="닉네임으로 찾기" />
+        <Select value={gender} onChange={(e) => setGender(e.target.value)}>
+          <option value="">모든 성별</option>
+          <option value="MALE">남자</option>
+          <option value="FEMALE">여자</option>
+        </Select>
         <Select value={status} onChange={(e) => setStatus(e.target.value)}>
           <option value="">모든 상태</option>
           {Object.entries(USER_STATUS_LABEL).map(([k, v]) => (
@@ -59,11 +84,12 @@ export default function UsersPage() {
         <Spinner />
       ) : (
         <div className="overflow-x-auto rounded-card border border-line bg-paper-card">
-          <table className="w-full min-w-[50rem] text-[14px]">
+          <table className="w-full min-w-[54rem] text-[14px]">
             <thead className="border-b border-line text-left text-[12.5px] text-ink-faint">
               <tr>
                 <th className="px-5 py-3 font-normal">코드</th>
                 <th className="px-5 py-3 font-normal">닉네임</th>
+                <th className="px-5 py-3 font-normal">성별</th>
                 <th className="px-5 py-3 font-normal">상태</th>
                 <th className="px-5 py-3 font-normal">가입 단계</th>
                 <th className="px-5 py-3 text-right font-normal">받은 신고</th>
@@ -80,6 +106,7 @@ export default function UsersPage() {
                     </Link>
                   </td>
                   <td className="px-5 py-3">{u.nickname ?? <span className="text-ink-faint">—</span>}</td>
+                  <td className="px-5 py-3">{u.gender ? GENDER_LABEL[u.gender] ?? u.gender : <span className="text-ink-faint">—</span>}</td>
                   <td className={cn("px-5 py-3", u.status !== "ACTIVE" && "text-brick")}>{USER_STATUS_LABEL[u.status] ?? u.status}</td>
                   <td className={cn("px-5 py-3", u.onboarding_stage === "DONE" ? "text-ink-soft" : "text-brick")}>
                     {u.onboarding_stage ? STAGE_LABEL[u.onboarding_stage] ?? u.onboarding_stage : "—"}

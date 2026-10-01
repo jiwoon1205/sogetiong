@@ -29,3 +29,8 @@ def kst_day_start(now: datetime | None = None) -> datetime:
     """오늘(한국 시간) 0시를 UTC로 돌려준다. 하루 LIKE 개수를 셀 때 쓴다."""
     now_kst = (now or utcnow()).astimezone(KST)
     return now_kst.replace(hour=0, minute=0, second=0, microsecond=0).astimezone(timezone.utc)
+
+
+def kst_today(now: datetime | None = None) -> date:
+    """오늘 날짜 (한국 시간). 하루 접속 기록에 쓴다."""
+    return (now or utcnow()).astimezone(KST).date()

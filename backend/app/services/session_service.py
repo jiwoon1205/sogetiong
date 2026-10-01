@@ -15,9 +15,9 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.core.rate_limit import client_ip
 from app.core.security import hash_token, new_token
-from app.core.time import utcnow
+from app.core.time import KST, as_utc, kst_today, utcnow
 from app.models.admin import AdminSession
-from app.models.user import User, UserSession
+from app.models.user import User, UserDailyVisit, UserSession
 
 APP_CLIENT_HEADER = "X-Client-Type"
 CSRF_HEADER = "X-CSRF-Token"
@@ -40,13 +40,27 @@ def _user_agent(request: Request) -> str | None:
 
 # ---------- 사용자 ----------
 
+def mark_user_active(db: Session, user: User, now) -> None:
+    """접속 기록: 마지막 접속 시각 + 하루 접속 기록(한국 시간 기준 하루 한 줄).
+
+    하루 접속 기록은 "오늘 처음 기록되는 접속"일 때만 쓴다 → 한 사람당 하루 DB 쓰기 1번.
+    """
+    previous = as_utc(user.last_active_at)
+    user.last_active_at = now
+    today = kst_today(now)
+    if previous is not None and previous.astimezone(KST).date() == today:
+        return  # 오늘 이미 기록됨
+    if db.get(UserDailyVisit, (user.id, today)) is None:
+        db.add(UserDailyVisit(user_id=user.id, visit_date=today))
+
+
 def create_user_session(db: Session, user_id: uuid.UUID, request: Request) -> IssuedSession:
     settings = get_settings()
     token, csrf = new_token(), new_token()
     now = utcnow()
     user = db.get(User, user_id)
     if user is not None:
-        user.last_active_at = now  # 로그인·가입 = 접속
+        mark_user_active(db, user, now)  # 로그인·가입 = 접속
     db.add(
         UserSession(
             user_id=user_id,

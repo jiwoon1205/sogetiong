@@ -18,7 +18,7 @@ from app.core.time import as_utc, utcnow
 from app.db.session import get_db
 from app.models.admin import ALL_PERMISSIONS, SUPER_ADMIN_ROLE, AdminSession, AdminUser
 from app.models.user import User, UserSession
-from app.services.session_service import CSRF_HEADER
+from app.services.session_service import CSRF_HEADER, mark_user_active
 
 SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
 
@@ -92,9 +92,9 @@ def get_current_user(
         session.last_used_at = now
         session.expires_at = now + timedelta(days=settings.session_days)
         changed = True
-    # 마지막 접속 시각 (관리자 화면용, 10분에 한 번만 DB에 기록)
+    # 마지막 접속 시각 + 하루 접속 기록 (10분에 한 번만 DB에 기록)
     if user.last_active_at is None or now - as_utc(user.last_active_at) > LAST_ACTIVE_INTERVAL:
-        user.last_active_at = now
+        mark_user_active(db, user, now)
         changed = True
     if changed:
         db.commit()

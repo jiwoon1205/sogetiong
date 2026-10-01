@@ -22,7 +22,16 @@ users
 - created_at
 - updated_at
 - deleted_at
+- last_active_at (마지막 접속, 10분에 한 번 기록)
 ```
+
+### 2.1.1 user_daily_visits (2026-10-01)
+```text
+user_daily_visits
+- user_id (PK, FK users.id)
+- visit_date (PK, 한국 시간 날짜, index)
+```
+- 한 사람이 하루에 한 줄만 쌓인다. 추천 "활동 점수"(최근 14일 중 며칠 접속)와 관리자 "활성 사용자"(최근 7일 접속)에 쓴다.
 
 ### 2.2 universities
 ```text

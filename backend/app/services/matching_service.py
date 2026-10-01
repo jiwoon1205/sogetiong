@@ -3,7 +3,9 @@
 Stage 1 — Hard Filter: 조건에 맞지 않는 후보 제거 (양쪽 조건을 모두 확인)
 Stage 2 — 정렬:
     ① 외모 등급(상/중/하)이 나와 같은 사람 → 한 단계 차이 → 두 단계 차이 순서
-    ② 같은 등급 차이 안에서는 세부 점수(관심사·프로필 완성도·MBTI)로 정렬
+    ② 같은 등급 차이 안에서는 세부 점수(관심사·프로필 완성도·MBTI·활동)로 정렬
+    ③ 점수까지 같으면 랜덤 (2026-10-01: 예전에는 DB에서 꺼낸 순서 = 가입 순서가 그대로 남아서
+       먼저 가입한 사람이 항상 먼저 떴다)
 Stage 3 — 나를 LIKE한 사람 우대: 한 페이지에 최대 N자리, 위치는 랜덤, 가끔은 우대 안 함
           (항상 같은 자리에 넣으면 "이 카드 = 나를 좋아하는 사람"이라고 티가 난다)
 
@@ -44,6 +46,8 @@ class Person:
     has_bio: bool = False
     has_ideal_type: bool = False
     tier: str | None = None  # HIGH / MID / LOW (내부 전용)
+    # 활동 점수 0~1: 최근 14일 중 접속한 날 수 ÷ 14 (2026-10-01)
+    activity: float = 0.0
 
 
 @dataclass
@@ -51,6 +55,9 @@ class Weights:
     interest: float
     completeness: float
     mbti: float
+    # 자주 접속하는 사람을 앞으로 (2026-10-01). 너무 크면 관심사가 맞는 사람보다
+    # "자주 오는 사람"만 뜨므로 .env(WEIGHT_ACTIVITY)로 조정한다.
+    activity: float = 0.0
 
 
 # ---------- Stage 1: 조건 확인 ----------
@@ -139,13 +146,21 @@ def score(viewer: Person, candidate: Person, weights: Weights) -> float:
         weights.interest * _interest_similarity(viewer.interests, candidate.interests)
         + weights.completeness * _completeness(candidate)
         + weights.mbti * _mbti_similarity(viewer.mbti, candidate.mbti)
+        + weights.activity * min(max(candidate.activity, 0.0), 1.0)
     )
     return round(total, 6)
 
 
-def order(viewer: Person, candidates: list[Person], weights: Weights) -> list[Person]:
-    """조건을 통과한 후보를 등급 차이 → 세부 점수 순으로 정렬."""
+def order(
+    viewer: Person, candidates: list[Person], weights: Weights, rng: random.Random | None = None
+) -> list[Person]:
+    """조건을 통과한 후보를 등급 차이 → 세부 점수 순으로 정렬. 점수가 같으면 랜덤.
+
+    먼저 섞은 뒤 정렬한다. 파이썬 정렬은 "같은 값이면 원래 순서 유지"라서,
+    섞어 두면 점수가 같은 사람끼리는 랜덤 순서가 된다 (가입 순서가 결과에 영향을 주지 않음).
+    """
     eligible = [c for c in candidates if mutually_compatible(viewer, c)]
+    (rng or random.Random()).shuffle(eligible)
     eligible.sort(key=lambda c: (tier_gap(viewer.tier, c.tier), -score(viewer, c, weights)))
     return eligible
 
@@ -202,7 +217,8 @@ def rank(
     liked_me_probability: float = 0.0,
     rng: random.Random | None = None,
 ) -> list[Person]:
-    ordered = order(viewer, candidates, weights)
+    rng = rng or random.Random()
+    ordered = order(viewer, candidates, weights, rng)
     return _boost_liked_me(
         viewer,
         ordered,
@@ -210,5 +226,5 @@ def rank(
         limit,
         liked_me_slots,
         liked_me_probability,
-        rng or random.Random(),
+        rng,
     )

@@ -172,7 +172,9 @@ def test_liked_me_gets_a_slot_on_the_first_page():
 
 def test_liked_me_slots_are_limited():
     viewer = person()
-    pool = _pool(15)
+    # 점수가 같으면 순서가 랜덤이라, 1페이지 5명은 점수를 높여서 확실히 앞에 오게 한다
+    top = [person(has_bio=True, has_ideal_type=True) for _ in range(5)]
+    pool = top + _pool(10)
     fans = {p.user_id for p in pool[5:]}
     page = rank(viewer, pool, W, 5, liked_me=fans, liked_me_slots=2, liked_me_probability=1.0, rng=random.Random(1))
     assert sum(1 for p in page if p.user_id in fans) == 2
@@ -222,3 +224,37 @@ def test_default_weights_sum_to_one():
     d = {name: f.default for name, f in Settings.model_fields.items()}
     assert abs(d["weight_interest"] + d["weight_completeness"] + d["weight_mbti"] - 1.0) < 1e-9
     assert d["daily_like_limit"] == 5
+
+
+# ---------- 활동 점수·같은 점수일 때 랜덤 (2026-10-01) ----------
+
+W_ACT = Weights(interest=0.60, completeness=0.25, mbti=0.15, activity=0.20)
+
+
+def test_frequent_visitor_comes_first_when_other_scores_tie():
+    viewer = person()
+    rare = person(activity=1 / 14)
+    frequent = person(activity=10 / 14)
+    # 가입 순서(목록 순서)와 상관없이 자주 오는 사람이 먼저
+    for seed in range(20):
+        assert rank(viewer, [rare, frequent], W_ACT, 10, rng=random.Random(seed)) == [frequent, rare]
+
+
+def test_activity_does_not_beat_tier():
+    viewer = person(tier="HIGH")
+    same_tier_inactive = person(tier="HIGH", activity=0.0)
+    other_tier_daily = person(tier="MID", activity=1.0)
+    assert rank(viewer, [other_tier_daily, same_tier_inactive], W_ACT, 10) == [same_tier_inactive, other_tier_daily]
+
+
+def test_activity_weight_zero_means_no_effect():
+    viewer = person()
+    a, b = person(activity=0.0), person(activity=1.0)
+    assert score(viewer, a, W) == score(viewer, b, W)
+
+
+def test_ties_are_random_not_signup_order():
+    viewer = person()
+    pool = _pool(10)  # 점수가 모두 같은 사람들 (목록 순서 = 가입 순서라고 가정)
+    firsts = {rank(viewer, pool, W_ACT, 10, rng=random.Random(seed))[0].user_id for seed in range(30)}
+    assert len(firsts) > 1  # 먼저 가입한 사람이 항상 1등이 아니다

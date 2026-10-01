@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from app.core.rate_limit import client_ip, enforce_rate_limit
 from app.core.security import pseudonymous_code, verify_password
-from app.core.time import as_utc, utcnow
+from app.core.time import as_utc, kst_today, utcnow
 from app.db.session import get_db
 from app.deps import CurrentAdmin, get_admin_pending_mfa, get_current_admin, require_permission
 from app.models.admin import AdminUser, AuditLog
@@ -21,7 +21,7 @@ from app.models.matching import Match, MatchingPreference, Message, Report
 from app.models.photo import AppearanceEvaluation, UserPhoto
 from app.models.profile import PrivateProfile, PublicProfile
 from app.models.university import Department
-from app.models.user import User
+from app.models.user import User, UserDailyVisit
 from app.schemas.admin import (
     AdminLoginRequest,
     AdminTwoFactorRequest,
@@ -102,9 +102,31 @@ def dashboard(admin: CurrentAdmin = Depends(require_permission("dashboard:read")
     def c(q):
         return profile_service.count(db, q)
 
+    today = kst_today()
+    active_users = db.query(User.id).filter(User.status == "ACTIVE")
+
+    def visited_since(day):
+        """이 날(한국 시간) 이후로 한 번이라도 접속한 정상 계정 수"""
+        visitors = db.query(UserDailyVisit.user_id).filter(UserDailyVisit.visit_date >= day)
+        return c(active_users.filter(User.id.in_(visitors)))
+
+    def gender_count(gender):
+        return c(
+            db.query(User.id)
+            .join(PublicProfile, PublicProfile.user_id == User.id)
+            .filter(User.status == "ACTIVE", PublicProfile.gender == gender)
+        )
+
     return {
         "users_total": c(db.query(User.id)),
-        "users_active": c(db.query(User.id).filter(User.status == "ACTIVE")),
+        # 활성 = 최근 7일(오늘 포함) 안에 접속한 정상 계정 (2026-10-01 변경).
+        # 예전에는 "탈퇴·정지 안 한 계정"이라 전체 가입자와 거의 같았다 → 그 숫자는 users_normal로 옮김
+        "users_active": visited_since(today - timedelta(days=6)),
+        "users_active_today": visited_since(today),
+        "users_normal": c(active_users),
+        # 성비 (정상 계정 중 프로필을 만든 사람 기준)
+        "users_male": gender_count("MALE"),
+        "users_female": gender_count("FEMALE"),
         "users_suspended": c(db.query(User.id).filter(User.status.in_(["SUSPENDED", "BANNED"]))),
         "photos_pending": admin_alert_service.pending_photo_query(db).count(),
         "matches_total": c(db.query(Match.id)),
@@ -351,6 +373,7 @@ def _user_or_404(db: Session, user_id: uuid.UUID) -> User:
 def list_users(
     status_filter: str | None = Query(default=None, alias="status"),
     nickname: str | None = Query(default=None, max_length=20),
+    gender: str | None = Query(default=None, pattern="^(MALE|FEMALE)$"),
     admin: CurrentAdmin = Depends(require_permission("users:read")),
     db: Session = Depends(get_db),
 ):
@@ -358,7 +381,7 @@ def list_users(
         db.query(Report.reported_user_id, func.count(Report.id)).group_by(Report.reported_user_id).subquery()
     )
     query = (
-        db.query(User, PublicProfile.nickname, report_counts.c[1])
+        db.query(User, PublicProfile.nickname, PublicProfile.gender, report_counts.c[1])
         .outerjoin(PublicProfile, PublicProfile.user_id == User.id)
         .outerjoin(report_counts, report_counts.c.reported_user_id == User.id)
     )
@@ -366,21 +389,24 @@ def list_users(
         query = query.filter(User.status == status_filter)
     if nickname:
         query = query.filter(PublicProfile.nickname.contains(nickname))
+    if gender:
+        query = query.filter(PublicProfile.gender == gender)
     rows = query.order_by(User.created_at.desc()).limit(100).all()
-    stages = _onboarding_stages(db, [u.id for u, _, _ in rows])
+    stages = _onboarding_stages(db, [u.id for u, _, _, _ in rows])
     return {
         "users": [
             {
                 "user_id": str(u.id),
                 "subject_code": pseudonymous_code(u.id),
                 "nickname": nick,
+                "gender": user_gender,  # MALE / FEMALE / None(프로필 없음)
                 "status": u.status,
                 "onboarding_stage": stages.get(u.id, "PROFILE"),
                 "reports_received": reports or 0,
                 "last_active_at": u.last_active_at.isoformat() if u.last_active_at else None,
                 "created_at": u.created_at.isoformat(),
             }
-            for u, nick, reports in rows
+            for u, nick, user_gender, reports in rows
         ]
     }
 

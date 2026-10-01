@@ -1,7 +1,7 @@
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, Uuid
+from sqlalchemy import Date, DateTime, ForeignKey, Integer, String, Text, Uuid
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -33,6 +33,21 @@ class User(Base):
 
     public_profile = relationship("PublicProfile", back_populates="user", uselist=False)
     private_profile = relationship("PrivateProfile", back_populates="user", uselist=False)
+
+
+class UserDailyVisit(Base):
+    """하루 접속 기록 (2026-10-01). 한 사람이 하루(한국 시간)에 한 줄만 쌓인다.
+
+    - 추천 순서의 "활동 점수": 최근 14일 중 며칠 접속했나
+    - 관리자 대시보드의 "활성 사용자": 최근 7일 안에 접속한 사람 수
+    """
+
+    __tablename__ = "user_daily_visits"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    visit_date: Mapped[date] = mapped_column(Date, primary_key=True, index=True)
 
 
 class UserSession(Base):

@@ -63,6 +63,10 @@ class Settings(BaseSettings):
     weight_interest: float = 0.60
     weight_completeness: float = 0.25
     weight_mbti: float = 0.15
+    # 활동 점수 (2026-10-01): 최근 ACTIVITY_WINDOW_DAYS일 중 접속한 날 수 ÷ 일수.
+    # 매일 온 사람은 +0.20, 한 번도 안 온 사람은 +0. 외모 등급이 1순위인 것은 그대로다.
+    weight_activity: float = 0.20
+    activity_window_days: int = 14
 
     # 나를 LIKE한 사람 우대: 추천 한 페이지에 최대 이만큼 자리를 준다 (위치는 매번 랜덤)
     liked_me_slots: int = 2
@@ -105,6 +109,8 @@ class Settings(BaseSettings):
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
 
     def validate_settings(self) -> None:
+        if self.activity_window_days < 1:
+            raise ValueError("ACTIVITY_WINDOW_DAYS는 1 이상이어야 합니다")
         if not 0 <= self.liked_me_probability <= 1:
             raise ValueError("LIKED_ME_PROBABILITY는 0~1 사이여야 합니다")
         if self.environment != "prod":
