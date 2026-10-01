@@ -4,6 +4,8 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: { default: "훕팅 — 우리 학교, 익명으로", template: "%s · 훕팅" },
   description: "같은 학교 학생끼리, 이름과 얼굴 대신 어떤 사람인지로 먼저 만나는 대학생 전용 익명 소개팅.",
+  // 아이폰 "홈 화면에 추가"로 열면 사파리 주소창 없이 앱처럼 열리게 (아이콘은 app/apple-icon.png)
+  appleWebApp: { capable: true, title: "훕팅", statusBarStyle: "default" },
 };
 
 export const viewport: Viewport = {

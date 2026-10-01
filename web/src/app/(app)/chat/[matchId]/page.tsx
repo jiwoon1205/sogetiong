@@ -235,9 +235,10 @@ export default function ChatPage() {
           </button>
         </div>
       ) : (
-        <form onSubmit={send} className="shrink-0 border-t border-line py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
-          {error && <p className="mb-2 text-[13px] text-brick">{error}</p>}
-          <div className="flex items-end gap-2">
+        <form onSubmit={send} className="shrink-0 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2">
+          {error && <p className="mb-2 px-1 text-[13px] text-brick">{error}</p>}
+          {/* 카톡처럼 둥근 입력창 하나에 보내기 버튼을 넣었다 (위쪽 회색 줄·큰 회색 버튼을 없애 키보드 위가 깔끔하게) */}
+          <div className="flex items-end gap-1.5 rounded-[24px] border border-line bg-paper-card py-1 pl-4 pr-1 transition-colors focus-within:border-ink-soft">
             <textarea
               ref={inputRef}
               value={text}
@@ -254,12 +255,22 @@ export default function ChatPage() {
               maxLength={1000}
               rows={1}
               placeholder="메시지 보내기"
-              className="field min-h-[46px] flex-1 resize-none py-3 leading-snug"
+              aria-label="메시지"
+              // 글자 16px: 아이폰은 이보다 작으면 누를 때 화면을 확대한다
+              className="min-h-[40px] flex-1 resize-none bg-transparent py-2 text-[16px] leading-snug text-ink placeholder:text-ink-faint focus:outline-none focus-visible:outline-none sm:text-[15px]"
             />
             {/* 버튼을 눌러도 입력칸에서 포커스가 빠지지 않게 → 보낼 때마다 키보드가 내려갔다 올라오는 문제 방지 */}
-            <Button type="submit" className="h-[46px] shrink-0" disabled={!text.trim()} loading={sending} onPointerDown={(e) => e.preventDefault()}>
-              보내기
-            </Button>
+            <button
+              type="submit"
+              aria-label="보내기"
+              disabled={!text.trim() || sending}
+              onPointerDown={(e) => e.preventDefault()}
+              className="mb-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-ink text-paper transition-opacity disabled:opacity-20"
+            >
+              <svg viewBox="0 0 16 16" className="h-4 w-4" aria-hidden>
+                <path d="M8 13V3M3.5 7.5L8 3l4.5 4.5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </button>
           </div>
         </form>
       )}
