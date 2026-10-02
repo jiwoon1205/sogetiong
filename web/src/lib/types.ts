@@ -22,9 +22,19 @@ export type Card = {
   mbti: string | null;
   bio: string | null;
   ideal_type: string | null;
+  /** 본인이 고른 얼굴상 (AI 평가 아님). 안 골랐으면 null */
+  face_type: FaceType | null;
+  /** 본인이 입력한 키 (cm). 안 적었으면 null */
+  height_cm: number | null;
   interests: string[];
   appearance: Scores | null;
 };
+
+/** 얼굴상 목록 (2026-10-02). 서버 app/schemas/profile.py의 FACE_TYPES와 같아야 한다. 1개만 고른다. */
+export const FACE_TYPES = ["강아지상", "고양이상", "여우상", "토끼상", "곰상", "공룡상", "사슴상", "늑대상", "다람쥐상", "햄스터상"] as const;
+export type FaceType = (typeof FACE_TYPES)[number];
+export const HEIGHT_MIN_CM = 140;
+export const HEIGHT_MAX_CM = 210;
 
 export type MyProfile = Card & {
   department_id: string | null;

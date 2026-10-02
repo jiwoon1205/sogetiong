@@ -115,9 +115,12 @@
   "mbti": "INTP",
   "bio": "최대 500자",
   "ideal_type": "최대 300자",
+  "face_type": "고양이상",
+  "height_cm": 172,
   "interests": ["카페", "영화"]
 }
 ```
+- **얼굴상·키 (2026-10-02, 선택)**: `face_type`은 강아지상·고양이상·여우상·토끼상·곰상·공룡상·사슴상·늑대상·다람쥐상·햄스터상 중 1개, `height_cm`은 140~210 정수. 목록·범위 밖이면 422. `null`을 보내면 지운다. 걸러보기·추천 순서에는 쓰지 않는다.
 - 성별·생년월일·캠퍼스는 가입 후 변경 불가. 관심사는 `/interests` 목록 안에서 최대 10개.
 - **학과는 필수, 처음 한 번만 정할 수 있다.** 이미 정한 뒤 다른 학과를 보내면 409 (운영진 메일 안내 문구). 잘못 골랐으면 가입한 학교 메일로 요청 → 관리자가 `PATCH /admin/users/{user_id}/department`로 변경.
 - 학과를 처음 정할 때 `show_campus`·`show_department`를 함께 보내야 한다 (기본값 없이 직접 선택). 공개 여부는 이후 언제든 변경 가능.
@@ -170,6 +173,8 @@
   "mbti": "INTP",
   "bio": "...",
   "ideal_type": "...",
+  "face_type": "고양이상 또는 null(안 고름)",
+  "height_cm": 172,
   "interests": ["카페", "영화"],
   "appearance": { "overall_impression": 8, "style": 7, "grooming": 8, "photo_vibe": 9 }
 }

@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { Button, Field, Input, Notice, Segmented, Select, Tag, Textarea } from "@/components/ui";
 import { api, errorMessage } from "@/lib/api";
 import { mailto, useSupportEmail, type CampusWithDepts } from "@/lib/catalog";
-import type { MyProfile } from "@/lib/types";
+import { FACE_TYPES, HEIGHT_MAX_CM, HEIGHT_MIN_CM, type MyProfile } from "@/lib/types";
 
 type Visibility = "" | "show" | "hide";
 const VISIBILITY_OPTIONS: { value: Visibility; label: string }[] = [
@@ -34,11 +34,14 @@ export function ProfileForm({
   const [showCampus, setShowCampus] = useState<Visibility>("");
   const [showDept, setShowDept] = useState<Visibility>("");
   const supportEmail = useSupportEmail();
+  // 키 입력칸 글자 그대로 (지우는 중인 빈칸도 받아야 해서 숫자와 따로 둔다)
+  const [heightText, setHeightText] = useState("");
 
   useEffect(() => {
     api<MyProfile>("/me/profile")
       .then((res) => {
         setP(res);
+        setHeightText(res.height_cm ? String(res.height_cm) : "");
         setShowCampus(toVisibility(res.show_campus));
         // 학과를 아직 안 골랐으면 학과 공개 여부도 새로 고르게 한다
         setShowDept(res.department_locked ? toVisibility(res.show_department) : "");
@@ -69,6 +72,12 @@ export function ProfileForm({
     setError("");
     if (!p.department_id) return setError("학과를 선택해주세요.");
     if (!showCampus || !showDept) return setError("캠퍼스와 학과를 다른 학생에게 보여줄지 골라주세요.");
+    // 키: 비워 두면 안 적은 것. 적었다면 140~210 사이 정수만
+    const heightTrim = heightText.trim();
+    const height = heightTrim === "" ? null : Number(heightTrim);
+    if (height !== null && (!Number.isInteger(height) || height < HEIGHT_MIN_CM || height > HEIGHT_MAX_CM)) {
+      return setError(`키는 ${HEIGHT_MIN_CM}~${HEIGHT_MAX_CM} 사이 숫자로 적어주세요. 적고 싶지 않으면 비워 두세요.`);
+    }
     setLoading(true);
     try {
       const updated = await api<MyProfile>("/me/profile", {
@@ -82,10 +91,13 @@ export function ProfileForm({
           mbti: p.mbti || null,
           bio: p.bio ?? "",
           ideal_type: p.ideal_type ?? "",
+          face_type: p.face_type ?? null,
+          height_cm: height,
           interests: p.interests,
         },
       });
       setP(updated);
+      setHeightText(updated.height_cm ? String(updated.height_cm) : "");
       setSaved(true);
       onSaved?.(updated);
     } catch (err) {
@@ -173,6 +185,42 @@ export function ProfileForm({
           비공개로 해도 매칭 조건(캠퍼스, 같은 과 제외)에는 그대로 쓰여요. 공개 여부는 나중에 바꿀 수 있어요.
         </p>
       </div>
+
+      <div className="space-y-2">
+        <p className="text-[13px] font-medium text-ink-soft">
+          얼굴상 <span className="text-ink-faint">· 선택, 1개</span>
+        </p>
+        <div className="flex flex-wrap gap-2">
+          {FACE_TYPES.map((name) => (
+            // 같은 걸 한 번 더 누르면 선택 취소
+            <Tag key={name} active={p.face_type === name} onClick={() => set("face_type", p.face_type === name ? null : name)}>
+              {name}
+            </Tag>
+          ))}
+        </div>
+      </div>
+
+      <Field label="키 · 선택" htmlFor="height">
+        <div className="flex items-center gap-2">
+          <Input
+            id="height"
+            inputMode="numeric"
+            pattern="[0-9]*"
+            maxLength={3}
+            className="w-28"
+            value={heightText}
+            onChange={(e) => {
+              setSaved(false);
+              setHeightText(e.target.value.replace(/[^0-9]/g, ""));
+            }}
+            placeholder="예) 172"
+          />
+          <span className="text-[14px] text-ink-soft">cm</span>
+        </div>
+      </Field>
+      <p className="-mt-3 text-[12.5px] leading-relaxed text-ink-faint">
+        얼굴상과 키는 다른 학생에게 &quot;본인이 입력한 정보&quot;로 보여요. 적지 않아도 추천에는 영향이 없어요.
+      </p>
 
       <Field label="자기소개" htmlFor="bio" hint={`${(p.bio ?? "").length}/500`}>
         <Textarea id="bio" maxLength={500} value={p.bio ?? ""} onChange={(e) => set("bio", e.target.value)} placeholder="어떤 하루를 보내는지, 요즘 빠져 있는 것, 대화하고 싶은 주제…" rows={4} />

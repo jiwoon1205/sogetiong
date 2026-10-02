@@ -163,6 +163,10 @@ def update_my_profile(
         profile.show_department = payload.show_department
     if payload.show_campus is not None:
         profile.show_campus = payload.show_campus
+    # 얼굴상·키: 목록 밖 값이나 범위 밖 키는 위 ProfileUpdateRequest가 422로 막는다
+    for field in ("face_type", "height_cm"):
+        if field in data:
+            setattr(profile, field, data[field])
     for field in ("mbti", "bio", "ideal_type"):
         if field in data:
             value = data[field]

@@ -4,6 +4,13 @@ from typing import Literal
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 
+# 얼굴상 목록 (2026-10-02). 1개만 고르거나 안 고른다. 순서대로 화면에 보인다.
+FACE_TYPES = ("강아지상", "고양이상", "여우상", "토끼상", "곰상", "공룡상", "사슴상", "늑대상", "다람쥐상", "햄스터상")
+FaceType = Literal["강아지상", "고양이상", "여우상", "토끼상", "곰상", "공룡상", "사슴상", "늑대상", "다람쥐상", "햄스터상"]
+HEIGHT_MIN_CM = 140
+HEIGHT_MAX_CM = 210
+
+
 class ProfileUpdateRequest(BaseModel):
     """PATCH /me/profile — 보낸 항목만 바뀐다.
 
@@ -20,6 +27,9 @@ class ProfileUpdateRequest(BaseModel):
     bio: str | None = Field(default=None, max_length=500)
     ideal_type: str | None = Field(default=None, max_length=300)
     interests: list[str] | None = Field(default=None, max_length=10)
+    # 선택사항: null을 보내면 지운다 (안 보내면 그대로)
+    face_type: FaceType | None = None
+    height_cm: int | None = Field(default=None, ge=HEIGHT_MIN_CM, le=HEIGHT_MAX_CM)
 
     @field_validator("mbti")
     @classmethod

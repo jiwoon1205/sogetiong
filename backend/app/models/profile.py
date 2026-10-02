@@ -1,7 +1,7 @@
 import uuid
 from datetime import date, datetime
 
-from sqlalchemy import JSON, Boolean, Date, ForeignKey, String, Text, UniqueConstraint, Uuid
+from sqlalchemy import JSON, Boolean, Date, ForeignKey, Integer, String, Text, UniqueConstraint, Uuid
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -28,6 +28,9 @@ class PublicProfile(Base):
     mbti: Mapped[str | None] = mapped_column(String(4), nullable=True)
     bio: Mapped[str | None] = mapped_column(Text, nullable=True)
     ideal_type: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # 본인이 고른 얼굴상·키 (2026-10-02, 둘 다 선택사항). 걸러보기·추천 순서에는 쓰지 않는다.
+    face_type: Mapped[str | None] = mapped_column(String(20), nullable=True)  # FACE_TYPES 중 하나
+    height_cm: Mapped[int | None] = mapped_column(Integer, nullable=True)
     profile_status: Mapped[str] = mapped_column(String(30), default="ACTIVE", nullable=False)
     created_at: Mapped[datetime] = created_at()
     updated_at: Mapped[datetime] = updated_at()

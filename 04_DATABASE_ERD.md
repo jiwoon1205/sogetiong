@@ -80,6 +80,8 @@ public_profiles
 - mbti
 - bio
 - ideal_type
+- face_type (nullable, 본인이 고른 얼굴상 10개 중 1개 — 2026-10-02, 마이그레이션 0013)
+- height_cm (nullable, 본인이 입력한 키 140~210 — 2026-10-02, 마이그레이션 0013)
 - profile_status
 - appearance_summary_json
 - created_at
