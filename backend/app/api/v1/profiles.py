@@ -315,7 +315,7 @@ def put_my_preferences(
 
 # ---------- 사진 ----------
 
-def _resubmit_status(db: Session, user_id: uuid.UUID) -> dict:
+def _resubmit_status(db: Session, user_id: uuid.UUID, *, vip: bool = False) -> dict:
     """지금 새 사진을 낼 수 있는지 (2026-09-30 규칙, 2026-10-01 기간 30일 → 7일).
 
     - 아직 평가를 받은 적 없음(첫 제출, 반려 뒤 다시 내기 등) → 언제든 가능
@@ -324,6 +324,7 @@ def _resubmit_status(db: Session, user_id: uuid.UUID) -> dict:
     wait_days: 화면 안내 문구용 (기간을 .env로 바꿔도 문구가 따라 바뀌게)
       바로 재검토로 낸 사진이 승인까지 되면 "사용함"으로 친다.
       (반려되거나, 검수 전에 다른 사진으로 바꾸면 쓴 것으로 치지 않는다)
+    vip=True: VIP 테스트 계정은 기간이 VIP_PHOTO_RESUBMIT_DAYS(3일)다 (2026-10-02). 나머지 규칙은 같다.
     """
     settings = get_settings()
     last_eval = (
@@ -338,7 +339,7 @@ def _resubmit_status(db: Session, user_id: uuid.UUID) -> dict:
         .first()
         is not None
     )
-    days = settings.photo_resubmit_days
+    days = settings.vip_photo_resubmit_days if vip else settings.photo_resubmit_days
     if last_eval is None:
         return {"allowed": True, "uses_free_rereview": False, "free_rereview_left": not free_used, "next_available_at": None, "wait_days": days}
     next_at = as_utc(last_eval.created_at) + timedelta(days=days)
@@ -373,11 +374,11 @@ def upload_photo(
 
     enforce_rate_limit(f"photo:{current.id}", 5, 3600)
 
-    rule = _resubmit_status(db, current.id)
+    rule = _resubmit_status(db, current.id, vip=profile_service.is_vip_tester(current.user))
     if not rule["allowed"]:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail=f"바로 재검토는 이미 한 번 사용했어요. 마지막 평가 후 {settings.photo_resubmit_days}일이 지나면 다시 제출할 수 있어요.",
+            detail=f"바로 재검토는 이미 한 번 사용했어요. 마지막 평가 후 {rule['wait_days']}일이 지나면 다시 제출할 수 있어요.",
         )
 
     # 모두 검사를 통과해야 저장한다 (한 장이라도 문제가 있으면 아무것도 저장하지 않음)
@@ -462,7 +463,7 @@ def list_my_photos(current: CurrentUser = Depends(get_current_user), db: Session
             for p in leaders
         ],
         "max_count": get_settings().photo_max_count,
-        "resubmit": _resubmit_status(db, current.id),
+        "resubmit": _resubmit_status(db, current.id, vip=profile_service.is_vip_tester(current.user)),
     }
 
 

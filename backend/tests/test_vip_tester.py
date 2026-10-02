@@ -183,3 +183,33 @@ def test_vip_passed_profiles_rotate_oldest_pass_first(sent_codes, db):
     # a를 다시 PASS하면 a가 가장 최근 → 이번엔 b가 먼저
     vip.post("/api/v1/passes", json={"profile_id": a.profile_id})
     assert discover_ids(vip) == [b.profile_id, a.profile_id]
+
+
+# ---------- VIP 테스트 계정: 사진 재검토 간격 3일 (2026-10-02) ----------
+
+def test_vip_photo_resubmit_every_3_days(sent_codes, db):
+    """일반은 마지막 평가 후 7일, VIP 테스트 계정은 3일 뒤에 다시 사진을 낼 수 있다."""
+    from datetime import timedelta
+
+    from app.core.time import utcnow
+    from app.models.photo import AppearanceEvaluation
+    from tests.conftest import approve, jpeg_with_exif
+
+    admin = admin_login(db)
+    vip = ready_user(sent_codes, db, admin, VIP, gender="MALE", want="FEMALE")
+    assert vip.get("/api/v1/me/photos").json()["resubmit"]["wait_days"] == 3
+
+    # 바로 재검토(평생 1번)는 일반 계정과 똑같이 있다
+    r = vip.post("/api/v1/me/photos", files={"file": ("x.jpg", jpeg_with_exif(), "image/jpeg")})
+    assert r.status_code == 201 and r.json()["used_free_rereview"] is True
+    approve(admin, r.json()["photo_id"])
+    r = vip.post("/api/v1/me/photos", files={"file": ("x.jpg", jpeg_with_exif(), "image/jpeg")})
+    assert r.status_code == 429 and "3일" in r.json()["detail"]
+
+    # 마지막 평가 후 3일이 지나면 다시 낼 수 있다 (일반 계정이면 아직 막혀 있을 때)
+    for ev in db.query(AppearanceEvaluation).all():
+        ev.created_at = utcnow() - timedelta(days=3, minutes=1)
+    db.commit()
+    assert vip.get("/api/v1/me/photos").json()["resubmit"]["allowed"] is True
+    r = vip.post("/api/v1/me/photos", files={"file": ("x.jpg", jpeg_with_exif(), "image/jpeg")})
+    assert r.status_code == 201, r.text

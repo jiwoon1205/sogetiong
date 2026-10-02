@@ -90,6 +90,8 @@ class Settings(BaseSettings):
     # 그리고 다른 사람이 이 계정을 PASS하면, 그 PASS는 그날 하루(한국 시간)만 유효하다 → 매일 다시 추천된다.
     # 여러 개는 쉼표로 구분. 기능을 끄려면 .env에 VIP_TEST_EMAILS= (빈 값)
     vip_test_emails: str = "wldns051205@hufs.ac.kr"
+    # VIP 테스트 계정의 사진 재검토 간격 (일반은 photo_resubmit_days = 7일, 2026-10-02)
+    vip_photo_resubmit_days: int = 3
 
     # 매칭 조건은 하루(24시간)에 이 횟수만큼만 바꿀 수 있다 (처음 저장은 세지 않음)
     preferences_changes_per_day: int = 3
