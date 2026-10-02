@@ -70,7 +70,7 @@ export function ProfileForm({
     e.preventDefault();
     if (!p) return;
     setError("");
-    if (!p.department_id) return setError("학과를 선택해주세요.");
+    if (!p.department_id) return setError("학과를 선택해주세요. 학과는 매칭에만 쓰이고, 다른 학생에게 보여줄지는 직접 고를 수 있어요.");
     if (!showCampus || !showDept) return setError("캠퍼스와 학과를 다른 학생에게 보여줄지 골라주세요.");
     // 키: 비워 두면 안 적은 것. 적었다면 140~210 사이 정수만
     const heightTrim = heightText.trim();
@@ -142,6 +142,19 @@ export function ProfileForm({
           </Select>
         </Field>
       </div>
+      {!p.department_locked && (
+        // 학과 선택에서 그만두는 사람이 많아서 "왜 필수인지"를 먼저 알려준다 (2026-10-02)
+        <div className="-mt-3 rounded-md bg-paper-deep/60 px-3 py-2.5 text-[12.5px] leading-relaxed text-ink-soft">
+          <p className="font-medium">학과는 왜 필수인가요?</p>
+          <p className="mt-1">
+            학과는 <b>매칭 알고리즘</b>을 위한 정보예요. &quot;같은 과 사람은 안 만나기&quot;를 켠 사람끼리 서로 추천되지 않도록
+            확인하는 데 쓰여요.
+          </p>
+          <p className="mt-1">
+            <b>공개 여부는 직접 정할 수 있어요.</b> 아래에서 비공개를 고르면 다른 학생에게는 학과가 보이지 않아요.
+          </p>
+        </div>
+      )}
       {supportEmail &&
         (p.department_locked ? (
           <p className="-mt-3 text-[12.5px] leading-relaxed text-ink-faint">
