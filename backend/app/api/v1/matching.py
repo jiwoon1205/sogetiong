@@ -80,7 +80,8 @@ def discover(
         liked_me=profile_service.liked_me_ids(db, current.id),
         liked_me_slots=settings.liked_me_slots,
         liked_me_probability=settings.liked_me_probability,
-        seen_before=profile_service.passed_before_ids(db, current.id),
+        # VIP 테스트 계정: PASS한 사람 전부를 "처음 보는 사람" 뒤로, 오래 전에 PASS한 사람부터 (2026-10-02)
+        seen_before=profile_service.all_passed_order(db, current.id) if vip else profile_service.passed_before_ids(db, current.id),
     )
     # 카드에는 외모 등급도, "나를 LIKE했는지"도 들어가지 않는다 (build_cards가 보내는 항목만 나감)
     cards = profile_service.build_cards(db, [by_user[p.user_id] for p in ranked])

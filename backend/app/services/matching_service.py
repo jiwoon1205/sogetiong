@@ -156,11 +156,14 @@ def order(
     candidates: list[Person],
     weights: Weights,
     rng: random.Random | None = None,
-    seen_before: set[uuid.UUID] | None = None,
+    seen_before: set[uuid.UUID] | dict[uuid.UUID, float] | None = None,
 ) -> list[Person]:
     """조건을 통과한 후보를 처음 보는 사람 먼저 → 등급 차이 → 세부 점수 순으로 정렬. 점수가 같으면 랜덤.
 
     seen_before: 예전에 PASS했다가 48시간이 지나 다시 나온 사람. 처음 보는 사람을 다 본 뒤에 나온다 (2026-10-02).
+      - set으로 주면: 다시 나온 사람끼리는 등급 차이 → 점수 순서 (일반 사용자)
+      - dict(user_id → PASS한 시각 숫자)로 주면: 다시 나온 사람끼리는 **PASS한 지 오래된 사람부터**
+        (VIP 테스트 계정, 2026-10-02 — 새로고침할 때마다 같은 10명만 나오지 않고 돌아가며 나오게)
 
     먼저 섞은 뒤 정렬한다. 파이썬 정렬은 "같은 값이면 원래 순서 유지"라서,
     섞어 두면 점수가 같은 사람끼리는 랜덤 순서가 된다 (가입 순서가 결과에 영향을 주지 않음).
@@ -168,7 +171,15 @@ def order(
     eligible = [c for c in candidates if mutually_compatible(viewer, c)]
     (rng or random.Random()).shuffle(eligible)
     seen = seen_before or set()
-    eligible.sort(key=lambda c: (c.user_id in seen, tier_gap(viewer.tier, c.tier), -score(viewer, c, weights)))
+    pass_order = seen if isinstance(seen, dict) else {}
+    eligible.sort(
+        key=lambda c: (
+            c.user_id in seen,
+            pass_order.get(c.user_id, 0.0),  # dict일 때만 의미 있음: 오래 전에 PASS한 사람이 앞
+            tier_gap(viewer.tier, c.tier),
+            -score(viewer, c, weights),
+        )
+    )
     return eligible
 
 
@@ -223,7 +234,7 @@ def rank(
     liked_me_slots: int = 0,
     liked_me_probability: float = 0.0,
     rng: random.Random | None = None,
-    seen_before: set[uuid.UUID] | None = None,
+    seen_before: set[uuid.UUID] | dict[uuid.UUID, float] | None = None,
 ) -> list[Person]:
     rng = rng or random.Random()
     ordered = order(viewer, candidates, weights, rng, seen_before)

@@ -145,3 +145,41 @@ def test_pass_on_normal_user_keeps_48_hour_rule(sent_codes, db):
         row.updated_at = row.updated_at - timedelta(days=1)
     db.commit()
     assert discover_ids(her) == []  # 하루 지나도 아직 48시간 안 됨
+
+
+# ---------- VIP 계정 본인: 방금 PASS한 사람이 새 가입자를 가리지 않는다 (2026-10-02) ----------
+
+def test_vip_sees_new_signup_before_recently_passed(sent_codes, db, monkeypatch):
+    """예전 버그: VIP가 48시간 안에 PASS한 사람이 "처음 보는 사람"으로 취급돼서 10칸을 차지했다
+    → 새로 가입한 사람이 추천에 안 떴다. 이제 PASS한 사람은 항상 처음 보는 사람 뒤로 간다."""
+    monkeypatch.setattr(get_settings(), "discover_page_size", 3)  # 한 페이지 3명으로 줄여서 시험
+    admin = admin_login(db)
+    vip = ready_user(sent_codes, db, admin, VIP, gender="MALE", want="FEMALE")
+    page = 3
+    olds = [ready_user(sent_codes, db, admin, f"o{i}@hufs.ac.kr", gender="FEMALE", want="MALE") for i in range(page)]
+    for o in olds:
+        assert vip.post("/api/v1/passes", json={"profile_id": o.profile_id}).status_code == 200
+
+    new = ready_user(sent_codes, db, admin, "new@hufs.ac.kr", gender="FEMALE", want="MALE")
+    for _ in range(5):  # 새로고침을 여러 번 해도 항상 맨 앞
+        assert discover_ids(vip)[0] == new.profile_id
+
+
+def test_vip_passed_profiles_rotate_oldest_pass_first(sent_codes, db):
+    """처음 보는 사람이 없을 때는 PASS한 지 오래된 사람부터 → 새로고침마다 같은 사람만 나오지 않는다."""
+    from datetime import timedelta
+
+    admin = admin_login(db)
+    vip = ready_user(sent_codes, db, admin, VIP, gender="MALE", want="FEMALE")
+    a = ready_user(sent_codes, db, admin, "a@hufs.ac.kr", gender="FEMALE", want="MALE")
+    b = ready_user(sent_codes, db, admin, "b@hufs.ac.kr", gender="FEMALE", want="MALE")
+    vip.post("/api/v1/passes", json={"profile_id": a.profile_id})
+    vip.post("/api/v1/passes", json={"profile_id": b.profile_id})
+    for row in _pass_rows_to(db, a):
+        row.updated_at = row.updated_at - timedelta(hours=1)
+    db.commit()
+    assert discover_ids(vip) == [a.profile_id, b.profile_id]
+
+    # a를 다시 PASS하면 a가 가장 최근 → 이번엔 b가 먼저
+    vip.post("/api/v1/passes", json={"profile_id": a.profile_id})
+    assert discover_ids(vip) == [b.profile_id, a.profile_id]

@@ -319,6 +319,17 @@ def passed_before_ids(db: Session, user_id: uuid.UUID) -> set[uuid.UUID]:
     return {to_id for to_id, at in _passes(db, user_id) if not _pass_still_hides(to_id, at, vip_ids)}
 
 
+def all_passed_order(db: Session, user_id: uuid.UUID) -> dict[uuid.UUID, float]:
+    """VIP 테스트 계정 본인용: PASS한 사람 전부 → PASS한 시각(숫자). (2026-10-02)
+
+    VIP 계정은 PASS한 사람이 시간과 상관없이 다시 나온다 (excluded_user_ids(include_passed=False)).
+    예전에는 PASS한 지 48시간이 안 된 사람이 passed_before_ids()에 안 들어가서 "처음 보는 사람"으로 취급됐다
+    → 방금 PASS한 사람들이 10칸을 계속 차지해서 새로 가입한 사람이 추천에 안 떴다.
+    이제는 PASS한 사람을 모두 "처음 보는 사람" 뒤로 보내고, 그 안에서는 오래 전에 PASS한 사람부터 보여준다.
+    """
+    return {to_id: as_utc(at).timestamp() for to_id, at in _passes(db, user_id) if at is not None}
+
+
 def is_blocked_between(db: Session, a: uuid.UUID, b: uuid.UUID) -> bool:
     return (
         db.query(Block.id)
