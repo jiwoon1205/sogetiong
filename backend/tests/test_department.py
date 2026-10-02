@@ -151,13 +151,32 @@ def test_preferences_can_change_three_times_a_day(sent_codes, db):
     r = a.put("/api/v1/me/preferences", json={"preferred_gender": "ANY", "min_age": 19, "max_age": 28, "campus_mode": "ALL"})
     assert r.status_code == 429
 
-    # 24시간이 지나면 다시 바꿀 수 있다
+    # 한국 시간 자정이 지나면 (24시간이 안 됐어도) 다시 바꿀 수 있다
     from datetime import timedelta
 
-    from app.core.time import utcnow
+    from app.core.time import kst_day_start
     from app.models import MatchingPreference
 
     pref = db.query(MatchingPreference).one()
-    pref.change_window_started_at = utcnow() - timedelta(days=1, minutes=1)
+    pref.change_window_started_at = kst_day_start() - timedelta(minutes=1)  # 어젯밤 11시 59분에 바꾼 것으로
     db.commit()
+    assert a.get("/api/v1/me/preferences").json()["changes_left_today"] == 3
     set_preferences(a, max_age=28)
+    assert a.get("/api/v1/me/preferences").json()["changes_left_today"] == 2
+
+
+def test_preferences_window_resets_at_kst_midnight_not_after_24_hours():
+    """밤 11시에 처음 바꾸면 → 다음 날 0시에 풀린다 (다음 날 밤 11시가 아니라)."""
+    from datetime import datetime, timezone
+
+    from app.api.v1.profiles import _window_expired
+    from app.models import MatchingPreference
+
+    # 10월 1일 밤 11시(한국) = 10월 1일 14시(UTC)
+    pref = MatchingPreference(change_window_started_at=datetime(2026, 10, 1, 14, 0, tzinfo=timezone.utc))
+    assert not _window_expired(pref, datetime(2026, 10, 1, 14, 59, tzinfo=timezone.utc))  # 같은 날 11시 59분
+    assert _window_expired(pref, datetime(2026, 10, 1, 15, 1, tzinfo=timezone.utc))  # 다음 날 0시 1분
+    # SQLite에서 꺼내면 시간대 정보가 없다 → 그래도 UTC로 보고 똑같이 계산
+    pref.change_window_started_at = datetime(2026, 10, 1, 14, 0)
+    assert _window_expired(pref, datetime(2026, 10, 1, 15, 1, tzinfo=timezone.utc))
+    assert not _window_expired(pref, datetime(2026, 10, 1, 14, 59, tzinfo=timezone.utc))

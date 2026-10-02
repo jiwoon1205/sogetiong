@@ -139,7 +139,7 @@
 - 원하는 성별은 여기서 바꿀 수 없다 (가입 때 정함, 보내도 무시). GET 응답에는 `preferred_gender`(읽기 전용)와 `gender_locked_message`(운영진 메일 안내)가 온다. 조건을 아직 저장하지 않았어도(`configured: false`) `preferred_gender`는 온다.
 - 같은 과 제외: 둘 중 한 명이라도 켰고 학과가 같으면 서로 추천되지 않는다 (Hard Filter, 양방향).
 - 베타에서는 임의 학과 제외·선호 학과 가산을 쓰지 않는다 (DB 테이블만 남겨둠).
-- 처음 저장 이후에는 24시간에 3번까지만 바꿀 수 있다 (429). 내용이 같으면 세지 않는다. GET 응답의 `changes_left_today`로 남은 횟수 확인.
+- 처음 저장 이후에는 하루(한국 시간 0시~24시)에 3번까지만 바꿀 수 있다 (429). 한국 시간 자정에 다시 채워진다 (2026-10-02: 처음 바꾼 때부터 24시간 → 자정 기준으로 변경). 내용이 같으면 세지 않는다. GET 응답의 `changes_left_today`로 남은 횟수 확인.
 
 **POST /me/photos** → `201 { "photo_id", "review_status": "PENDING" }`
 - jpg/png/webp, 5MB 이하. 서버가 새 JPEG로 다시 저장하면서 EXIF·GPS를 지운다.

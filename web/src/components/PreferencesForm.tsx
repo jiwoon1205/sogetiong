@@ -7,6 +7,7 @@ import { api, errorMessage } from "@/lib/api";
 import type { CampusWithDepts } from "@/lib/catalog";
 import { cn } from "@/lib/format";
 import { GENDER_LABEL, type MyProfile, type Preferences } from "@/lib/types";
+import { useKstNewDay } from "@/lib/useKstNewDay";
 
 // 가로 바 양 끝 기본값 (서버가 age_floor / age_cap을 보내면 그 값을 쓴다)
 const AGE_FLOOR = 19;
@@ -82,6 +83,13 @@ export function PreferencesForm({
       })
       .catch((e) => setError(errorMessage(e)));
   }, [campuses]);
+
+  // 화면을 띄워 둔 채 날짜(한국 시간)가 바뀌면 → "오늘 남은 횟수"만 다시 받아온다 (고르던 조건은 그대로 둔다)
+  useKstNewDay(() => {
+    api<Preferences>("/me/preferences")
+      .then((res) => setP((prev) => ({ ...prev, changes_left_today: res.changes_left_today })))
+      .catch(() => {});
+  });
 
   function change(next: Partial<Preferences>) {
     setSaved(false);

@@ -6,6 +6,7 @@ import { ProfileCard } from "@/components/ProfileCard";
 import { Button, ButtonLink, Notice, Spinner } from "@/components/ui";
 import { ApiError, api, errorMessage } from "@/lib/api";
 import { markMatchSeen } from "@/lib/seenMatches";
+import { useKstNewDay } from "@/lib/useKstNewDay";
 import type { Card } from "@/lib/types";
 
 type State =
@@ -45,11 +46,6 @@ const BLOCKED_COPY: Record<string, { title: string; body: string; href: string; 
   },
 };
 
-// 오늘 날짜 (한국 시간, "2026-10-02" 형태). 좋아요는 한국 시간 자정에 다시 충전된다.
-function kstDay(): string {
-  return new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
-}
-
 export default function DiscoverPage() {
   const [state, setState] = useState<State>({ kind: "loading" });
   const [busy, setBusy] = useState(false);
@@ -75,31 +71,11 @@ export default function DiscoverPage() {
     load();
   }, [load]);
 
-  // 추천 화면을 띄워 둔 채 날짜가 바뀐 경우 (휴대폰에서 브라우저를 껐다 다음 날 다시 켜면
-  // 페이지가 새로 열리지 않고 그대로 돌아온다) → 남은 좋아요가 어제 숫자(0개)로 멈춰 있었다.
-  // 화면으로 돌아왔을 때, 그리고 1분마다 한국 날짜를 확인해서 바뀌었으면 다시 불러온다.
-  const loadedDay = useRef(kstDay());
-  useEffect(() => {
-    const checkNewDay = () => {
-      if (document.visibilityState !== "visible") return;
-      const today = kstDay();
-      if (today !== loadedDay.current) {
-        loadedDay.current = today;
-        setError("");
-        load();
-      }
-    };
-    document.addEventListener("visibilitychange", checkNewDay);
-    window.addEventListener("focus", checkNewDay);
-    window.addEventListener("pageshow", checkNewDay);
-    const timer = window.setInterval(checkNewDay, 60_000);
-    return () => {
-      document.removeEventListener("visibilitychange", checkNewDay);
-      window.removeEventListener("focus", checkNewDay);
-      window.removeEventListener("pageshow", checkNewDay);
-      window.clearInterval(timer);
-    };
-  }, [load]);
+  // 추천 화면을 띄워 둔 채 날짜(한국 시간)가 바뀌면 → 추천과 남은 좋아요를 다시 불러온다
+  useKstNewDay(() => {
+    setError("");
+    load();
+  });
 
   const act = useCallback(
     async (action: "like" | "pass") => {

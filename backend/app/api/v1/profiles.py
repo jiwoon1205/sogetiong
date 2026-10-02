@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.core.rate_limit import enforce_rate_limit
 from app.core.security import verify_password
-from app.core.time import as_utc, utcnow
+from app.core.time import as_utc, kst_day_start, utcnow
 from app.db.session import get_db
 from app.deps import CurrentUser, get_current_user
 from app.models.matching import Match, MatchingPreference, PreferredCampus
@@ -229,7 +229,13 @@ def _normalize_age_range(min_age: int | None, max_age: int | None) -> tuple[int 
 
 
 def _window_expired(pref: MatchingPreference, now) -> bool:
-    return pref.change_window_started_at is None or now - as_utc(pref.change_window_started_at) >= timedelta(days=1)
+    """오늘(한국 시간) 처음 바꾸는 것인지.
+
+    하루 3번은 한국 시간 자정에 다시 채워진다 (하루 LIKE 5개와 같은 기준).
+    예전에는 "처음 바꾼 때부터 24시간"이라, 밤 11시에 바꾸면 다음 날 밤 11시까지 안 풀렸다 (2026-10-02 민원).
+    """
+    started = pref.change_window_started_at
+    return started is None or as_utc(started) < kst_day_start(now)
 
 
 def _changes_left(db: Session, current: CurrentUser) -> int:
