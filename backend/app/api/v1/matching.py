@@ -261,6 +261,15 @@ def list_matches(current: CurrentUser = Depends(get_current_user), db: Session =
     # 차단 관계와 마지막 메시지를 매칭마다 따로 묻지 않고 한 번에 가져온다 (매칭이 20개여도 쿼리 2번)
     blocked = profile_service.blocked_user_ids(db, current.id)
     last_messages = _last_messages(db, [m.id for m in matches])
+
+    # 대화 목록은 "마지막으로 대화가 오간 시간" 기준 최신순으로 보여준다.
+    # 메시지가 없는 매칭은 매칭된 시간을 기준으로 삼는다.
+    def _last_activity(m: Match):
+        last = last_messages.get(m.id)
+        return last.created_at if last else m.created_at
+
+    matches.sort(key=_last_activity, reverse=True)
+
     result = []
     for m in matches:
         partner = m.partner_of(current.id)
