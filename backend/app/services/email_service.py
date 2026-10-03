@@ -110,6 +110,21 @@ class EmailService:
         )
 
 
+    @staticmethod
+    def send_admin_payment_request(email: str, code: str, amount: int) -> None:
+        # 결제 코드·금액만 넣는다 (사용자 이메일·닉네임은 넣지 않음)
+        site = get_settings().site_url
+        _send(
+            email,
+            f"[운영] 입금 확인 요청 {code} ({amount:,}원)",
+            f"사용자가 가입비를 입금했다고 알려 왔어요.\n\n"
+            f"입금자명(결제 코드): {code}\n금액: {amount:,}원\n\n"
+            f"통장 확인 후 처리하기: {site}/admin/payments\n\n"
+            "사용자에게는 \"15분 이내 확인\"이라고 안내돼 있어요.",
+            dev_log=f"관리자 입금 알림 ({code})",
+        )
+
+
 REPORT_REASON_LABELS = {
     "SEXUAL_HARASSMENT": "성희롱",
     "ABUSIVE_LANGUAGE": "욕설",

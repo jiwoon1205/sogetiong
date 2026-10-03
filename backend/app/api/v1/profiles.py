@@ -19,7 +19,7 @@ from app.models.profile import Interest, PublicProfile, UserInterest
 from app.models.university import Campus, Department
 from app.schemas.auth import DeleteAccountRequest
 from app.schemas.profile import PreferencesRequest, ProfileUpdateRequest
-from app.services import admin_alert_service, auth_service, profile_service
+from app.services import admin_alert_service, auth_service, payment_service, profile_service
 from app.services.email_service import EmailService
 from app.services.session_service import clear_user_cookies, revoke_all_user_sessions
 from app.services.storage_service import PhotoValidationError, get_storage, new_storage_key, process_upload
@@ -75,6 +75,10 @@ def get_me(current: CurrentUser = Depends(get_current_user), db: Session = Depen
             "preferences_done": has_prefs,
             # 예전에 승인된 사진이 있으면 (재검토가 반려돼도) 가입 과정은 끝난 것
             "photo_approved": profile_service.has_approved_photo(db, current.id),
+            # 가입비 (2026-10-03): 매칭 조건 다음, 사진 전에 입금이 확인돼야 한다
+            "payment_required": payment_service.needs_signup_payment(current.user),
+            # 가입비를 내는 회원인가 (이미 냈어도 true) → 가입 단계 표시에 "가입비" 단계를 넣을지
+            "pays_signup_fee": payment_service.pays_signup_fee(current.user),
         },
     }
 
@@ -372,6 +376,10 @@ def upload_photo(
     if len(uploads) > settings.photo_max_count:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"사진은 한 번에 {settings.photo_max_count}장까지 올릴 수 있어요.")
 
+    # 가입비 입금이 확인되기 전에는 사진을 받지 않는다 (화면만이 아니라 서버에서 막음, 2026-10-03)
+    if payment_service.needs_signup_payment(current.user):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="PAYMENT_REQUIRED")
+
     enforce_rate_limit(f"photo:{current.id}", 5, 3600)
 
     rule = _resubmit_status(db, current.id, vip=profile_service.is_vip_tester(current.user))
@@ -474,3 +482,77 @@ def get_my_evaluation(current: CurrentUser = Depends(get_current_user), db: Sess
     if evaluation is None:
         return {"evaluated": False}
     return {"evaluated": True, "scores": evaluation.scores(), "evaluated_at": evaluation.created_at.isoformat()}
+
+
+# ---------- 가입비 (2026-10-03, 운영자 통장 직접 입금) ----------
+
+
+def _payment_view(payment, *, open_now: bool) -> dict:
+    settings = get_settings()
+    show_account = open_now or payment.status == "REQUESTED"
+    return {
+        "required": True,
+        "status": payment.status,  # CREATED / REQUESTED / REJECTED
+        "amount": payment.amount,
+        "code": payment.code,
+        "open_now": open_now,
+        "open_hour": settings.payment_open_hour,
+        "close_hour": settings.payment_close_hour,
+        # 운영 시간 밖에는 계좌번호를 숨긴다 (이미 "입금했어요"를 누른 사람은 그대로 보여줌)
+        "bank_name": settings.payment_bank_name if show_account else None,
+        "account_number": settings.payment_account_number if show_account else None,
+        "account_holder": settings.payment_account_holder if show_account else None,
+        "support_email": settings.support_email,
+    }
+
+
+def _payment_ready(db: Session, current: CurrentUser) -> None:
+    """입금 단계는 프로필(학과)과 매칭 조건을 끝낸 뒤에 나온다."""
+    if not _profile_done(db, current):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="PROFILE_REQUIRED")
+    if db.query(MatchingPreference.id).filter(MatchingPreference.user_id == current.id).first() is None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="PREFERENCES_REQUIRED")
+
+
+@router.get("/me/payment")
+def get_my_payment(current: CurrentUser = Depends(get_current_user), db: Session = Depends(get_db)):
+    """가입비 입금 안내. 처음 열면 결제 코드가 만들어지고, 다시 열어도 같은 코드가 나온다."""
+    if not payment_service.needs_signup_payment(current.user):
+        return {"required": False}
+    _payment_ready(db, current)
+    payment = payment_service.get_or_create_payment(db, current.user)
+    db.commit()
+    return _payment_view(payment, open_now=payment_service.is_payment_open())
+
+
+@router.post("/me/payment/request")
+def request_payment_check(
+    background: BackgroundTasks,
+    current: CurrentUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """"입금했어요". 관리자 확인 대기 목록에 올라가고, 관리자에게 알림 메일이 간다."""
+    if not payment_service.needs_signup_payment(current.user):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="이미 결제가 확인됐어요.")
+    _payment_ready(db, current)
+    payment = payment_service.get_or_create_payment(db, current.user)
+    open_now = payment_service.is_payment_open()
+    if payment.status == "REQUESTED":
+        # 두 번 눌러도 알림 메일은 한 번만
+        return _payment_view(payment, open_now=open_now)
+    if not open_now:
+        settings = get_settings()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"운영 시간 외입니다. 오전 {settings.payment_open_hour}시부터 결제할 수 있어요.",
+        )
+    enforce_rate_limit(f"payment:{current.id}", 10, 3600)
+    payment.status = "REQUESTED"
+    payment.requested_at = utcnow()
+    db.commit()
+    # 15분 이내 확인 약속 → 사진 알림처럼 모으지 않고 요청마다 바로 보낸다 (응답 뒤 발송)
+    recipients = admin_alert_service.admin_emails_with(db, "payments:confirm")
+    background.add_task(
+        admin_alert_service.send_all, EmailService.send_admin_payment_request, recipients, payment.code, payment.amount
+    )
+    return _payment_view(payment, open_now=open_now)

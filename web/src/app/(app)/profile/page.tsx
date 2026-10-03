@@ -135,6 +135,13 @@ export default function ProfilePage() {
               ) : (
                 <Notice>한 번에 최대 3장까지 제출할 수 있어요. 검수 전인 이전 사진은 새 사진으로 바뀌어요.</Notice>
               )}
+              {evaluation.evaluated && (
+                <div className="mt-3">
+                  <Notice tone="error">
+                    <b>점수가 오히려 내려갈 수도 있어요.</b> 새 사진은 처음부터 다시 평가하고, 승인되면 새 점수가 지금 점수를 대신해요. 이전 점수로는 되돌릴 수 없으니 신중하게 제출해 주세요.
+                  </Notice>
+                </div>
+              )}
               <div className="mt-5">
                 <PhotoUpload
                   onUploaded={async () => {

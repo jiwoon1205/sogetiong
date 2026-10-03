@@ -10,6 +10,7 @@ import { cn } from "@/lib/format";
 const NAV = [
   { href: "/admin", label: "현황", perm: "dashboard:read" },
   { href: "/admin/photos", label: "사진 검수", perm: "photos:read" },
+  { href: "/admin/payments", label: "입금 확인", perm: "payments:confirm" },
   { href: "/admin/reports", label: "신고", perm: "reports:read" },
   { href: "/admin/chats", label: "대화", perm: "chats:read" },
   { href: "/admin/users", label: "사용자", perm: "users:read" },

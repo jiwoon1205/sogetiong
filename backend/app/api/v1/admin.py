@@ -19,6 +19,7 @@ from app.db.session import get_db
 from app.deps import CurrentAdmin, get_admin_pending_mfa, get_current_admin, require_permission
 from app.models.admin import AdminUser, AuditLog
 from app.models.matching import Match, MatchingPreference, Message, Report
+from app.models.payment import Payment
 from app.models.photo import AppearanceEvaluation, UserPhoto
 from app.models.profile import PrivateProfile, PublicProfile
 from app.models.university import Department
@@ -33,7 +34,7 @@ from app.schemas.admin import (
     UserGenderRequest,
     UserStatusRequest,
 )
-from app.services import admin_alert_service, profile_service, withdrawal_service
+from app.services import admin_alert_service, payment_service, profile_service, withdrawal_service
 from app.services.email_service import EmailDeliveryError, EmailService
 from app.services.audit_service import AuditService
 from app.services.notification_service import notify
@@ -156,6 +157,8 @@ def dashboard(admin: CurrentAdmin = Depends(require_permission("dashboard:read")
         "photos_pending": admin_alert_service.pending_photo_query(db).count(),
         "matches_total": c(db.query(Match.id)),
         "reports_open": c(db.query(Report.id).filter(Report.status.in_(["OPEN", "IN_REVIEW"]))),
+        # 가입비 입금 확인 대기 (2026-10-03)
+        "payments_pending": c(db.query(Payment.id).filter(Payment.status == "REQUESTED")),
     }
 
 
@@ -456,6 +459,8 @@ def _onboarding_stages(db: Session, user_ids: list[uuid.UUID]) -> dict[uuid.UUID
 
     PROFILE     : 프로필(학과) 미완료
     PREFERENCES : 매칭 조건 미설정
+    PAYMENT     : 가입비 입금 전 (또는 "입금 없음" 처리됨) — 2026-10-03
+    PAYMENT_CHECK : "입금했어요"를 누르고 관리자 확인 대기
     PHOTO       : 사진 미제출 (반려 후 다시 안 낸 경우 포함)
     REVIEW      : 사진 검수 대기
     DONE        : 사진 승인됨
@@ -476,6 +481,12 @@ def _onboarding_stages(db: Session, user_ids: list[uuid.UUID]) -> dict[uuid.UUID
         .all()
     )
     approved = {uid for uid, st in photo_rows if st == "APPROVED"}
+    unpaid = {
+        u.id
+        for u in db.query(User).filter(User.id.in_(user_ids)).all()
+        if payment_service.needs_signup_payment(u)
+    }
+    payment_status = payment_service.latest_status_by_user(db, list(unpaid))
     pending = {uid for uid, st in photo_rows if st in ("PENDING", "IN_REVIEW")}
 
     stages = {}
@@ -488,6 +499,8 @@ def _onboarding_stages(db: Session, user_ids: list[uuid.UUID]) -> dict[uuid.UUID
             stages[uid] = "PROFILE"
         elif uid not in prefs_done:
             stages[uid] = "PREFERENCES"
+        elif uid in unpaid:
+            stages[uid] = "PAYMENT_CHECK" if payment_status.get(uid) == "REQUESTED" else "PAYMENT"
         else:
             stages[uid] = "PHOTO"
     return stages
@@ -976,6 +989,163 @@ def update_report(
     )
     db.commit()
     return {"report_id": str(report.id), "status": report.status}
+
+
+# ---------- 가입비 입금 확인 (2026-10-03) ----------
+# 최고 관리자(payments:confirm)만. 결제 코드·금액만 보여주고 닉네임·이메일은 보여주지 않는다 (익명성).
+# 운영자는 은행 앱의 입금자명(결제 코드)·금액과 이 목록을 맞춰 본다.
+
+PAYMENT_HISTORY_LIMIT = 300
+
+
+def _payment_row(p: Payment, user_status: str | None, admin_emails: dict, reviewed: set) -> dict:
+    return {
+        "payment_id": str(p.id),
+        "code": p.code,
+        "amount": p.amount,
+        "status": p.status,
+        "user_status": user_status,  # ACTIVE / SUSPENDED / BANNED / DELETED
+        "requested_at": p.requested_at.isoformat() if p.requested_at else None,
+        "processed_at": p.processed_at.isoformat() if p.processed_at else None,
+        "processed_by": admin_emails.get(p.processed_by_admin_id),
+        # 환불은 입금 확인된 결제 + 사진 검수를 한 번도 안 받은 경우만
+        "refundable": p.status == "CONFIRMED" and p.user_id not in reviewed,
+    }
+
+
+@router.get("/payments")
+def list_payments(
+    view: str = Query(default="pending", pattern="^(pending|history)$"),
+    admin: CurrentAdmin = Depends(require_permission("payments:confirm")),
+    db: Session = Depends(get_db),
+):
+    """pending = 확인 대기 (오래된 순), history = 처리한 내역 (최근 순)."""
+    query = db.query(Payment, User.status).join(User, User.id == Payment.user_id)
+    if view == "pending":
+        rows = query.filter(Payment.status == "REQUESTED").order_by(Payment.requested_at.asc()).all()
+    else:
+        rows = (
+            query.filter(Payment.status.in_(["CONFIRMED", "REJECTED", "REFUNDED"]))
+            .order_by(Payment.processed_at.desc())
+            .limit(PAYMENT_HISTORY_LIMIT)
+            .all()
+        )
+    admin_ids = {p.processed_by_admin_id for p, _ in rows if p.processed_by_admin_id}
+    admin_emails = dict(db.query(AdminUser.id, AdminUser.email).filter(AdminUser.id.in_(admin_ids)).all()) if admin_ids else {}
+    confirmed_users = [p.user_id for p, _ in rows if p.status == "CONFIRMED"]
+    reviewed = (
+        {
+            uid
+            for (uid,) in db.query(UserPhoto.user_id)
+            .filter(UserPhoto.user_id.in_(confirmed_users), UserPhoto.reviewed_at.isnot(None))
+            .distinct()
+        }
+        if confirmed_users
+        else set()
+    )
+    return {"payments": [_payment_row(p, st, admin_emails, reviewed) for p, st in rows]}
+
+
+def _payment_or_404(db: Session, payment_id: uuid.UUID) -> Payment:
+    payment = db.get(Payment, payment_id)
+    if payment is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="결제를 찾을 수 없습니다.")
+    return payment
+
+
+def _record_payment(db: Session, admin: CurrentAdmin, request: Request, payment: Payment, action: str, before: str):
+    AuditService.record(
+        db,
+        admin_id=admin.id,
+        action=action,
+        target_type="PAYMENT",
+        target_id=payment.id,
+        request=request,
+        metadata={"code": payment.code, "amount": payment.amount, "before": before, "after": payment.status},
+    )
+
+
+@router.post("/payments/{payment_id}/confirm")
+def confirm_payment(
+    payment_id: uuid.UUID,
+    request: Request,
+    admin: CurrentAdmin = Depends(require_permission("payments:confirm")),
+    db: Session = Depends(get_db),
+):
+    """입금 확인 → 사용자는 사진을 낼 수 있다. "입금 없음"으로 잘못 처리한 건도 다시 확인할 수 있다."""
+    payment = _payment_or_404(db, payment_id)
+    if payment.status not in ("REQUESTED", "REJECTED"):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="확인 대기 중인 결제가 아닙니다.")
+    before = payment.status
+    now = utcnow()
+    payment.status = "CONFIRMED"
+    payment.processed_at = now
+    payment.processed_by_admin_id = admin.id
+    user = db.get(User, payment.user_id)
+    if user is not None:
+        user.signup_paid_at = now
+        notify(db, user.id, "PAYMENT_CONFIRMED", "입금이 확인되었어요", "이제 사진을 제출할 수 있어요.", payment.id)
+    _record_payment(db, admin, request, payment, "PAYMENT_CONFIRM", before)
+    db.commit()
+    return {"payment_id": str(payment.id), "status": payment.status}
+
+
+@router.post("/payments/{payment_id}/reject")
+def reject_payment(
+    payment_id: uuid.UUID,
+    request: Request,
+    admin: CurrentAdmin = Depends(require_permission("payments:confirm")),
+    db: Session = Depends(get_db),
+):
+    """입금 없음 (금액·입금자명이 맞는 입금을 못 찾음). 사용자는 확인 후 다시 "입금했어요"를 누를 수 있다."""
+    payment = _payment_or_404(db, payment_id)
+    if payment.status != "REQUESTED":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="확인 대기 중인 결제가 아닙니다.")
+    payment.status = "REJECTED"
+    payment.processed_at = utcnow()
+    payment.processed_by_admin_id = admin.id
+    notify(
+        db,
+        payment.user_id,
+        "PAYMENT_REJECTED",
+        "입금이 확인되지 않았어요",
+        f"금액({payment.amount:,}원)과 입금자명(결제 코드 {payment.code})을 확인한 뒤 다시 알려 주세요.",
+        payment.id,
+    )
+    _record_payment(db, admin, request, payment, "PAYMENT_REJECT", "REQUESTED")
+    db.commit()
+    return {"payment_id": str(payment.id), "status": payment.status}
+
+
+@router.post("/payments/{payment_id}/refund")
+def refund_payment(
+    payment_id: uuid.UUID,
+    request: Request,
+    admin: CurrentAdmin = Depends(require_permission("payments:confirm")),
+    db: Session = Depends(get_db),
+):
+    """환불 처리 (운영자가 사용자 계좌로 직접 송금한 뒤 누른다).
+
+    사진 검수를 한 번이라도 받았으면 (반려 포함) 환불하지 않는다. 환불하면 다시 입금 전 상태가 되고,
+    아직 검수 전인 사진은 대기열에서 뺀다.
+    """
+    payment = _payment_or_404(db, payment_id)
+    if payment.status != "CONFIRMED":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="입금 확인된 결제만 환불할 수 있습니다.")
+    if payment_service.has_been_reviewed(db, payment.user_id):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="사진 검수를 받은 사용자는 환불할 수 없습니다.")
+    payment.status = "REFUNDED"
+    payment.processed_at = utcnow()
+    payment.processed_by_admin_id = admin.id
+    user = db.get(User, payment.user_id)
+    if user is not None:
+        user.signup_paid_at = None
+    db.query(UserPhoto).filter(
+        UserPhoto.user_id == payment.user_id, UserPhoto.review_status.in_(["PENDING", "IN_REVIEW"])
+    ).update({"review_status": "SUPERSEDED"}, synchronize_session=False)
+    _record_payment(db, admin, request, payment, "PAYMENT_REFUND", "CONFIRMED")
+    db.commit()
+    return {"payment_id": str(payment.id), "status": payment.status}
 
 
 # ---------- 감사 로그 ----------

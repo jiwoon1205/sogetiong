@@ -1,7 +1,7 @@
 import uuid
 from datetime import date, datetime
 
-from sqlalchemy import Date, DateTime, ForeignKey, Integer, String, Text, Uuid
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, String, Text, Uuid, true
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -34,6 +34,11 @@ class User(Base):
     # 이게 없으면 관리자 화면에서 닉네임 검색·성별 필터로 탈퇴한 사람을 찾을 수 없다.
     deleted_nickname: Mapped[str | None] = mapped_column(String(40), nullable=True)
     deleted_gender: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    # 가입비 (2026-10-03, 마이그레이션 0014)
+    # is_beta_member: 베타 기간 가입자 → 가입비 면제. SIGNUP_FEE_ENABLED가 꺼져 있는 동안 가입한 사람은 모두 true.
+    # signup_paid_at: 관리자가 가입비 입금을 확인한 시각 (환불하면 다시 비운다)
+    is_beta_member: Mapped[bool] = mapped_column(Boolean, default=True, server_default=true(), nullable=False)
+    signup_paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     public_profile = relationship("PublicProfile", back_populates="user", uselist=False)
     private_profile = relationship("PrivateProfile", back_populates="user", uselist=False)

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { PageTitle, Spinner } from "@/components/ui";
 import GenderPie from "@/components/GenderPie";
-import { adminApi } from "@/lib/admin";
+import { adminApi, useAdmin } from "@/lib/admin";
 
 type Stats = {
   users_total: number;
@@ -21,11 +21,16 @@ type Stats = {
   photos_pending: number;
   matches_total: number;
   reports_open: number;
+  payments_pending?: number;
 };
 
-const TILES: { key: keyof Stats; label: string; hint?: string | ((s: Stats) => string); href?: string; urgent?: boolean }[] = [
+type Tile = { key: keyof Stats; label: string; hint?: string | ((s: Stats) => string); href?: string; urgent?: boolean; perm?: string };
+
+const TILES: Tile[] = [
   { key: "photos_pending", label: "사진 검수 대기", href: "/admin/photos", urgent: true },
   { key: "reports_open", label: "처리할 신고", href: "/admin/reports", urgent: true },
+  // 가입비 입금 확인 (2026-10-03). 통장을 보는 최고 관리자에게만 보인다
+  { key: "payments_pending", label: "입금 확인 대기", hint: "15분 이내 확인", href: "/admin/payments", urgent: true, perm: "payments:confirm" },
   { key: "users_active", label: "활성 사용자", hint: "사진 검수 완료 + 최근 7일 접속" },
   { key: "users_active_today", label: "오늘 접속" },
   { key: "users_total", label: "전체 가입자", hint: "탈퇴·정지 포함" },
@@ -41,8 +46,6 @@ const TILES: { key: keyof Stats; label: string; hint?: string | ((s: Stats) => s
     href: "/admin/users?status=DELETED",
   },
 ];
-// 넓은 화면(3칸)에서 마지막 줄이 비면 회색 칸이 보이므로 빈 칸을 채운다
-const LG_FILLERS = (3 - (TILES.length % 3)) % 3;
 
 // 성비: 남자 : 여자 = 1 : x
 function genderRatio(s: Stats): string | null {
@@ -52,6 +55,10 @@ function genderRatio(s: Stats): string | null {
 
 export default function AdminDashboard() {
   const [stats, setStats] = useState<Stats | null>(null);
+  const admin = useAdmin();
+  const tiles = TILES.filter((t) => !t.perm || admin.can(t.perm));
+  // 넓은 화면(3칸)에서 마지막 줄이 비면 회색 칸이 보이므로 빈 칸을 채운다
+  const lgFillers = (3 - (tiles.length % 3)) % 3;
 
   useEffect(() => {
     adminApi<Stats>("/dashboard").then(setStats);
@@ -67,7 +74,7 @@ export default function AdminDashboard() {
         {genderRatio(stats) && <p className="text-[14px] text-ink-soft">전체 성비 {genderRatio(stats)}</p>}
       </div>
       <div className="grid grid-cols-2 gap-px overflow-hidden rounded-card border border-line bg-line lg:grid-cols-3">
-        {TILES.map((t) => {
+        {tiles.map((t) => {
           const value = stats[t.key] ?? 0;
           const hint = typeof t.hint === "function" ? t.hint(stats) : t.hint;
           const body = (
@@ -86,7 +93,7 @@ export default function AdminDashboard() {
             <div key={t.key}>{body}</div>
           );
         })}
-        {Array.from({ length: LG_FILLERS }, (_, i) => (
+        {Array.from({ length: lgFillers }, (_, i) => (
           <div key={`filler-${i}`} className="hidden bg-paper-card lg:block" aria-hidden />
         ))}
       </div>

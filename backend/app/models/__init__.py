@@ -14,6 +14,7 @@ from app.models.matching import (
     PreferredDepartment,
     Report,
 )
+from app.models.payment import Payment
 from app.models.photo import AppearanceEvaluation, UserPhoto
 from app.models.profile import Interest, PrivateProfile, PublicProfile, UserInterest
 from app.models.university import Campus, Department, University

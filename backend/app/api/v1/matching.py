@@ -17,7 +17,7 @@ from app.models.matching import Like, Match, MatchingPreference, Message, Report
 from app.models.profile import PublicProfile
 from app.models.user import User
 from app.schemas.matching import SendMessageRequest, TargetRequest
-from app.services import matching_service, profile_service
+from app.services import matching_service, payment_service, profile_service
 from app.services.notification_service import has_unread, notify
 
 router = APIRouter()
@@ -33,6 +33,9 @@ def _viewer(db: Session, current: CurrentUser) -> matching_service.Person:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="DEPARTMENT_REQUIRED")
     if db.query(MatchingPreference.id).filter(MatchingPreference.user_id == current.id).first() is None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="PREFERENCES_REQUIRED")
+    # 가입비 입금 확인 전 (2026-10-03). 사진보다 먼저 안내한다.
+    if payment_service.needs_signup_payment(current.user):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="PAYMENT_REQUIRED")
     if get_settings().require_approved_photo_to_discover and not profile_service.has_approved_photo(db, current.id):
         # 사진을 "냈는데 기다리는 중"과 "아직 안 냄(또는 반려)"을 나눠서 알려준다.
         # (2026-10-01: 사진을 안 낸 사람에게도 "검수 대기 중"이라고 보여줘서 제출을 빼먹는 문제가 있었다)

@@ -58,8 +58,31 @@ export type Me = {
     photo_status: "NOT_SUBMITTED" | "PENDING" | "IN_REVIEW" | "APPROVED" | "REJECTED" | "SUPERSEDED";
     preferences_done: boolean;
     photo_approved?: boolean;
+    /** 가입비 입금이 확인돼야 사진을 낼 수 있다 (2026-10-03). 베타 회원·가입비 끔 → false */
+    payment_required?: boolean;
+    /** 가입비를 내는 회원인가 (이미 냈어도 true) → 가입 단계 표시에 "가입비"를 넣는다 */
+    pays_signup_fee?: boolean;
   };
 };
+
+/** GET /me/payment — 가입비 입금 안내 (2026-10-03) */
+export type PaymentInfo =
+  | { required: false }
+  | {
+      required: true;
+      status: "CREATED" | "REQUESTED" | "REJECTED";
+      amount: number;
+      /** 입금자명에 실명 대신 적는 결제 코드 */
+      code: string;
+      open_now: boolean;
+      open_hour: number;
+      close_hour: number;
+      /** 운영 시간 외에는 null (이미 "입금했어요"를 누른 사람은 보임) */
+      bank_name: string | null;
+      account_number: string | null;
+      account_holder: string | null;
+      support_email: string;
+    };
 
 export type Preferences = {
   configured: boolean;

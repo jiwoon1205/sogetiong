@@ -112,7 +112,12 @@ function safeJson(text: string): unknown {
   }
 }
 
+/** 서버가 코드(영문 대문자)로만 알려 주는 에러를 문장으로 */
+const CODE_MESSAGES: Record<string, string> = {
+  PAYMENT_REQUIRED: "가입비 입금이 확인된 뒤에 사진을 제출할 수 있어요.",
+};
+
 export function errorMessage(err: unknown): string {
-  if (err instanceof ApiError) return err.message;
+  if (err instanceof ApiError) return CODE_MESSAGES[err.code] ?? err.message;
   return "알 수 없는 문제가 생겼습니다.";
 }

@@ -96,6 +96,20 @@ class Settings(BaseSettings):
     # 매칭 조건은 하루(24시간)에 이 횟수만큼만 바꿀 수 있다 (처음 저장은 세지 않음)
     preferences_changes_per_day: int = 3
 
+    # --- 가입비 (2026-10-03, 운영자 통장 직접 입금) ---
+    # 꺼져 있으면 지금처럼 가입비 없이 사진을 낼 수 있고, 새 가입자도 베타 회원(면제)이 된다.
+    # 베타가 끝나는 날 .env에 SIGNUP_FEE_ENABLED=true 를 넣고 다시 시작한다.
+    signup_fee_enabled: bool = False
+    signup_fee: int = 3000  # 남녀 같음
+    # 입금받을 계좌. 코드·GitHub에 넣지 않고 서버 .env에만 적는다.
+    payment_bank_name: str = ""
+    payment_account_number: str = ""
+    payment_account_holder: str = ""
+    # 결제(입금 요청) 가능 시간, 한국 시간. 6~24 = 오전 6시부터 밤 12시 전까지.
+    # 이 시간 밖에는 계좌번호를 숨기고 "입금했어요"를 받지 않는다 (확인·검수가 늦어지므로).
+    payment_open_hour: int = 6
+    payment_close_hour: int = 24
+
     # --- 문의 ---
     # 학과 변경 요청·"내 학과가 목록에 없어요" 문의를 받는 메일 주소 (화면에 표시됨)
     support_email: str = "support@private-matching.com"
@@ -134,6 +148,16 @@ class Settings(BaseSettings):
             raise ValueError("ACTIVITY_WINDOW_DAYS는 1 이상이어야 합니다")
         if not 0 <= self.liked_me_probability <= 1:
             raise ValueError("LIKED_ME_PROBABILITY는 0~1 사이여야 합니다")
+        if not 0 <= self.payment_open_hour < self.payment_close_hour <= 24:
+            raise ValueError("PAYMENT_OPEN_HOUR < PAYMENT_CLOSE_HOUR (0~24) 이어야 합니다")
+        if self.signup_fee_enabled:
+            if self.signup_fee <= 0:
+                raise ValueError("SIGNUP_FEE는 0보다 커야 합니다")
+            if not (self.payment_bank_name and self.payment_account_number and self.payment_account_holder):
+                raise ValueError(
+                    "SIGNUP_FEE_ENABLED=true 이면 PAYMENT_BANK_NAME, PAYMENT_ACCOUNT_NUMBER, "
+                    "PAYMENT_ACCOUNT_HOLDER를 .env에 넣어야 합니다"
+                )
         if self.environment != "prod":
             return
         if self.secret_key in PUBLIC_EXAMPLE_SECRETS:
