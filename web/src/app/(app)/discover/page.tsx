@@ -60,13 +60,21 @@ export default function DiscoverPage() {
   const [matched, setMatched] = useState<{ card: Card; matchId: string } | null>(null);
   const [error, setError] = useState("");
   // 오늘 남은 좋아요 (한국 시간 자정에 다시 충전)
-  const [likes, setLikes] = useState<{ left: number; limit: number } | null>(null);
+  // VIP는 하루 10개를 "5+5"로 보여준다 (base = 무료 몫, 2026-10-03)
+  const [likes, setLikes] = useState<{ left: number; limit: number; base: number; vip: boolean } | null>(null);
 
   const load = useCallback(async () => {
     setState({ kind: "loading" });
     try {
-      const res = await api<{ profiles: Card[]; likes_left_today: number; daily_like_limit: number }>("/discover");
-      setLikes({ left: res.likes_left_today, limit: res.daily_like_limit });
+      const res = await api<{ profiles: Card[]; likes_left_today: number; daily_like_limit: number; vip?: boolean; base_like_limit?: number }>(
+        "/discover",
+      );
+      setLikes({
+        left: res.likes_left_today,
+        limit: res.daily_like_limit,
+        base: res.base_like_limit ?? res.daily_like_limit,
+        vip: Boolean(res.vip),
+      });
       setState({ kind: "cards", cards: res.profiles });
     } catch (err) {
       if (err instanceof ApiError && err.status === 409) setState({ kind: "blocked", code: err.code });
@@ -188,8 +196,8 @@ export default function DiscoverPage() {
           </p>
         </div>
 
-        {likes && <LikeMeter left={likes.left} limit={likes.limit} />}
-        {likes && <LikeIntro limit={likes.limit} />}
+        {likes && <LikeMeter left={likes.left} limit={likes.limit} base={likes.base} vip={likes.vip} />}
+        {likes && <LikeIntro label={limitLabel(likes)} />}
 
         <SwipeCard key={current.profile_id} onSwipe={act} disabled={busy}>
           <ProfileCard card={current} />
@@ -224,12 +232,20 @@ export default function DiscoverPage() {
   }
 }
 
-/** 오늘 남은 좋아요를 하트로 크게 보여준다 (하루 한도가 있다는 걸 눈에 띄게) */
-function LikeMeter({ left, limit }: { left: number; limit: number }) {
+/** "5개" 또는 VIP는 "5+5개" */
+function limitLabel({ limit, base, vip }: { limit: number; base: number; vip: boolean }) {
+  return vip && limit > base ? `${base}+${limit - base}개` : `${limit}개`;
+}
+
+/** 오늘 남은 좋아요를 하트로 크게 보여준다 (하루 한도가 있다는 걸 눈에 띄게).
+ *  VIP는 하트를 무료 몫 5개 + VIP 몫 5개 두 묶음으로 보여준다 (2026-10-03). */
+function LikeMeter({ left, limit, base, vip }: { left: number; limit: number; base: number; vip: boolean }) {
   const out = left <= 0;
+  const groups = vip && limit > base ? [base, limit - base] : [limit];
+  let index = 0;
   return (
     <div
-      className={`mb-4 flex items-center justify-between rounded-card border px-4 py-3 ${out ? "border-line bg-paper-deep" : "border-brick/30 bg-brick-wash"}`}
+      className={`mb-4 flex items-center justify-between gap-3 rounded-card border px-4 py-3 ${out ? "border-line bg-paper-deep" : "border-brick/30 bg-brick-wash"}`}
       aria-label={`오늘 남은 좋아요 ${left}개, 하루 ${limit}개`}
     >
       <div>
@@ -237,11 +253,18 @@ function LikeMeter({ left, limit }: { left: number; limit: number }) {
           오늘 남은 좋아요 <span className="num text-brick">{left}</span>
           <span className="text-ink-faint">/{limit}</span>
         </p>
-        <p className="mt-0.5 text-[12px] text-ink-soft">하루 {limit}개까지 · 자정에 다시 충전돼요</p>
+        <p className="mt-0.5 text-[12px] text-ink-soft">
+          좋아요는 하루 {limitLabel({ limit, base, vip })} · 자정에 다시 충전돼요
+        </p>
       </div>
-      <div className="flex gap-1" aria-hidden>
-        {Array.from({ length: limit }, (_, i) => (
-          <Heart key={i} filled={i < left} />
+      <div className="flex flex-wrap justify-end gap-x-2.5 gap-y-1" aria-hidden>
+        {groups.map((size, g) => (
+          <div key={g} className="flex gap-1">
+            {Array.from({ length: size }, () => {
+              const i = index++;
+              return <Heart key={i} filled={i < left} />;
+            })}
+          </div>
         ))}
       </div>
     </div>
@@ -265,7 +288,7 @@ function Heart({ filled }: { filled: boolean }) {
 /** 처음 추천을 볼 때 한 번 "좋아요는 하루 N개"를 안내한다 (기기마다 한 번) */
 const LIKE_INTRO_KEY = "likeIntroSeen";
 
-function LikeIntro({ limit }: { limit: number }) {
+function LikeIntro({ label }: { label: string }) {
   const [show, setShow] = useState(false);
   useEffect(() => {
     try {
@@ -277,7 +300,7 @@ function LikeIntro({ limit }: { limit: number }) {
   if (!show) return null;
   return (
     <div className="mb-4 rounded-card border border-line bg-paper-card px-4 py-4">
-      <p className="text-[14.5px] font-semibold">좋아요는 하루 {limit}개만 보낼 수 있어요</p>
+      <p className="text-[14.5px] font-semibold">좋아요는 하루 {label}만 보낼 수 있어요</p>
       <p className="mt-1.5 text-[13.5px] leading-relaxed text-ink-soft">
         마음에 드는 사람에게만 신중하게 눌러주세요. 서로 좋아요를 누르면 매칭돼요. 넘기기는 개수 제한이 없어요.
       </p>

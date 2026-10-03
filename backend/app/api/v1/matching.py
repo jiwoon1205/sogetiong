@@ -17,7 +17,7 @@ from app.models.matching import Like, Match, MatchingPreference, Message, Report
 from app.models.profile import PublicProfile
 from app.models.user import User
 from app.schemas.matching import SendMessageRequest, TargetRequest
-from app.services import matching_service, payment_service, profile_service
+from app.services import matching_service, payment_service, profile_service, vip_service
 from app.services.notification_service import has_unread, notify
 
 router = APIRouter()
@@ -61,9 +61,9 @@ def discover(
 ):
     enforce_rate_limit(f"discover:{current.id}", 60, 60)
     viewer = _viewer(db, current)
-    # VIP 테스트 계정은 PASS한 사람도 다시 추천에 나온다 (2026-10-02)
-    vip = profile_service.is_vip_tester(current.user)
-    excluded = profile_service.excluded_user_ids(db, current.id, include_passed=not vip)
+    # VIP는 PASS한 사람이 24시간 뒤 다시 나온다 (무료 48시간, 2026-10-03)
+    cooldown = vip_service.pass_cooldown_hours(current.user)
+    excluded = profile_service.excluded_user_ids(db, current.id, pass_cooldown_hours=cooldown)
 
     query = profile_service.discoverable_profiles_query(db, current.user.university_id).filter(
         PublicProfile.user_id.notin_(excluded)
@@ -74,6 +74,7 @@ def discover(
     profiles = query.all()
 
     settings = get_settings()
+    like_limit = vip_service.daily_like_limit(current.user)
     by_user = {p.user_id: p for p in profiles}
     ranked = matching_service.rank(
         viewer,
@@ -83,8 +84,7 @@ def discover(
         liked_me=profile_service.liked_me_ids(db, current.id),
         liked_me_slots=settings.liked_me_slots,
         liked_me_probability=settings.liked_me_probability,
-        # VIP 테스트 계정: PASS한 사람 전부를 "처음 보는 사람" 뒤로, 오래 전에 PASS한 사람부터 (2026-10-02)
-        seen_before=profile_service.all_passed_order(db, current.id) if vip else profile_service.passed_before_ids(db, current.id),
+        seen_before=profile_service.passed_before_ids(db, current.id, pass_cooldown_hours=cooldown),
     )
     # 카드에는 외모 등급도, "나를 LIKE했는지"도 들어가지 않는다 (build_cards가 보내는 항목만 나감)
     cards = profile_service.build_cards(db, [by_user[p.user_id] for p in ranked])
@@ -92,8 +92,50 @@ def discover(
     return {
         "profiles": cards,
         "empty": not cards,
-        "likes_left_today": profile_service.likes_left_today(db, current.id, unlimited=vip),
-        "daily_like_limit": settings.daily_like_limit,
+        "likes_left_today": profile_service.likes_left_today(db, current.id, like_limit),
+        "daily_like_limit": like_limit,
+        # VIP는 하트를 "5+5"로 보여준다 (무료 몫 5개 + VIP 몫 5개)
+        "vip": vip_service.is_vip(current.user),
+        "base_like_limit": settings.daily_like_limit,
+    }
+
+
+# ---------- 받은 LIKE (VIP 혜택 3, 2026-10-03) ----------
+
+@router.get("/liked-me")
+def liked_me(current: CurrentUser = Depends(get_current_user), db: Session = Depends(get_db)):
+    """나를 LIKE한 사람 목록 (VIP 전용). 최근 LIKE 순.
+
+    - 추천 필수 조건(차단, 성별·나이·캠퍼스·같은 과 제외)을 추천과 똑같이 양방향으로 적용한다.
+    - 이미 매칭된 사람, 내가 LIKE한 사람은 없다. 내가 PASS한 사람은 "passed"로 표시해서 보여준다.
+    - 무료 사용자에게는 아무것도 알려주지 않는다 (숫자도 없음) → 403 VIP_REQUIRED.
+    - 사진은 원래처럼 보내지 않는다 (카드는 추천과 같은 build_cards).
+    """
+    enforce_rate_limit(f"liked-me:{current.id}", 60, 60)
+    viewer = _viewer(db, current)
+    if not vip_service.is_vip(current.user):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="VIP_REQUIRED")
+
+    likers = profile_service.likers_of(db, current.id)
+    excluded = profile_service.excluded_user_ids(db, current.id, include_passed=False)
+    liked_at = {uid: at for uid, at in likers if uid not in excluded}
+    if not liked_at:
+        return {"profiles": []}
+    profiles = (
+        profile_service.discoverable_profiles_query(db, current.user.university_id)
+        .filter(PublicProfile.user_id.in_(list(liked_at)))
+        .all()
+    )
+    people = {p.user_id: p for p in profile_service.people_from_profiles(db, profiles)}
+    ok = [p for p in profiles if p.user_id in people and matching_service.mutually_compatible(viewer, people[p.user_id])]
+    ok.sort(key=lambda p: liked_at[p.user_id], reverse=True)
+    passed = {to_id for to_id, _ in profile_service._passes(db, current.id)}
+    cards = profile_service.build_cards(db, ok)
+    return {
+        "profiles": [
+            {**card, "liked_at": liked_at[p.user_id].isoformat(), "passed": p.user_id in passed}
+            for p, card in zip(ok, cards)
+        ]
     }
 
 
@@ -127,20 +169,30 @@ def like(payload: TargetRequest, current: CurrentUser = Depends(get_current_user
     enforce_rate_limit(f"like:{current.id}", 60, 60)
     target = _target(db, current, payload.profile_id)
     viewer = _viewer(db, current)
-    vip = profile_service.is_vip_tester(current.user)
+    vip = vip_service.is_vip(current.user)
 
     # ID를 직접 넣어도, 추천 조건에 맞지 않는 사람에게는 LIKE할 수 없다 (설계도 금지사항 #18)
-    # (VIP 테스트 계정은 PASS했던 사람이 다시 나오므로, 그 사람에게 LIKE도 할 수 있어야 한다)
-    if target.user_id in profile_service.excluded_user_ids(db, current.id, include_passed=not vip):
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="프로필을 찾을 수 없습니다.")
+    excluded = profile_service.excluded_user_ids(
+        db, current.id, pass_cooldown_hours=vip_service.pass_cooldown_hours(current.user)
+    )
+    if target.user_id in excluded:
+        # VIP "받은 LIKE" 목록에서는 내가 PASS했던 사람에게도 LIKE할 수 있다 (2026-10-03).
+        # 그 사람이 나를 LIKE했고, PASS 말고 다른 이유(차단·매칭·이미 LIKE)로 빠진 게 아니어야 한다.
+        allowed = (
+            vip
+            and target.user_id in {uid for uid, _ in profile_service.likers_of(db, current.id)}
+            and target.user_id not in profile_service.excluded_user_ids(db, current.id, include_passed=False)
+        )
+        if not allowed:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="프로필을 찾을 수 없습니다.")
     candidates = profile_service.people_from_profiles(db, [target])
     if not candidates or not matching_service.mutually_compatible(viewer, candidates[0]):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="프로필을 찾을 수 없습니다.")
 
     # 하루 LIKE 한도 (한국 시간 자정에 다시 채워짐). DB로 세므로 서버를 재시작해도 초기화되지 않는다.
-    # VIP 테스트 계정은 한도 없음 (2026-10-02)
-    limit = get_settings().daily_like_limit
-    if not vip and profile_service.likes_sent_today(db, current.id) >= limit:
+    # 무료 5개, VIP 10개 (2026-10-03). "받은 LIKE" 목록에서 누른 LIKE도 여기에 포함된다.
+    limit = vip_service.daily_like_limit(current.user)
+    if profile_service.likes_sent_today(db, current.id) >= limit:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail=f"오늘 LIKE {limit}개를 모두 사용했어요. 자정(한국 시간)에 다시 충전돼요.",
@@ -151,7 +203,7 @@ def like(payload: TargetRequest, current: CurrentUser = Depends(get_current_user
     # 한 번 더 확인: LIKE를 여러 개 "동시에" 보내면 위의 확인을 모두 통과할 수 있다.
     # 방금 기록한 LIKE를 포함해 세고, 한도를 넘으면 취소한다.
     # (SQLite는 쓰기를 한 번에 하나씩만 하므로, 여기서 세는 숫자에는 먼저 끝난 요청이 모두 들어 있다)
-    if not vip and profile_service.likes_sent_today(db, current.id) > limit:
+    if profile_service.likes_sent_today(db, current.id) > limit:
         db.rollback()
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
@@ -183,7 +235,7 @@ def like(payload: TargetRequest, current: CurrentUser = Depends(get_current_user
     return {
         "matched": match is not None,
         "match_id": str(match.id) if match else None,
-        "likes_left_today": profile_service.likes_left_today(db, current.id, unlimited=vip),
+        "likes_left_today": profile_service.likes_left_today(db, current.id, limit),
     }
 
 

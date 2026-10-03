@@ -4,9 +4,7 @@ import { useCallback, useState } from "react";
 import { Button, Notice, Spinner } from "@/components/ui";
 import { api, errorMessage } from "@/lib/api";
 import { usePolling } from "@/lib/polling";
-import type { PaymentInfo } from "@/lib/types";
-
-type Required = Extract<PaymentInfo, { required: true }>;
+import type { PaymentDetail, PaymentInfo } from "@/lib/types";
 
 /** 가입비 입금 단계 (2026-10-03). 운영자 통장으로 직접 입금 → 관리자가 확인하면 사진 제출이 열린다.
  *
@@ -15,7 +13,7 @@ type Required = Extract<PaymentInfo, { required: true }>;
  *  - "입금했어요"를 누른 뒤에는 30초마다 확인해서, 확인되면 onConfirmed로 다음 단계로 넘어간다.
  */
 export function PaymentStep({ onConfirmed }: { onConfirmed: () => void }) {
-  const [info, setInfo] = useState<Required | null>(null);
+  const [info, setInfo] = useState<PaymentDetail | null>(null);
   const [error, setError] = useState("");
   const [sending, setSending] = useState(false);
 
@@ -58,6 +56,34 @@ export function PaymentStep({ onConfirmed }: { onConfirmed: () => void }) {
 
   if (!info) return error ? <Notice tone="error">{error}</Notice> : <Spinner />;
 
+  return (
+    <PaymentPanel
+      info={info}
+      sending={sending}
+      error={error}
+      onRequest={request}
+      waitingText="입금 후 15분 이내 확인돼요. 확인되면 자동으로 사진 제출 화면으로 넘어가요."
+      refundNote="환불은 사진 검수를 받기 전에만 돼요. 사진이 반려돼도 검수를 받은 것이라 환불되지 않아요."
+    />
+  );
+}
+
+/** 입금 안내 화면 (가입비·VIP 공통): 계좌·결제 코드, "입금했어요" 버튼, 안내 문구 */
+export function PaymentPanel({
+  info,
+  sending,
+  error,
+  onRequest,
+  waitingText,
+  refundNote,
+}: {
+  info: PaymentDetail;
+  sending: boolean;
+  error: string;
+  onRequest: () => void;
+  waitingText: string;
+  refundNote: string;
+}) {
   const hours = `오전 ${info.open_hour}시 ~ ${info.close_hour === 24 ? "밤 12시" : `${info.close_hour}시`}`;
   const waiting = info.status === "REQUESTED";
 
@@ -86,7 +112,7 @@ export function PaymentStep({ onConfirmed }: { onConfirmed: () => void }) {
       {waiting ? (
         <Notice tone="ok">
           <p className="font-semibold">입금을 확인하고 있어요</p>
-          <p className="mt-1">입금 후 15분 이내 확인돼요. 확인되면 자동으로 사진 제출 화면으로 넘어가요.</p>
+          <p className="mt-1">{waitingText}</p>
         </Notice>
       ) : (
         info.open_now && (
@@ -96,7 +122,7 @@ export function PaymentStep({ onConfirmed }: { onConfirmed: () => void }) {
                 입금이 확인되지 않았어요. 금액({info.amount.toLocaleString()}원)과 입금자명({info.code})을 확인한 뒤 다시 눌러 주세요.
               </Notice>
             )}
-            <Button size="lg" className="w-full" loading={sending} onClick={request}>
+            <Button size="lg" className="w-full" loading={sending} onClick={onRequest}>
               입금했어요
             </Button>
           </>
@@ -110,9 +136,9 @@ export function PaymentStep({ onConfirmed }: { onConfirmed: () => void }) {
         <li>
           결제는 {hours}에 할 수 있어요. 그 밖의 시간에 보낸 입금은 오전 {info.open_hour}시 이후 확인돼요.
         </li>
-        <li>환불은 사진 검수를 받기 전에만 돼요. 사진이 반려돼도 검수를 받은 것이라 환불되지 않아요.</li>
+        <li>{refundNote}</li>
         <li>
-          환불 문의:{" "}
+          문의:{" "}
           <a href={`mailto:${info.support_email}`} className="underline underline-offset-4">
             {info.support_email}
           </a>

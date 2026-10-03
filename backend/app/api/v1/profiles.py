@@ -19,7 +19,7 @@ from app.models.profile import Interest, PublicProfile, UserInterest
 from app.models.university import Campus, Department
 from app.schemas.auth import DeleteAccountRequest
 from app.schemas.profile import PreferencesRequest, ProfileUpdateRequest
-from app.services import admin_alert_service, auth_service, payment_service, profile_service
+from app.services import admin_alert_service, auth_service, payment_service, profile_service, vip_service
 from app.services.email_service import EmailService
 from app.services.session_service import clear_user_cookies, revoke_all_user_sessions
 from app.services.storage_service import PhotoValidationError, get_storage, new_storage_key, process_upload
@@ -79,6 +79,12 @@ def get_me(current: CurrentUser = Depends(get_current_user), db: Session = Depen
             "payment_required": payment_service.needs_signup_payment(current.user),
             # 가입비를 내는 회원인가 (이미 냈어도 true) → 가입 단계 표시에 "가입비" 단계를 넣을지
             "pays_signup_fee": payment_service.pays_signup_fee(current.user),
+        },
+        # VIP (2026-10-03). visible = "받은 LIKE" 탭을 보여줄지 (정식 오픈 전에는 테스트 계정만)
+        "vip": {
+            "visible": vip_service.feature_visible(current.user),
+            "active": vip_service.is_vip(current.user),
+            "until": current.user.vip_until.isoformat() if vip_service.has_paid_vip(current.user) else None,
         },
     }
 
@@ -328,7 +334,7 @@ def _resubmit_status(db: Session, user_id: uuid.UUID, *, vip: bool = False) -> d
     wait_days: 화면 안내 문구용 (기간을 .env로 바꿔도 문구가 따라 바뀌게)
       바로 재검토로 낸 사진이 승인까지 되면 "사용함"으로 친다.
       (반려되거나, 검수 전에 다른 사진으로 바꾸면 쓴 것으로 치지 않는다)
-    vip=True: VIP 테스트 계정은 기간이 VIP_PHOTO_RESUBMIT_DAYS(3일)다 (2026-10-02). 나머지 규칙은 같다.
+    vip=True: VIP는 기간이 VIP_PHOTO_RESUBMIT_DAYS(3일)다 (2026-10-02 테스트 계정, 2026-10-03 정식 VIP). 나머지 규칙은 같다.
     """
     settings = get_settings()
     last_eval = (
@@ -382,7 +388,7 @@ def upload_photo(
 
     enforce_rate_limit(f"photo:{current.id}", 5, 3600)
 
-    rule = _resubmit_status(db, current.id, vip=profile_service.is_vip_tester(current.user))
+    rule = _resubmit_status(db, current.id, vip=vip_service.is_vip(current.user))
     if not rule["allowed"]:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
@@ -471,7 +477,7 @@ def list_my_photos(current: CurrentUser = Depends(get_current_user), db: Session
             for p in leaders
         ],
         "max_count": get_settings().photo_max_count,
-        "resubmit": _resubmit_status(db, current.id, vip=profile_service.is_vip_tester(current.user)),
+        "resubmit": _resubmit_status(db, current.id, vip=vip_service.is_vip(current.user)),
     }
 
 
@@ -506,6 +512,30 @@ def _payment_view(payment, *, open_now: bool) -> dict:
     }
 
 
+def _request_check(db: Session, background: BackgroundTasks, payment) -> dict:
+    """"입금했어요" 공통 처리 (가입비·VIP). 관리자 확인 대기 목록에 올리고 알림 메일을 보낸다."""
+    open_now = payment_service.is_payment_open()
+    if payment.status == "REQUESTED":
+        # 두 번 눌러도 알림 메일은 한 번만
+        return _payment_view(payment, open_now=open_now)
+    if not open_now:
+        settings = get_settings()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"운영 시간 외입니다. 오전 {settings.payment_open_hour}시부터 결제할 수 있어요.",
+        )
+    enforce_rate_limit(f"payment:{payment.user_id}", 10, 3600)
+    payment.status = "REQUESTED"
+    payment.requested_at = utcnow()
+    db.commit()
+    # 15분 이내 확인 약속 → 사진 알림처럼 모으지 않고 요청마다 바로 보낸다 (응답 뒤 발송)
+    recipients = admin_alert_service.admin_emails_with(db, "payments:confirm")
+    background.add_task(
+        admin_alert_service.send_all, EmailService.send_admin_payment_request, recipients, payment.code, payment.amount
+    )
+    return _payment_view(payment, open_now=open_now)
+
+
 def _payment_ready(db: Session, current: CurrentUser) -> None:
     """입금 단계는 프로필(학과)과 매칭 조건을 끝낸 뒤에 나온다."""
     if not _profile_done(db, current):
@@ -536,23 +566,66 @@ def request_payment_check(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="이미 결제가 확인됐어요.")
     _payment_ready(db, current)
     payment = payment_service.get_or_create_payment(db, current.user)
-    open_now = payment_service.is_payment_open()
-    if payment.status == "REQUESTED":
-        # 두 번 눌러도 알림 메일은 한 번만
-        return _payment_view(payment, open_now=open_now)
-    if not open_now:
-        settings = get_settings()
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=f"운영 시간 외입니다. 오전 {settings.payment_open_hour}시부터 결제할 수 있어요.",
-        )
-    enforce_rate_limit(f"payment:{current.id}", 10, 3600)
-    payment.status = "REQUESTED"
-    payment.requested_at = utcnow()
-    db.commit()
-    # 15분 이내 확인 약속 → 사진 알림처럼 모으지 않고 요청마다 바로 보낸다 (응답 뒤 발송)
-    recipients = admin_alert_service.admin_emails_with(db, "payments:confirm")
-    background.add_task(
-        admin_alert_service.send_all, EmailService.send_admin_payment_request, recipients, payment.code, payment.amount
-    )
-    return _payment_view(payment, open_now=open_now)
+    return _request_check(db, background, payment)
+
+
+# ---------- VIP 2주 이용권 (2026-10-03) ----------
+
+
+def _vip_info(db: Session, current: CurrentUser) -> dict:
+    settings = get_settings()
+    user = current.user
+    price = vip_service.current_price()
+    info = {
+        "visible": vip_service.feature_visible(user),
+        "active": vip_service.is_vip(user),
+        "tester": vip_service.is_vip_tester(user),
+        "until": user.vip_until.isoformat() if vip_service.has_paid_vip(user) else None,
+        "days": settings.vip_days,
+        "price": price,
+        "regular_price": settings.vip_price,
+        "discount_until": settings.vip_discount_until.isoformat() if vip_service.discount_active() else None,
+        "daily_like_limit": settings.vip_daily_like_limit,
+        "base_like_limit": settings.daily_like_limit,
+        "pass_cooldown_hours": settings.vip_pass_cooldown_hours,
+        "base_pass_cooldown_hours": settings.pass_cooldown_hours,
+        "photo_resubmit_days": settings.vip_photo_resubmit_days,
+        "base_photo_resubmit_days": settings.photo_resubmit_days,
+        "can_buy": False,
+        "blocked_reason": None,
+        "payment": None,
+    }
+    if not settings.vip_enabled:
+        info["blocked_reason"] = "VIP는 아직 판매하지 않아요."
+    elif vip_service.has_paid_vip(user):
+        # VIP가 끝난 뒤에만 다시 살 수 있다 (2026-10-03)
+        info["blocked_reason"] = "VIP 기간이 끝난 뒤에 다시 살 수 있어요."
+    elif payment_service.needs_signup_payment(user) or not profile_service.has_approved_photo(db, user.id):
+        info["blocked_reason"] = "사진 검수가 끝난 뒤에 VIP를 살 수 있어요."
+    else:
+        info["can_buy"] = True
+        payment = payment_service.get_or_create_payment(db, user, "VIP", price)
+        db.commit()
+        info["payment"] = _payment_view(payment, open_now=payment_service.is_payment_open())
+    return info
+
+
+@router.get("/me/vip")
+def get_my_vip(current: CurrentUser = Depends(get_current_user), db: Session = Depends(get_db)):
+    """VIP 안내·상태. 살 수 있으면 VIP 결제 코드가 만들어진다 (가입비 코드와 따로)."""
+    return _vip_info(db, current)
+
+
+@router.post("/me/vip/request")
+def request_vip_check(
+    background: BackgroundTasks,
+    current: CurrentUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """VIP "입금했어요". 관리자가 확인하는 순간부터 2주. 확인 후에는 환불하지 않는다."""
+    info = _vip_info(db, current)
+    if not info["can_buy"]:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=info["blocked_reason"])
+    payment = payment_service.open_payment(db, current.id, "VIP")
+    view = _request_check(db, background, payment)
+    return {**info, "payment": view}

@@ -19,6 +19,9 @@ type Detail = {
   status: string;
   created_at: string;
   last_active_at: string | null;
+  is_beta_member?: boolean;
+  signup_paid_at?: string | null;
+  vip_until?: string | null;
   profile: Card | null;
   campus: { id: string; name: string } | null;
   department: { id: string; name: string } | null;
@@ -67,6 +70,9 @@ export default function UserDetail() {
         <p className="text-[13px] text-ink-faint">
           {dateTime(d.created_at)} 가입{d.deleted_at && <> · {dateTime(d.deleted_at)} 탈퇴</>} · 마지막 접속{" "}
           {d.last_active_at ? <span title={dateTime(d.last_active_at)}>{timeAgo(d.last_active_at)}</span> : "기록 없음"} · {USER_STATUS_LABEL[d.status] ?? d.status} · 받은 신고 <span className="num">{d.reports_received}</span>건
+          {" · "}
+          {d.is_beta_member ? "베타 회원" : d.signup_paid_at ? `가입비 ${dateTime(d.signup_paid_at)} 확인` : "가입비 미확인"}
+          {d.vip_until && <> · VIP 끝 {dateTime(d.vip_until)}</>}
         </p>
       </div>
 

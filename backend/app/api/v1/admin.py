@@ -523,6 +523,10 @@ def get_user(
         "status": user.status,
         "created_at": user.created_at.isoformat(),
         "last_active_at": user.last_active_at.isoformat() if user.last_active_at else None,
+        # 유료 정보 (2026-10-03): 베타 회원 여부, 가입비 확인 시각, VIP 끝나는 시각
+        "is_beta_member": user.is_beta_member,
+        "signup_paid_at": user.signup_paid_at.isoformat() if user.signup_paid_at else None,
+        "vip_until": user.vip_until.isoformat() if user.vip_until else None,
         "profile": profile_service.build_card(db, profile) if profile else None,
         # 카드는 공개 설정에 따라 캠퍼스·학과가 숨겨질 수 있어서, 관리자에게는 실제 값을 따로 보여준다
         "campus": {"id": str(profile.campus_id), "name": profile.campus.name} if profile else None,
@@ -1001,6 +1005,7 @@ PAYMENT_HISTORY_LIMIT = 300
 def _payment_row(p: Payment, user_status: str | None, admin_emails: dict, reviewed: set) -> dict:
     return {
         "payment_id": str(p.id),
+        "kind": p.kind,  # SIGNUP(가입비) / VIP
         "code": p.code,
         "amount": p.amount,
         "status": p.status,
@@ -1008,8 +1013,8 @@ def _payment_row(p: Payment, user_status: str | None, admin_emails: dict, review
         "requested_at": p.requested_at.isoformat() if p.requested_at else None,
         "processed_at": p.processed_at.isoformat() if p.processed_at else None,
         "processed_by": admin_emails.get(p.processed_by_admin_id),
-        # 환불은 입금 확인된 결제 + 사진 검수를 한 번도 안 받은 경우만
-        "refundable": p.status == "CONFIRMED" and p.user_id not in reviewed,
+        # 환불은 가입비만: 입금 확인된 결제 + 사진 검수를 한 번도 안 받은 경우. VIP는 확인 후 환불 없음 (2026-10-03)
+        "refundable": p.kind == "SIGNUP" and p.status == "CONFIRMED" and p.user_id not in reviewed,
     }
 
 
@@ -1082,7 +1087,20 @@ def confirm_payment(
     payment.processed_at = now
     payment.processed_by_admin_id = admin.id
     user = db.get(User, payment.user_id)
-    if user is not None:
+    if user is not None and payment.kind == "VIP":
+        # 확인한 순간부터 2주. VIP 중에는 살 수 없으므로 보통은 지금부터지만,
+        # 혹시 남은 기간이 있으면(입금 확인 직전에 다른 결제가 확인된 경우 등) 그 뒤에 이어 붙인다.
+        start = max(now, as_utc(user.vip_until) or now)
+        user.vip_until = start + timedelta(days=get_settings().vip_days)
+        notify(
+            db,
+            user.id,
+            "VIP_STARTED",
+            "VIP가 시작되었어요",
+            f"{get_settings().vip_days}일 동안 VIP 혜택을 받을 수 있어요. '받은 LIKE'에서 나를 LIKE한 사람을 확인해 보세요.",
+            payment.id,
+        )
+    elif user is not None:
         user.signup_paid_at = now
         notify(db, user.id, "PAYMENT_CONFIRMED", "입금이 확인되었어요", "이제 사진을 제출할 수 있어요.", payment.id)
     _record_payment(db, admin, request, payment, "PAYMENT_CONFIRM", before)
@@ -1130,6 +1148,8 @@ def refund_payment(
     아직 검수 전인 사진은 대기열에서 뺀다.
     """
     payment = _payment_or_404(db, payment_id)
+    if payment.kind != "SIGNUP":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="VIP는 입금 확인 후 환불하지 않습니다.")
     if payment.status != "CONFIRMED":
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="입금 확인된 결제만 환불할 수 있습니다.")
     if payment_service.has_been_reviewed(db, payment.user_id):

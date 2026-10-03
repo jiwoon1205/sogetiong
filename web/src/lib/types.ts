@@ -63,7 +63,39 @@ export type Me = {
     /** 가입비를 내는 회원인가 (이미 냈어도 true) → 가입 단계 표시에 "가입비"를 넣는다 */
     pays_signup_fee?: boolean;
   };
+  /** VIP (2026-10-03). visible = "받은 LIKE" 탭을 보여줄지 (정식 오픈 전에는 테스트 계정만) */
+  vip?: { visible: boolean; active: boolean; until: string | null };
 };
+
+/** 결제 안내 한 건 (가입비·VIP 공통) */
+export type PaymentDetail = Extract<PaymentInfo, { required: true }>;
+
+/** GET /me/vip — VIP 안내·상태 (2026-10-03) */
+export type VipInfo = {
+  visible: boolean;
+  active: boolean;
+  /** 테스트 계정 (돈을 내지 않아도 항상 VIP) */
+  tester: boolean;
+  /** 돈을 내고 산 VIP가 끝나는 시각 */
+  until: string | null;
+  days: number;
+  price: number;
+  regular_price: number;
+  /** 오픈 할인 마지막 날 (YYYY-MM-DD). 할인 중이 아니면 null */
+  discount_until: string | null;
+  daily_like_limit: number;
+  base_like_limit: number;
+  pass_cooldown_hours: number;
+  base_pass_cooldown_hours: number;
+  photo_resubmit_days: number;
+  base_photo_resubmit_days: number;
+  can_buy: boolean;
+  blocked_reason: string | null;
+  payment: PaymentDetail | null;
+};
+
+/** GET /liked-me — 나를 LIKE한 사람 (VIP 전용) */
+export type LikedMeCard = Card & { liked_at: string; passed: boolean };
 
 /** GET /me/payment — 가입비 입금 안내 (2026-10-03) */
 export type PaymentInfo =

@@ -1,7 +1,8 @@
+from datetime import date
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 DEFAULT_SECRET = "change-me-in-production"
@@ -85,13 +86,26 @@ class Settings(BaseSettings):
     # 하루(한국 시간 자정 기준)에 보낼 수 있는 LIKE 수 (베타: 5개)
     daily_like_limit: int = 5
 
-    # VIP 기능 테스트용 계정 (2026-10-02). 여기 적힌 학교 메일로 가입한 계정은
-    #   ① 하루 LIKE 제한 없음  ② PASS한 사람도 새로고침하면 다시 추천에 나옴
-    # 그리고 다른 사람이 이 계정을 PASS하면, 그 PASS는 그날 하루(한국 시간)만 유효하다 → 매일 다시 추천된다.
-    # 여러 개는 쉼표로 구분. 기능을 끄려면 .env에 VIP_TEST_EMAILS= (빈 값)
+    # --- VIP (2026-10-03 정식 규칙) ---
+    # 꺼져 있으면 VIP를 살 수 없고 "받은 LIKE" 탭도 안 보인다 (아래 테스트 계정은 예외).
+    # 베타가 끝나는 날 SIGNUP_FEE_ENABLED와 함께 true로 바꾼다.
+    vip_enabled: bool = False
+    vip_days: int = 14  # 한 번 사면 2주 (2026-10-03, 30일에서 변경)
+    vip_price: int = 6000
+    # 오픈 할인: 이 날짜(한국 시간, 그날 포함)까지 vip_discount_price. 비우면 할인 없음.
+    # 베타 종료일 + 2주로 정해서 .env에 넣는다 (예: VIP_DISCOUNT_UNTIL=2026-12-14)
+    vip_discount_price: int = 4000
+    vip_discount_until: date | None = None
+    # VIP 혜택 숫자 (유료화 계획 1장)
+    vip_daily_like_limit: int = 10  # 무료 5개 + 5개
+    liker_boost_limit: int = 5  # "나를 LIKE한 사람" 우대는 보낸 사람의 하루 처음 5개 LIKE에만
+    vip_pass_cooldown_hours: int = 24  # VIP가 PASS한 사람은 24시간 뒤 다시 (무료 48시간)
+    vip_photo_resubmit_days: int = 3  # 사진 재검토 간격 (무료 7일)
+
+    # VIP 테스트 계정 (2026-10-02). 여기 적힌 학교 메일 계정은 돈을 내지 않아도 항상 VIP다.
+    # 2026-10-03부터 정식 VIP와 같은 규칙 (예전의 "LIKE 무제한", "PASS 즉시 다시 나옴"은 없어짐).
+    # 여러 개는 쉼표로 구분. 끄려면 .env에 VIP_TEST_EMAILS= (빈 값)
     vip_test_emails: str = "wldns051205@hufs.ac.kr"
-    # VIP 테스트 계정의 사진 재검토 간격 (일반은 photo_resubmit_days = 7일, 2026-10-02)
-    vip_photo_resubmit_days: int = 3
 
     # 매칭 조건은 하루(24시간)에 이 횟수만큼만 바꿀 수 있다 (처음 저장은 세지 않음)
     preferences_changes_per_day: int = 3
@@ -129,6 +143,12 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
+    @field_validator("vip_discount_until", mode="before")
+    @classmethod
+    def _empty_date_is_none(cls, value):
+        # .env에 VIP_DISCOUNT_UNTIL= (빈 값)으로 적어도 "할인 없음"으로 본다
+        return None if isinstance(value, str) and not value.strip() else value
+
     @property
     def cookies_secure(self) -> bool:
         if self.cookie_secure is not None:
@@ -150,14 +170,17 @@ class Settings(BaseSettings):
             raise ValueError("LIKED_ME_PROBABILITY는 0~1 사이여야 합니다")
         if not 0 <= self.payment_open_hour < self.payment_close_hour <= 24:
             raise ValueError("PAYMENT_OPEN_HOUR < PAYMENT_CLOSE_HOUR (0~24) 이어야 합니다")
-        if self.signup_fee_enabled:
-            if self.signup_fee <= 0:
-                raise ValueError("SIGNUP_FEE는 0보다 커야 합니다")
-            if not (self.payment_bank_name and self.payment_account_number and self.payment_account_holder):
-                raise ValueError(
-                    "SIGNUP_FEE_ENABLED=true 이면 PAYMENT_BANK_NAME, PAYMENT_ACCOUNT_NUMBER, "
-                    "PAYMENT_ACCOUNT_HOLDER를 .env에 넣어야 합니다"
-                )
+        if self.signup_fee_enabled and self.signup_fee <= 0:
+            raise ValueError("SIGNUP_FEE는 0보다 커야 합니다")
+        if self.vip_enabled and not (self.vip_price > 0 and self.vip_discount_price > 0 and self.vip_days > 0):
+            raise ValueError("VIP_PRICE, VIP_DISCOUNT_PRICE, VIP_DAYS는 0보다 커야 합니다")
+        if (self.signup_fee_enabled or self.vip_enabled) and not (
+            self.payment_bank_name and self.payment_account_number and self.payment_account_holder
+        ):
+            raise ValueError(
+                "SIGNUP_FEE_ENABLED 또는 VIP_ENABLED가 true 이면 PAYMENT_BANK_NAME, PAYMENT_ACCOUNT_NUMBER, "
+                "PAYMENT_ACCOUNT_HOLDER를 .env에 넣어야 합니다"
+            )
         if self.environment != "prod":
             return
         if self.secret_key in PUBLIC_EXAMPLE_SECRETS:

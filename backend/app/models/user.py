@@ -39,6 +39,8 @@ class User(Base):
     # signup_paid_at: 관리자가 가입비 입금을 확인한 시각 (환불하면 다시 비운다)
     is_beta_member: Mapped[bool] = mapped_column(Boolean, default=True, server_default=true(), nullable=False)
     signup_paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # VIP가 끝나는 시각 (2026-10-03, 마이그레이션 0015). 이 시각이 지금보다 뒤면 VIP다.
+    vip_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     public_profile = relationship("PublicProfile", back_populates="user", uselist=False)
     private_profile = relationship("PrivateProfile", back_populates="user", uselist=False)

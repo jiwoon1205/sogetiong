@@ -8,14 +8,25 @@ import { Spinner } from "@/components/ui";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/format";
 import { usePolling } from "@/lib/polling";
-import { SessionGate } from "@/lib/session";
+import { SessionGate, useSession } from "@/lib/session";
 
-const NAV = [
-  { href: "/discover", label: "추천" },
-  { href: "/matches", label: "대화" },
-  { href: "/profile", label: "내 프로필" },
-  { href: "/settings", label: "설정" },
-];
+// 아래 탭 (2026-10-03): VIP가 열리면 추천 · 받은 LIKE · 대화 · 내 프로필, 설정은 머리말 오른쪽 톱니바퀴로.
+// VIP가 아직 안 보이는 사람(베타 기간)은 예전처럼 설정이 탭에 있다.
+function navItems(showLiked: boolean) {
+  return showLiked
+    ? [
+        { href: "/discover", label: "추천" },
+        { href: "/liked", label: "받은 LIKE" },
+        { href: "/matches", label: "대화" },
+        { href: "/profile", label: "내 프로필" },
+      ]
+    : [
+        { href: "/discover", label: "추천" },
+        { href: "/matches", label: "대화" },
+        { href: "/profile", label: "내 프로필" },
+        { href: "/settings", label: "설정" },
+      ];
+}
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -27,6 +38,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
 function Shell({ children }: { children: React.ReactNode }) {
   const path = usePathname();
+  const { me } = useSession();
+  const showLiked = Boolean(me.vip?.visible);
+  const NAV = navItems(showLiked);
   const [unread, setUnread] = useState(0);
   const inChat = path.startsWith("/chat/");
 
@@ -57,10 +71,17 @@ function Shell({ children }: { children: React.ReactNode }) {
               </Link>
             ))}
           </nav>
-          <Link href="/notifications" className="inline-flex items-center gap-1.5 text-[14px] text-ink-soft hover:text-ink" aria-label={`알림 ${unread}개`}>
-            알림
-            {unread > 0 && <span className="num min-w-[18px] rounded-full bg-brick px-1.5 text-center text-[11px] font-semibold leading-[18px] text-paper">{unread > 99 ? "99+" : unread}</span>}
-          </Link>
+          <div className="flex items-center gap-4">
+            <Link href="/notifications" className="inline-flex items-center gap-1.5 text-[14px] text-ink-soft hover:text-ink" aria-label={`알림 ${unread}개`}>
+              알림
+              {unread > 0 && <span className="num min-w-[18px] rounded-full bg-brick px-1.5 text-center text-[11px] font-semibold leading-[18px] text-paper">{unread > 99 ? "99+" : unread}</span>}
+            </Link>
+            {showLiked && (
+              <Link href="/settings" aria-label="설정" className={cn("text-ink-soft hover:text-ink", path.startsWith("/settings") && "text-ink")}>
+                <GearIcon />
+              </Link>
+            )}
+          </div>
         </div>
       </header>
 
@@ -75,5 +96,14 @@ function Shell({ children }: { children: React.ReactNode }) {
         ))}
       </nav>
     </div>
+  );
+}
+
+function GearIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <circle cx="12" cy="12" r="3" />
+      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+    </svg>
   );
 }

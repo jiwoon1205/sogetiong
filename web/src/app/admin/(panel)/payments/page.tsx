@@ -9,6 +9,7 @@ import { usePolling } from "@/lib/polling";
 
 type PaymentRow = {
   payment_id: string;
+  kind: "SIGNUP" | "VIP";
   code: string;
   amount: number;
   status: "REQUESTED" | "CONFIRMED" | "REJECTED" | "REFUNDED";
@@ -33,7 +34,7 @@ const STATUS_LABEL: Record<string, string> = {
 
 const PROMISE_MINUTES = 15; // 사용자에게 "15분 이내 확인"이라고 안내함
 
-/** 가입비 입금 확인 (2026-10-03). 은행 앱의 입금자명(결제 코드)·금액과 맞춰 보고 처리한다.
+/** 가입비·VIP 입금 확인 (2026-10-03). 은행 앱의 입금자명(결제 코드)·금액과 맞춰 보고 처리한다.
  *  닉네임·이메일은 보여주지 않는다 (익명성). */
 export default function PaymentsPage() {
   const [view, setView] = useState<(typeof TABS)[number]["value"]>("pending");
@@ -71,9 +72,9 @@ export default function PaymentsPage() {
   return (
     <>
       <PageTitle
-        eyebrow="가입비"
+        eyebrow="결제"
         title="입금 확인"
-        desc="은행 앱에서 입금자명(결제 코드)과 금액이 맞는지 확인한 뒤 처리하세요. 사용자에게는 15분 이내 확인이라고 안내돼 있어요."
+        desc="은행 앱에서 입금자명(결제 코드)과 금액이 맞는지 확인한 뒤 처리하세요. 가입비와 VIP가 함께 나와요. 사용자에게는 15분 이내 확인이라고 안내돼 있어요."
       />
       <div className="mb-6 flex gap-6 border-b border-line text-[14px]">
         {TABS.map((t) => (
@@ -110,6 +111,9 @@ export default function PaymentsPage() {
                 <div>
                   <span className="font-mono text-[16px] font-semibold tracking-wider">{p.code}</span>
                   <span className="num ml-3 text-[14px]">{p.amount.toLocaleString()}원</span>
+                  <span className={cn("ml-2 rounded px-1.5 py-0.5 text-[11.5px]", p.kind === "VIP" ? "bg-brick-wash text-brick" : "bg-paper-deep text-ink-soft")}>
+                    {p.kind === "VIP" ? "VIP" : "가입비"}
+                  </span>
                   {p.user_status && p.user_status !== "ACTIVE" && (
                     <span className="ml-2 rounded bg-paper-deep px-1.5 py-0.5 text-[11.5px] text-ink-soft">
                       {USER_STATUS_LABEL[p.user_status] ?? p.user_status}
@@ -144,7 +148,7 @@ export default function PaymentsPage() {
                       입금 확인으로 바꾸기
                     </Button>
                   )}
-                  {view === "history" && p.status === "CONFIRMED" && (
+                  {view === "history" && p.status === "CONFIRMED" && p.kind === "SIGNUP" && (
                     <Button
                       size="sm"
                       variant="danger"
@@ -164,7 +168,7 @@ export default function PaymentsPage() {
       )}
       {view === "history" && (
         <p className="mt-4 text-[12.5px] text-ink-faint">
-          환불: 사용자가 고객센터 메일로 보낸 계좌로 먼저 송금한 뒤 [환불 처리]를 누르세요. 사진 검수를 받은 사용자(반려 포함)는 환불할 수 없어요.
+          가입비 환불: 사용자가 고객센터 메일로 보낸 계좌로 먼저 송금한 뒤 [환불 처리]를 누르세요. 사진 검수를 받은 사용자(반려 포함)는 환불할 수 없어요. VIP는 입금 확인 후 환불하지 않아요.
         </p>
       )}
     </>
