@@ -98,7 +98,7 @@ class Settings(BaseSettings):
 
     # --- 문의 ---
     # 학과 변경 요청·"내 학과가 목록에 없어요" 문의를 받는 메일 주소 (화면에 표시됨)
-    support_email: str = "jiwoon@private-matching.com"
+    support_email: str = "support@private-matching.com"
 
     # --- 메일 속 링크·운영진 알림 ---
     # 메일 본문에 넣는 사이트 주소 (사진 검수 결과, 관리자 알림)
