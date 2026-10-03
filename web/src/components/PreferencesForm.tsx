@@ -10,9 +10,9 @@ import { GENDER_LABEL, type MyProfile, type Preferences } from "@/lib/types";
 import { useKstNewDay } from "@/lib/useKstNewDay";
 
 // 가로 바 양 끝 기본값 (서버가 age_floor / age_cap을 보내면 그 값을 쓴다)
-const AGE_FLOOR = 19;
+const AGE_FLOOR = 18;
 const AGE_CAP = 35;
-// 처음 설정할 때 가로 바의 시작 위치: 왼쪽 끝(가입 가능한 최소 나이, 19세)부터 27세까지
+// 처음 설정할 때 가로 바의 시작 위치: 왼쪽 끝(가입 가능한 최소 나이, 18세)부터 27세까지 (2026-10-03: 19→18)
 // (예전 기본값 20~27세는 19세 신입생을 기본으로 빼버려서 2026-09-30에 바꿈)
 const DEFAULT_MAX_AGE = 27;
 const DEFAULT_RANGE: [number, number] = [AGE_FLOOR, DEFAULT_MAX_AGE];

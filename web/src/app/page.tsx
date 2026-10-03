@@ -103,7 +103,7 @@ export default function Landing() {
 
         <footer className="flex flex-col gap-2 py-12 text-[12.5px] text-ink-faint sm:flex-row sm:justify-between">
           <div className="space-y-1">
-            <p>만 19세 이상 재학생만 이용할 수 있습니다.</p>
+            <p>만 18세 이상 재학생만 이용할 수 있습니다.</p>
             <p>
               <SupportContact />
             </p>

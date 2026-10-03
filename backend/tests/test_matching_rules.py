@@ -231,7 +231,7 @@ def test_max_age_at_cap_means_no_upper_limit(sent_codes, db):
 
 def test_age_range_rejects_below_signup_age_and_reversed_range(sent_codes, db):
     a = signup(sent_codes, db, "a@hufs.ac.kr")
-    assert a.put("/api/v1/me/preferences", json={"min_age": 18, "max_age": 25, "campus_mode": "ALL"}).status_code == 422
+    assert a.put("/api/v1/me/preferences", json={"min_age": 17, "max_age": 25, "campus_mode": "ALL"}).status_code == 422
     assert a.put("/api/v1/me/preferences", json={"min_age": 27, "max_age": 22, "campus_mode": "ALL"}).status_code == 422
 
 

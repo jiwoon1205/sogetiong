@@ -47,8 +47,8 @@ class PreferencesRequest(BaseModel):
     - max_age가 null이거나 가로 바 오른쪽 끝(35) 이상 → "35세 이상" = 위쪽 제한 없음 (서버가 null로 저장)
     """
 
-    min_age: int | None = Field(default=None, ge=19, le=60)
-    max_age: int | None = Field(default=None, ge=19, le=60)
+    min_age: int | None = Field(default=None, ge=18, le=60)
+    max_age: int | None = Field(default=None, ge=18, le=60)
     campus_mode: Literal["MY", "ALL", "SELECTED"] = "ALL"
     campus_ids: list[uuid.UUID] = Field(default_factory=list, max_length=20)
     exclude_same_department: bool = False

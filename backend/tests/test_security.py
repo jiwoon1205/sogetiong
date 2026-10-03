@@ -230,7 +230,7 @@ def _register(sent_codes, db, email, **overrides):
 
 def test_register_rules(sent_codes, db):
     r, _ = _register(sent_codes, db, "young@hufs.ac.kr", birth_date=date.today().replace(year=date.today().year - 17).isoformat())
-    assert r.status_code == 400  # 만 19세 미만
+    assert r.status_code == 400  # 만 18세 미만
     r, _ = _register(sent_codes, db, "weak@hufs.ac.kr", password="1")
     assert r.status_code == 422
     r, _ = _register(sent_codes, db, "digits@hufs.ac.kr", password="12345678")
@@ -251,6 +251,15 @@ def test_register_rules(sent_codes, db):
         "agree_terms": True, "agree_privacy": True, "agree_appearance_public": True,
     })
     assert r2.status_code == 400
+
+
+def test_register_allows_age_18(sent_codes, db):
+    """2026-10-03: 만 18세도 가입할 수 있다."""
+    from datetime import timedelta
+
+    birth = date.today().replace(year=date.today().year - 18) - timedelta(days=30)  # 만 18세 (생일 한 달 지남)
+    r, _ = _register(sent_codes, db, "eighteen@hufs.ac.kr", birth_date=birth.isoformat())
+    assert r.status_code in (200, 201), r.text
 
 
 def test_cookie_flags_and_login_case_insensitive(sent_codes, db):
