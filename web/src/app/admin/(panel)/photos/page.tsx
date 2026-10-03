@@ -33,7 +33,7 @@ export default function PhotoQueue() {
 
   return (
     <>
-      <PageTitle eyebrow="사진 검수" title="검수 대기열" desc="먼저 올라온 순서대로 보여요. 열어보고 평가를 안 끝낸 사진도 여기 남아요. 정지된 사용자의 사진은 빠져요." />
+      <PageTitle eyebrow="사진 검수" title="검수 대기열" desc="최신순으로 보여요. 열어보고 평가를 안 끝낸 사진도 여기 남아요. 정지된 사용자의 사진은 빠져요." />
       <div className="mb-6 flex gap-6 border-b border-line text-[14px]">
         {TABS.map((t) => (
           <button key={t.value} onClick={() => setStatus(t.value)} className={status === t.value ? "-mb-px border-b-2 border-ink pb-3 font-semibold" : "pb-3 text-ink-faint hover:text-ink"}>

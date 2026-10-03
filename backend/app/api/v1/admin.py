@@ -212,7 +212,13 @@ def list_photo_reviews(
         query = db.query(UserPhoto).filter(
             UserPhoto.review_status == status_filter, UserPhoto.upload_status != "DELETED", UserPhoto.position == 0
         )
-    photos = query.order_by(UserPhoto.uploaded_at.asc()).limit(100).all()
+    if status_filter in ("APPROVED", "REJECTED"):
+        # 승인·반려 탭: 최근에 평가한 사진이 맨 위 (내림차순)
+        query = query.order_by(UserPhoto.reviewed_at.desc(), UserPhoto.uploaded_at.desc())
+    else:
+        # 대기 탭: 최근에 올라온 사진이 맨 위 (내림차순)
+        query = query.order_by(UserPhoto.uploaded_at.desc())
+    photos = query.limit(100).all()
     # 묶음마다 사진이 몇 장인지 (쿼리 1번)
     counts = dict(
         db.query(UserPhoto.submission_id, func.count(UserPhoto.id))
