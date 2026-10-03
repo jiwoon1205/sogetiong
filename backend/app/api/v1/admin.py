@@ -265,16 +265,21 @@ def get_photo_review(
 
 def _watermark(data: bytes, text: str) -> bytes:
     """관리자 이메일+시각을 사진에 새겨서, 화면 캡처가 유출되면 누가 봤는지 알 수 있게 한다 (설계도 §39)."""
+    # 예전에는 큰 글씨를 6줄이나 찍어서 얼굴이 가려졌다.
+    # 이제 작은 글씨를 반투명하게 위·아래 가장자리에만 1줄씩 찍어, 사진 판독을 방해하지 않게 한다.
     with Image.open(BytesIO(data)) as image:
-        image = image.convert("RGB")
-        draw = ImageDraw.Draw(image)
-        font = ImageFont.load_default(size=max(14, image.width // 28))
-        step = max(image.height // 6, 40)
-        for y in range(10, image.height, step):
-            draw.text((13, y + 2), text, fill=(0, 0, 0), font=font)
-            draw.text((12, y), text, fill=(255, 255, 255), font=font)
+        image = image.convert("RGBA")
+        overlay = Image.new("RGBA", image.size, (0, 0, 0, 0))
+        draw = ImageDraw.Draw(overlay)
+        font = ImageFont.load_default(size=max(11, image.width // 70))
+        line_h = font.getbbox(text)[3]
+        margin = max(6, image.width // 100)
+        for y in (margin, image.height - line_h - margin):
+            draw.text((margin + 1, y + 1), text, fill=(0, 0, 0, 90), font=font)  # 그림자
+            draw.text((margin, y), text, fill=(255, 255, 255, 130), font=font)  # 반투명 흰 글씨
+        image = Image.alpha_composite(image, overlay).convert("RGB")
         out = BytesIO()
-        image.save(out, format="JPEG", quality=85)
+        image.save(out, format="JPEG", quality=90)
         return out.getvalue()
 
 
@@ -439,7 +444,12 @@ def list_users(
     # 예전에는 최근 100명만 보여서, 가입자가 100명을 넘으면 오래된 사람(탈퇴자 포함)이 목록에서 사라졌다.
     # 베타 예상 최대 인원(~500명)을 넉넉히 넘게 보여주고, 전체 수(total)를 함께 알려준다.
     total = query.count()
-    rows = query.order_by(User.created_at.desc()).limit(USER_LIST_LIMIT).all()
+    if status_filter == "DELETED":
+        # 탈퇴한 사용자: 마지막 접속이 최근인 사람부터 (접속 기록이 없으면 맨 아래)
+        query = query.order_by(User.last_active_at.is_(None), User.last_active_at.desc(), User.created_at.desc())
+    else:
+        query = query.order_by(User.created_at.desc())
+    rows = query.limit(USER_LIST_LIMIT).all()
     stages = _onboarding_stages(db, [u.id for u, _, _, _ in rows])
     return {
         "total": total,
