@@ -1,5 +1,5 @@
 # Project Context
-_Last updated: 2026-10-02 01:25 (KST)_
+_Last updated: 2026-10-03 (KST)_
 
 > 기준 문서는 claude.ai 프로젝트의 `00 프로젝트 현황 (먼저 읽기)`이다. 이 파일은 "어제 무엇을 했고 오늘 무엇부터 할지"만 짧게 담는다.
 
