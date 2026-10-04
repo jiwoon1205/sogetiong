@@ -119,7 +119,7 @@ function DeleteAccount({ open, onClose, onDone }: { open: boolean; onClose: () =
       <form onSubmit={submit} className="space-y-4">
         <p className="text-[14.5px] font-semibold text-brick">탈퇴하면 되돌릴 수 없어요.</p>
         <ul className="list-disc space-y-1.5 pl-5 text-[14px] leading-relaxed text-ink-soft">
-          <li>다른 사람에게는 바로 보이지 않아요. 공개 프로필, 관심사, 매칭 조건, 사진은 신고 확인을 위해 7일 동안 운영진만 볼 수 있게 보관한 뒤 자동으로 삭제돼요.</li>
+          <li>다른 사람에게는 바로 보이지 않아요. 프로필, 관심사, 매칭 조건은 신고 확인을 위해 7일 동안 보관한 뒤 자동으로 삭제돼요.</li>
           <li>진행 중인 대화는 모두 끝나요. 다시 가입해도 예전 매칭·대화·사진 평가는 돌아오지 않아요.</li>
           <li>생년월일·실명·학번 등 가입 정보와 채팅·신고 기록은 분쟁·신고 처리를 위해 일정 기간 보관한 뒤 삭제돼요.</li>
         </ul>
