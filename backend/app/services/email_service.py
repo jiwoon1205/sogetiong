@@ -117,7 +117,7 @@ class EmailService:
         _send(
             email,
             f"[운영] 입금 확인 요청 {code} ({amount:,}원)",
-            f"사용자가 가입비를 입금했다고 알려 왔어요.\n\n"
+            f"사용자가 이용권(기본·VIP)을 입금했다고 알려 왔어요.\n\n"
             f"입금자명(결제 코드): {code}\n금액: {amount:,}원\n\n"
             f"통장 확인 후 처리하기: {site}/admin/payments\n\n"
             "사용자에게는 \"15분 이내 확인\"이라고 안내돼 있어요.",

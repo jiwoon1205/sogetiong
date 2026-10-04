@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.core.rate_limit import client_ip, enforce_rate_limit
 from app.core.security import pseudonymous_code, verify_password
-from app.core.time import as_utc, kst_today, utcnow
+from app.core.time import KST, as_utc, kst_today, utcnow
 from app.db.session import get_db
 from app.deps import CurrentAdmin, get_admin_pending_mfa, get_current_admin, require_permission
 from app.models.admin import AdminUser, AuditLog
@@ -30,11 +30,12 @@ from app.schemas.admin import (
     EvaluationRequest,
     ReportUpdateRequest,
     AppearanceTierRequest,
+    MembershipAdjustRequest,
     UserDepartmentRequest,
     UserGenderRequest,
     UserStatusRequest,
 )
-from app.services import admin_alert_service, payment_service, profile_service, withdrawal_service
+from app.services import admin_alert_service, membership_service, payment_service, profile_service, vip_service, withdrawal_service
 from app.services.email_service import EmailDeliveryError, EmailService
 from app.services.audit_service import AuditService
 from app.services.notification_service import notify
@@ -159,6 +160,18 @@ def dashboard(admin: CurrentAdmin = Depends(require_permission("dashboard:read")
         "reports_open": c(db.query(Report.id).filter(Report.status.in_(["OPEN", "IN_REVIEW"]))),
         # 가입비 입금 확인 대기 (2026-10-03)
         "payments_pending": c(db.query(Payment.id).filter(Payment.status == "REQUESTED")),
+        # 이용권 (2026-10-04 구독제): 지금 이용 중 / VIP / 7일 안에 끝남 (정상 계정, 테스트 계정 제외)
+        **_membership_counts(db, c),
+    }
+
+
+def _membership_counts(db: Session, c) -> dict:
+    now = utcnow()
+    active = db.query(User.id).filter(User.status == "ACTIVE", User.member_until > now)
+    return {
+        "members_active": c(active),
+        "members_vip": c(db.query(User.id).filter(User.status == "ACTIVE", User.vip_until > now)),
+        "members_expiring_week": c(active.filter(User.member_until <= now + timedelta(days=7))),
     }
 
 
@@ -359,6 +372,7 @@ def evaluate_photo(
         after = {**evaluation.scores(), "tier": evaluation.tier}
         action = "EVALUATION_UPDATE" if before else "EVALUATION_CREATE"
         notify(db, photo.user_id, "PHOTO_REVIEWED", "사진 검수가 완료되었어요", "외적 특징 평가가 프로필에 반영되었습니다.", photo.id)
+        _start_membership(db, photo.user_id)
     else:
         photo.review_status = "REJECTED"
         photo.reject_reason = payload.reject_reason
@@ -475,7 +489,7 @@ def _onboarding_stages(db: Session, user_ids: list[uuid.UUID]) -> dict[uuid.UUID
 
     PROFILE     : 프로필(학과) 미완료
     PREFERENCES : 매칭 조건 미설정
-    PAYMENT     : 가입비 입금 전 (또는 "입금 없음" 처리됨) — 2026-10-03
+    PAYMENT     : 첫 이용권 입금 전 (또는 "입금 없음" 처리됨) — 2026-10-03
     PAYMENT_CHECK : "입금했어요"를 누르고 관리자 확인 대기
     PHOTO       : 사진 미제출 (반려 후 다시 안 낸 경우 포함)
     REVIEW      : 사진 검수 대기
@@ -500,7 +514,7 @@ def _onboarding_stages(db: Session, user_ids: list[uuid.UUID]) -> dict[uuid.UUID
     unpaid = {
         u.id
         for u in db.query(User).filter(User.id.in_(user_ids)).all()
-        if payment_service.needs_signup_payment(u)
+        if membership_service.needs_first_payment(u, has_approved_photo=u.id in approved)
     }
     payment_status = payment_service.latest_status_by_user(db, list(unpaid))
     pending = {uid for uid, st in photo_rows if st in ("PENDING", "IN_REVIEW")}
@@ -543,6 +557,11 @@ def get_user(
         "is_beta_member": user.is_beta_member,
         "signup_paid_at": user.signup_paid_at.isoformat() if user.signup_paid_at else None,
         "vip_until": user.vip_until.isoformat() if user.vip_until else None,
+        # 이용권 (2026-10-04 구독제): 끝나는 시각, 아직 시작 안 한 일수(사진 검수 후 시작), 상태
+        "member_until": user.member_until.isoformat() if user.member_until else None,
+        "member_days_banked": user.member_days_banked or 0,
+        "membership_status": membership_service.status(user),
+        "membership_free": vip_service.is_vip_tester(user),
         "profile": profile_service.build_card(db, profile) if profile else None,
         # 카드는 공개 설정에 따라 캠퍼스·학과가 숨겨질 수 있어서, 관리자에게는 실제 값을 따로 보여준다
         "campus": {"id": str(profile.campus_id), "name": profile.campus.name} if profile else None,
@@ -609,6 +628,39 @@ def get_user(
         AuditService.record(db, admin_id=admin.id, action="USER_PRIVATE_VIEW", target_type="USER", target_id=user.id, request=request)
     db.commit()
     return result
+
+
+@router.post("/users/{user_id}/membership-adjust")
+def adjust_user_membership(
+    user_id: uuid.UUID,
+    payload: MembershipAdjustRequest,
+    request: Request,
+    admin: CurrentAdmin = Depends(require_permission("payments:confirm")),
+    db: Session = Depends(get_db),
+):
+    """이용권 기간을 며칠 늘리거나 줄인다 (2026-10-04 D8). 최고 관리자만, 사유는 감사 로그에 남는다.
+
+    남아 있으면 끝나는 날에서 더하거나 빼고, 끝났거나 없으면 지금부터 더한다 (빼기는 무시).
+    """
+    user = _user_or_404(db, user_id)
+    if user.deleted_at is not None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="탈퇴한 사용자는 바꿀 수 없습니다.")
+    if payload.days == 0:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="0일은 바꿀 게 없습니다.")
+    before = user.member_until.isoformat() if user.member_until else None
+    membership_service.adjust(user, payload.days)
+    after = user.member_until.isoformat() if user.member_until else None
+    AuditService.record(
+        db,
+        admin_id=admin.id,
+        action="MEMBERSHIP_ADJUST",
+        target_type="USER",
+        target_id=user.id,
+        request=request,
+        metadata={"days": payload.days, "before": before, "after": after, "reason": payload.reason},
+    )
+    db.commit()
+    return {"user_id": str(user.id), "member_until": after, "membership_status": membership_service.status(user)}
 
 
 @router.patch("/users/{user_id}/status")
@@ -768,8 +820,20 @@ def update_user_appearance_tier(
             request=request,
             metadata={"before": before, "after": payload.tier, "reason": payload.reason},
         )
+        _start_membership(db, user.id)
     db.commit()
     return {"user_id": str(user.id), "appearance_tier": payload.tier}
+
+
+def _start_membership(db: Session, user_id: uuid.UUID) -> None:
+    """등급이 정해져 추천이 열리면, 사진 검수 전에 낸 이용권(쌓아 둔 일수)을 지금부터 센다 (2026-10-04 D1)."""
+    owner = db.get(User, user_id)
+    if owner is None or not (owner.member_days_banked or 0):
+        return
+    db.flush()  # 방금 추가한 평가·사진 상태가 can_start에 보이게
+    if membership_service.start_banked(db, owner):
+        days = (owner.member_until and membership_service.days_left(owner)) or get_settings().membership_days
+        notify(db, owner.id, "MEMBERSHIP_STARTED", "이용권이 시작되었어요", f"오늘부터 {days}일 동안 추천을 볼 수 있어요.", None)
 
 
 # ---------- 대화 열람 ----------
@@ -1018,10 +1082,10 @@ def update_report(
 PAYMENT_HISTORY_LIMIT = 300
 
 
-def _payment_row(p: Payment, user_status: str | None, admin_emails: dict, reviewed: set) -> dict:
+def _payment_row(p: Payment, user_status: str | None, admin_emails: dict, reviewed: set, started: set) -> dict:
     return {
         "payment_id": str(p.id),
-        "kind": p.kind,  # SIGNUP(가입비) / VIP
+        "kind": p.kind,  # SIGNUP(기본 이용권, 예전 이름 가입비) / VIP
         "code": p.code,
         "amount": p.amount,
         "status": p.status,
@@ -1029,8 +1093,9 @@ def _payment_row(p: Payment, user_status: str | None, admin_emails: dict, review
         "requested_at": p.requested_at.isoformat() if p.requested_at else None,
         "processed_at": p.processed_at.isoformat() if p.processed_at else None,
         "processed_by": admin_emails.get(p.processed_by_admin_id),
-        # 환불은 가입비만: 입금 확인된 결제 + 사진 검수를 한 번도 안 받은 경우. VIP는 확인 후 환불 없음 (2026-10-03)
-        "refundable": p.kind == "SIGNUP" and p.status == "CONFIRMED" and p.user_id not in reviewed,
+        # 환불은 기본 이용권만: 입금 확인 + 사진 검수를 한 번도 안 받음 + 이용권이 아직 시작 전 (2026-10-04 D6).
+        # 연장 결제(이미 이용권을 쓰기 시작한 사람)와 VIP는 확인 후 환불 없음.
+        "refundable": p.kind == "SIGNUP" and p.status == "CONFIRMED" and p.user_id not in reviewed and p.user_id not in started,
     }
 
 
@@ -1064,7 +1129,12 @@ def list_payments(
         if confirmed_users
         else set()
     )
-    return {"payments": [_payment_row(p, st, admin_emails, reviewed) for p, st in rows]}
+    started = (
+        {uid for (uid,) in db.query(User.id).filter(User.id.in_(confirmed_users), User.member_until.isnot(None))}
+        if confirmed_users
+        else set()
+    )
+    return {"payments": [_payment_row(p, st, admin_emails, reviewed, started) for p, st in rows]}
 
 
 def _payment_or_404(db: Session, payment_id: uuid.UUID) -> Payment:
@@ -1104,10 +1174,8 @@ def confirm_payment(
     payment.processed_by_admin_id = admin.id
     user = db.get(User, payment.user_id)
     if user is not None and payment.kind == "VIP":
-        # 확인한 순간부터 2주. VIP 중에는 살 수 없으므로 보통은 지금부터지만,
-        # 혹시 남은 기간이 있으면(입금 확인 직전에 다른 결제가 확인된 경우 등) 그 뒤에 이어 붙인다.
-        start = max(now, as_utc(user.vip_until) or now)
-        user.vip_until = start + timedelta(days=get_settings().vip_days)
+        # 확인한 순간부터 VIP 4주. 남아 있던 기본 이용권은 VIP 뒤로 밀린다 (2026-10-04 구독제)
+        membership_service.add_vip(db, user, now)
         notify(
             db,
             user.id,
@@ -1117,8 +1185,15 @@ def confirm_payment(
             payment.id,
         )
     elif user is not None:
-        user.signup_paid_at = now
-        notify(db, user.id, "PAYMENT_CONFIRMED", "입금이 확인되었어요", "이제 사진을 제출할 수 있어요.", payment.id)
+        if user.signup_paid_at is None:
+            user.signup_paid_at = now  # 첫 결제 시각 (기록용)
+        membership_service.add_membership(db, user, now)
+        if user.member_until is None:
+            body = "사진을 제출해 주세요. 사진 검수가 끝나 추천이 열리는 날부터 이용권 기간이 시작돼요."
+        else:
+            until = as_utc(user.member_until).astimezone(KST) - timedelta(seconds=1)
+            body = f"이용권이 {until.month}월 {until.day}일 밤 12시까지예요."
+        notify(db, user.id, "PAYMENT_CONFIRMED", "입금이 확인되었어요", body, payment.id)
     _record_payment(db, admin, request, payment, "PAYMENT_CONFIRM", before)
     db.commit()
     return {"payment_id": str(payment.id), "status": payment.status}
@@ -1170,12 +1245,19 @@ def refund_payment(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="입금 확인된 결제만 환불할 수 있습니다.")
     if payment_service.has_been_reviewed(db, payment.user_id):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="사진 검수를 받은 사용자는 환불할 수 없습니다.")
+    owner = db.get(User, payment.user_id)
+    if owner is not None and owner.member_until is not None:
+        # 이미 이용권을 쓰기 시작한 사람의 결제(연장 등)는 환불하지 않는다 (2026-10-04 D6)
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="이용권이 시작된 뒤에는 환불하지 않습니다.")
     payment.status = "REFUNDED"
     payment.processed_at = utcnow()
     payment.processed_by_admin_id = admin.id
-    user = db.get(User, payment.user_id)
+    user = owner
     if user is not None:
-        user.signup_paid_at = None
+        # 쌓아 둔 일수에서 이 결제만큼 뺀다. 남은 게 없으면 다시 "첫 입금 전" 상태 → 사진을 낼 수 없다.
+        user.member_days_banked = max(0, (user.member_days_banked or 0) - get_settings().membership_days)
+        if user.member_days_banked == 0:
+            user.signup_paid_at = None
     db.query(UserPhoto).filter(
         UserPhoto.user_id == payment.user_id, UserPhoto.review_status.in_(["PENDING", "IN_REVIEW"])
     ).update({"review_status": "SUPERSEDED"}, synchronize_session=False)

@@ -23,7 +23,7 @@ type UserRow = {
 const STAGE_LABEL: Record<string, string> = {
   PROFILE: "프로필 미완료",
   PREFERENCES: "매칭 조건 미설정",
-  PAYMENT: "가입비 입금 전",
+  PAYMENT: "이용권 입금 전",
   PAYMENT_CHECK: "입금 확인 대기",
   PHOTO: "사진 미제출",
   REVIEW: "사진 검수 대기",

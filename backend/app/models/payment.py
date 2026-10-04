@@ -14,11 +14,11 @@ from app.models._common import created_at, pk
 #   REJECTED  : 관리자가 "입금 없음"으로 처리 → 사용자가 다시 "입금했어요"를 누를 수 있다
 #   REFUNDED  : 환불함 (사진 검수 전에만 가능) → 다시 입금 전 상태가 된다
 PAYMENT_STATUSES = ("CREATED", "REQUESTED", "CONFIRMED", "REJECTED", "REFUNDED")
-PAYMENT_KINDS = ("SIGNUP", "VIP")  # VIP = 2주 이용권 (2026-10-03)
+PAYMENT_KINDS = ("SIGNUP", "VIP")  # SIGNUP = 기본 이용권 4주, VIP = VIP 4주 (기본 포함) — 2026-10-04 구독제
 
 
 class Payment(Base):
-    """가입비·VIP 입금 기록. 사용자는 입금자명에 실명 대신 결제 코드(code)를 적는다.
+    """기본 이용권(kind=SIGNUP, 예전 가입비)·VIP 입금 기록. 사용자는 입금자명에 실명 대신 결제 코드(code)를 적는다.
 
     관리자 화면에는 결제 코드·금액만 보여주고 닉네임·이메일은 보여주지 않는다 (익명성).
     """

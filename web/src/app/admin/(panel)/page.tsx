@@ -22,6 +22,9 @@ type Stats = {
   matches_total: number;
   reports_open: number;
   payments_pending?: number;
+  members_active?: number;
+  members_vip?: number;
+  members_expiring_week?: number;
 };
 
 type Tile = { key: keyof Stats; label: string; hint?: string | ((s: Stats) => string); href?: string; urgent?: boolean; perm?: string };
@@ -31,6 +34,13 @@ const TILES: Tile[] = [
   { key: "reports_open", label: "처리할 신고", href: "/admin/reports", urgent: true },
   // 가입비 입금 확인 (2026-10-03). 통장을 보는 최고 관리자에게만 보인다
   { key: "payments_pending", label: "입금 확인 대기", hint: "15분 이내 확인", href: "/admin/payments", urgent: true, perm: "payments:confirm" },
+  // 이용권 (2026-10-04 구독제). 유료화를 켜기 전에는 0
+  {
+    key: "members_active",
+    label: "이용권 이용 중",
+    hint: (s) => `VIP ${(s.members_vip ?? 0).toLocaleString()}명 · 7일 안에 끝남 ${(s.members_expiring_week ?? 0).toLocaleString()}명`,
+    perm: "payments:confirm",
+  },
   { key: "users_active", label: "활성 사용자", hint: "사진 검수 완료 + 최근 7일 접속" },
   { key: "users_active_today", label: "오늘 접속" },
   { key: "users_total", label: "전체 가입자", hint: "탈퇴·정지 포함" },

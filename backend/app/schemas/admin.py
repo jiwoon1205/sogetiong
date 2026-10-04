@@ -80,3 +80,13 @@ class UserStatusRequest(BaseModel):
 class ReportUpdateRequest(BaseModel):
     status: Literal["IN_REVIEW", "RESOLVED", "DISMISSED"]
     admin_note: str | None = Field(default=None, max_length=1000)
+
+
+class MembershipAdjustRequest(BaseModel):
+    """POST /admin/users/{user_id}/membership-adjust — 이용권 기간 늘리기/줄이기 (2026-10-04 D8)
+
+    입금 확인이 늦었을 때 보상, 서버 장애 보상, 실수 정정용. 사유는 감사 로그에 남는다.
+    """
+
+    days: int = Field(ge=-60, le=60)
+    reason: str = Field(min_length=2, max_length=300)

@@ -35,12 +35,19 @@ class User(Base):
     deleted_nickname: Mapped[str | None] = mapped_column(String(40), nullable=True)
     deleted_gender: Mapped[str | None] = mapped_column(String(10), nullable=True)
     # 가입비 (2026-10-03, 마이그레이션 0014)
-    # is_beta_member: 베타 기간 가입자 → 가입비 면제. SIGNUP_FEE_ENABLED가 꺼져 있는 동안 가입한 사람은 모두 true.
-    # signup_paid_at: 관리자가 가입비 입금을 확인한 시각 (환불하면 다시 비운다)
+    # is_beta_member: 유료화(MEMBERSHIP_ENABLED)를 켜기 전에 가입한 사람 (기록용, 2026-10-04부터 결제 면제 아님)
+    # signup_paid_at: 첫 이용권 입금을 확인한 시각 (기록용. 첫 이용권을 환불하면 다시 비운다)
     is_beta_member: Mapped[bool] = mapped_column(Boolean, default=True, server_default=true(), nullable=False)
     signup_paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # VIP가 끝나는 시각 (2026-10-03, 마이그레이션 0015). 이 시각이 지금보다 뒤면 VIP다.
     vip_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # 이용권 (2026-10-04 구독제, 마이그레이션 0016). 계산은 services/membership_service.py에만 있다.
+    # member_until: 이용권(기본·VIP 포함)이 끝나는 시각. 지금보다 뒤면 추천을 볼 수 있다. VIP를 사면 이것도 늘어난다.
+    # member_days_banked: 아직 시작하지 않은 이용권 일수. 사진 검수 전에 낸 첫 이용권은 여기에 쌓아 두고,
+    #   등급이 정해져 추천이 열리는 순간부터 센다.
+    # ※ is_beta_member·signup_paid_at은 2026-10-04부터 결제 판단에 쓰지 않는다 (기록용). 베타 회원도 이용권이 필요하다.
+    member_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    member_days_banked: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
 
     public_profile = relationship("PublicProfile", back_populates="user", uselist=False)
     private_profile = relationship("PrivateProfile", back_populates="user", uselist=False)

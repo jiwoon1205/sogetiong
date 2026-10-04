@@ -33,3 +33,11 @@ export function dateTime(iso: string): string {
 export function cn(...parts: Array<string | false | null | undefined>): string {
   return parts.filter(Boolean).join(" ");
 }
+
+/** 이용권이 끝나는 날 (2026-10-04). 서버는 "그날 밤 12시"(= 다음 날 0시, 한국 시간)를 보내므로 1초 빼서 그날로 보여준다.
+ *  예: "11월 26일 밤 12시까지" */
+export function untilDay(iso: string): string {
+  const d = new Date(parseTime(iso).getTime() - 1000);
+  const day = d.toLocaleDateString("ko-KR", { timeZone: "Asia/Seoul", month: "long", day: "numeric" });
+  return `${day} 밤 12시까지`;
+}

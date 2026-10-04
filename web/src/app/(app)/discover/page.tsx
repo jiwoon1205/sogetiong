@@ -1,11 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { MatchCelebration } from "@/components/MatchCelebration";
+import { MembershipRenew } from "@/components/PaymentStep";
 import { ProfileCard } from "@/components/ProfileCard";
 import { Button, ButtonLink, Notice, Spinner } from "@/components/ui";
 import { ApiError, api, errorMessage } from "@/lib/api";
 import { markMatchSeen } from "@/lib/seenMatches";
+import { useSession } from "@/lib/session";
 import { useKstNewDay } from "@/lib/useKstNewDay";
 import type { Card } from "@/lib/types";
 
@@ -24,9 +27,9 @@ const BLOCKED_COPY: Record<string, { title: string; body: string; href: string; 
     cta: "학과 선택하기",
   },
   PREFERENCES_REQUIRED: { title: "매칭 조건을 정해주세요", body: "어떤 사람을 만나고 싶은지 알려주면 추천을 시작할게요.", href: "/settings", cta: "매칭 조건 설정" },
-  // 가입비 입금 확인 전 (2026-10-03)
+  // 첫 이용권 입금 확인 전 (2026-10-03)
   PAYMENT_REQUIRED: {
-    title: "가입비 입금을 기다리고 있어요",
+    title: "이용권 입금을 기다리고 있어요",
     body: "입금이 확인되면 사진을 제출하고 추천을 받을 수 있어요. 입금 후 15분 이내 확인돼요.",
     href: "/onboarding",
     cta: "입금 안내 보기",
@@ -54,6 +57,7 @@ const BLOCKED_COPY: Record<string, { title: string; body: string; href: string; 
 };
 
 export default function DiscoverPage() {
+  const { me, refresh } = useSession();
   const [state, setState] = useState<State>({ kind: "loading" });
   const [busy, setBusy] = useState(false);
   // 방금 서로 좋아요가 된 상대 → 축하 화면
@@ -123,12 +127,18 @@ export default function DiscoverPage() {
       } catch (err) {
         // 하루 한도를 다 쓴 경우 (다른 기기에서 쓴 경우 등)
         if (action === "like" && err instanceof ApiError && err.status === 429) setLikes((prev) => (prev ? { ...prev, left: 0 } : prev));
+        // 보는 사이에 이용권이 끝난 경우 → 이용권 화면으로
+        if (err instanceof ApiError && err.code === "MEMBERSHIP_REQUIRED") {
+          setState({ kind: "blocked", code: err.code });
+          void refresh();
+          return;
+        }
         setError(errorMessage(err));
       } finally {
         setBusy(false);
       }
     },
-    [state, busy, load, likes],
+    [state, busy, load, likes, refresh],
   );
 
   // 키보드: ← 넘기기, → 좋아요
@@ -165,6 +175,19 @@ export default function DiscoverPage() {
   function renderBody() {
     if (state.kind === "loading") return <Spinner label="오늘의 추천을 고르는 중" />;
     if (state.kind === "error") return <Notice tone="error">{state.message}</Notice>;
+    if (state.kind === "blocked" && state.code === "MEMBERSHIP_REQUIRED") {
+      const m = me.membership;
+      return (
+        <MembershipEnded
+          ended={m?.status === "expired"}
+          showVip={Boolean(me.vip?.visible)}
+          onActivated={() => {
+            void refresh();
+            void load();
+          }}
+        />
+      );
+    }
     if (state.kind === "blocked") {
       const copy = BLOCKED_COPY[state.code] ?? BLOCKED_COPY.PROFILE_REQUIRED;
       return (
@@ -196,6 +219,7 @@ export default function DiscoverPage() {
           </p>
         </div>
 
+        <MembershipWarning />
         {likes && <LikeMeter left={likes.left} limit={likes.limit} base={likes.base} vip={likes.vip} />}
         {likes && <LikeIntro label={limitLabel(likes)} />}
 
@@ -318,6 +342,45 @@ function LikeIntro({ label }: { label: string }) {
         알겠어요
       </Button>
     </div>
+  );
+}
+
+/** 이용권이 없거나 끝났을 때 (2026-10-04 구독제). 대화는 계속할 수 있다. */
+function MembershipEnded({ ended, showVip, onActivated }: { ended: boolean; showVip: boolean; onActivated: () => void }) {
+  return (
+    <div className="mx-auto max-w-app py-10">
+      <div className="text-center">
+        <div className="mx-auto mb-8 h-px w-12 bg-ink" />
+        <h1 className="font-serif text-[23px] font-semibold">{ended ? "이용권이 끝났어요" : "이용권이 필요해요"}</h1>
+        <p className="mx-auto mt-3 max-w-xs text-[14.5px] leading-relaxed text-ink-soft">
+          이용권이 있어야 추천을 보고 좋아요를 보낼 수 있어요. 이미 매칭된 사람과 대화는 계속할 수 있어요.
+        </p>
+      </div>
+      <div className="mt-8 space-y-4">
+        <MembershipRenew onActivated={onActivated} />
+        {showVip && (
+          <Link
+            href="/liked"
+            className="block rounded-card border border-line bg-paper-card px-5 py-4 text-center text-[14px] hover:bg-paper-deep/60"
+          >
+            <span className="font-semibold">VIP 4주</span> <span className="text-ink-soft">· 기본 이용권 포함 · 받은 LIKE 보기</span>
+          </Link>
+        )}
+        <p className="text-center text-[12.5px] text-ink-faint">자동 결제는 없어요. 기간이 끝나면 다시 사면 돼요.</p>
+      </div>
+    </div>
+  );
+}
+
+/** 이용권이 며칠 안 남았을 때 추천 화면 위에 띄우는 띠 (알림은 보내지 않는다, 2026-10-04 D3) */
+function MembershipWarning() {
+  const { me } = useSession();
+  const m = me.membership;
+  if (!m || !m.enabled || m.free || m.status !== "active" || m.days_left === null || m.days_left > m.warn_days) return null;
+  return (
+    <Link href="/settings#membership" className="mb-4 block rounded-md border border-brick/30 bg-brick-wash/60 px-4 py-2.5 text-[13px] text-brick">
+      이용권이 <b className="num">{m.days_left}</b>일 남았어요 · 미리 연장하면 끊기지 않아요 →
+    </Link>
   );
 }
 

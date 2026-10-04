@@ -8,7 +8,7 @@ import uuid
 from collections import defaultdict
 from datetime import datetime, timedelta
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
@@ -227,7 +227,7 @@ def has_pending_photo(db: Session, user_id: uuid.UUID) -> bool:
     )
 
 
-def discoverable_profiles_query(db: Session, university_id: uuid.UUID):
+def discoverable_profiles_query(db: Session, university_id: uuid.UUID, *, members_only: bool = True):
     """추천 후보가 될 수 있는 프로필: 활성 계정 + 같은 학교 + 승인된 사진 + 외모 등급 + 매칭 조건 설정.
 
     외모 등급은 "가장 최근 평가"에 있어야 한다 → 등급 없는 예전 평가만 있는 사람은
@@ -236,7 +236,7 @@ def discoverable_profiles_query(db: Session, university_id: uuid.UUID):
     approved = db.query(UserPhoto.user_id).filter(UserPhoto.review_status == "APPROVED")
     evaluated = db.query(AppearanceEvaluation.user_id).filter(AppearanceEvaluation.tier.isnot(None))
     with_prefs = db.query(MatchingPreference.user_id)
-    return (
+    query = (
         db.query(PublicProfile)
         .join(User, User.id == PublicProfile.user_id)
         .filter(
@@ -248,6 +248,16 @@ def discoverable_profiles_query(db: Session, university_id: uuid.UUID):
             PublicProfile.user_id.in_(with_prefs),
         )
     )
+    # 이용권이 끝난 사람은 남의 추천에 나오지 않는다 (2026-10-04 구독제 D5).
+    # LIKE를 받아도 답할 수 없기 때문. 이미 보낸 LIKE는 남는다 (VIP "받은 LIKE" 목록에는 나옴).
+    if members_only and get_settings().membership_enabled:
+        now = utcnow()
+        conditions = [User.member_until > now, User.vip_until > now]
+        emails = get_settings().vip_test_email_set
+        if emails:
+            conditions.append(func.lower(User.email).in_(emails))
+        query = query.filter(or_(*conditions))
+    return query
 
 
 def is_vip_tester(user: User) -> bool:

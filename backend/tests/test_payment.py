@@ -1,6 +1,7 @@
-"""가입비 직접 입금 (2026-10-03).
+"""이용권 직접 입금 (2026-10-03 가입비, 2026-10-04 구독제로 변경).
 
 흐름: 매칭 조건 → 결제 코드(CREATED) → "입금했어요"(REQUESTED) → 관리자 확인(CONFIRMED) → 사진 제출
+첫 이용권 4주는 사진 검수 후 추천이 열리는 날부터 센다 (기간 계산은 test_membership.py).
 """
 
 from datetime import datetime, timezone
@@ -36,7 +37,8 @@ def clock(monkeypatch):
 @pytest.fixture
 def fee_on(monkeypatch, clock):
     s = get_settings()
-    monkeypatch.setattr(s, "signup_fee_enabled", True)
+    monkeypatch.setattr(s, "membership_enabled", True)
+    monkeypatch.setattr(s, "vip_test_emails", "")
     monkeypatch.setattr(s, "payment_bank_name", "테스트은행")
     monkeypatch.setattr(s, "payment_account_number", "123-456-7890")
     monkeypatch.setattr(s, "payment_account_holder", "정지운")
@@ -131,9 +133,15 @@ def test_photo_blocked_until_confirmed(sent_codes, db, fee_on, mails):
     r = admin.post(f"/api/v1/admin/payments/{rows[0]['payment_id']}/confirm")
     assert r.status_code == 200, r.text
     assert pending(admin) == []
-    me = a.get("/api/v1/me").json()["onboarding"]
+    body = a.get("/api/v1/me").json()
+    me = body["onboarding"]
     assert me["payment_required"] is False and me["pays_signup_fee"] is True
-    assert a.get("/api/v1/me/payment").json() == {"required": False}
+    # 아직 시작 전: 사진 검수가 끝나 추천이 열리는 날부터 28일 (D1)
+    assert body["membership"]["status"] == "banked" and body["membership"]["banked_days"] == 28
+    assert body["membership"]["until"] is None
+    # 연장용으로 다시 열면 새 코드 (가입 단계는 끝남)
+    again = a.get("/api/v1/me/payment").json()
+    assert again["required"] is False and again["code"] != code
     upload_photo(a)  # 이제 사진 제출 가능
     assert admin.get("/api/v1/admin/users").json()["users"][0]["onboarding_stage"] == "REVIEW"
 
@@ -151,14 +159,16 @@ def test_payment_needs_profile_and_preferences_first(sent_codes, db, fee_on):
     assert a.post("/api/v1/me/payment/request").status_code == 409
 
 
-def test_beta_member_skips_payment(sent_codes, db, fee_on):
+def test_beta_member_also_pays(sent_codes, db, fee_on):
+    """2026-10-04 구독제: 베타 회원도 면제가 아니다."""
     a = new_user(sent_codes, db, "beta@hufs.ac.kr")
     user = db.query(User).filter(User.email == "beta@hufs.ac.kr").one()
-    assert user.is_beta_member is False  # 스위치를 켠 뒤 가입 → 일반 회원
+    assert user.is_beta_member is False  # 스위치를 켠 뒤 가입 → 기록상 일반 회원
     user.is_beta_member = True  # 베타 기간에 가입한 사람이라고 가정
     db.commit()
-    assert a.get("/api/v1/me").json()["onboarding"]["payment_required"] is False
-    upload_photo(a)
+    assert a.get("/api/v1/me").json()["onboarding"]["payment_required"] is True
+    r = a.post("/api/v1/me/photos", files={"file": ("me.jpg", b"x", "image/jpeg")})
+    assert r.status_code == 409 and r.json()["detail"] == "PAYMENT_REQUIRED"
 
 
 # ---------- 결제 가능 시간 (오전 6시 ~ 밤 12시) ----------
@@ -252,6 +262,10 @@ def test_approved_user_can_discover_after_payment(sent_codes, db, fee_on):
     admin.post(f"/api/v1/admin/payments/{pending(admin)[0]['payment_id']}/confirm")
     approve(admin, upload_photo(a))
     assert a.get("/api/v1/discover").status_code == 200
+    m = a.get("/api/v1/me").json()["membership"]
+    assert m["status"] == "active" and m["banked_days"] == 0 and 28 <= m["days_left"] <= 29
+    # 이용권이 시작되면 환불할 수 없다
+    assert history(admin)[0]["refundable"] is False
 
 
 # ---------- 권한 ----------
@@ -283,7 +297,7 @@ def test_codes_are_unique(sent_codes, db, fee_on):
 
 def test_fee_on_requires_account_settings(monkeypatch):
     s = get_settings()
-    monkeypatch.setattr(s, "signup_fee_enabled", True)
+    monkeypatch.setattr(s, "membership_enabled", True)
     monkeypatch.setattr(s, "payment_account_number", "")
     with pytest.raises(ValueError):
         s.validate_settings()

@@ -1,8 +1,10 @@
-"""가입비 직접 입금 (2026-10-03).
+"""이용권·VIP 직접 입금 (2026-10-03, 2026-10-04 구독제).
 
-흐름: 매칭 조건 저장 → 결제 코드 받기(CREATED) → "입금했어요"(REQUESTED)
-     → 관리자가 통장 확인 → CONFIRMED(사진 제출 열림) 또는 REJECTED(다시 요청 가능)
-환불(REFUNDED)은 사진 검수를 한 번도 받지 않았을 때만 된다.
+흐름: 결제 코드 받기(CREATED) → "입금했어요"(REQUESTED)
+     → 관리자가 통장 확인 → CONFIRMED(이용권 기간 추가, membership_service) 또는 REJECTED(다시 요청 가능)
+kind: SIGNUP = 기본 이용권 4주 (이름은 예전 그대로 둔다), VIP = VIP 4주 (기본 포함)
+환불(REFUNDED)은 기본 이용권이 아직 시작되지 않았고 사진 검수도 받지 않았을 때만 된다.
+누가 언제 내야 하는지는 membership_service에 있다.
 """
 
 import secrets
@@ -22,18 +24,6 @@ CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
 CODE_LENGTH = 6
 # 아직 처리가 끝나지 않은 결제 (사용자 한 명에 하나만 있다)
 OPEN_STATUSES = ("CREATED", "REQUESTED", "REJECTED")
-
-
-def pays_signup_fee(user: User) -> bool:
-    """가입비를 내는 회원인가 (이미 냈어도 true). 가입 단계 표시(가입비 단계 포함 여부)에 쓴다."""
-    return get_settings().signup_fee_enabled and not user.is_beta_member
-
-
-def needs_signup_payment(user: User) -> bool:
-    """가입비를 내야 하는데 아직 확인되지 않은 사람인가."""
-    if not get_settings().signup_fee_enabled:
-        return False
-    return not user.is_beta_member and user.signup_paid_at is None
 
 
 def is_payment_open(now: datetime | None = None) -> bool:
@@ -64,10 +54,10 @@ def get_or_create_payment(db: Session, user: User, kind: str = "SIGNUP", amount:
 
     같은 사람은 다시 들어와도 같은 코드를 본다. 확인·환불이 끝나면 다음에는 새 코드가 생긴다.
     amount: 지금 가격. 아직 "입금했어요"를 안 누른 결제(CREATED)는 지금 가격으로 맞춘다
-    → VIP 오픈 할인이 끝난 뒤에 예전 할인 코드로 입금하는 일이 없다. 누른 뒤에는 가격이 바뀌지 않는다.
+    → 가격을 바꾼 뒤 예전 가격 코드로 입금하는 일이 없다. 누른 뒤에는 가격이 바뀌지 않는다.
     """
     if amount is None:
-        amount = get_settings().signup_fee
+        amount = get_settings().membership_price
     payment = open_payment(db, user.id, kind)
     if payment is None:
         payment = Payment(user_id=user.id, kind=kind, amount=amount, code=_new_code(db), status="CREATED")
@@ -87,7 +77,7 @@ def has_been_reviewed(db: Session, user_id: uuid.UUID) -> bool:
 
 
 def latest_status_by_user(db: Session, user_ids: list[uuid.UUID]) -> dict[uuid.UUID, str]:
-    """사람별 가장 최근 가입비 결제 상태 (관리자 사용자 목록의 가입 단계용)."""
+    """사람별 가장 최근 기본 이용권 결제 상태 (관리자 사용자 목록의 가입 단계용)."""
     if not user_ids:
         return {}
     rows = (

@@ -17,7 +17,7 @@ from app.models.matching import Like, Match, MatchingPreference, Message, Report
 from app.models.profile import PublicProfile
 from app.models.user import User
 from app.schemas.matching import SendMessageRequest, TargetRequest
-from app.services import matching_service, payment_service, profile_service, vip_service
+from app.services import matching_service, membership_service, profile_service, vip_service
 from app.services.notification_service import has_unread, notify
 
 router = APIRouter()
@@ -33,8 +33,10 @@ def _viewer(db: Session, current: CurrentUser) -> matching_service.Person:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="DEPARTMENT_REQUIRED")
     if db.query(MatchingPreference.id).filter(MatchingPreference.user_id == current.id).first() is None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="PREFERENCES_REQUIRED")
-    # 가입비 입금 확인 전 (2026-10-03). 사진보다 먼저 안내한다.
-    if payment_service.needs_signup_payment(current.user):
+    # 첫 이용권 입금 전 (2026-10-03, 2026-10-04 구독제). 사진보다 먼저 안내한다 (가입 단계).
+    if membership_service.needs_first_payment(
+        current.user, has_approved_photo=profile_service.has_approved_photo(db, current.id)
+    ):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="PAYMENT_REQUIRED")
     if get_settings().require_approved_photo_to_discover and not profile_service.has_approved_photo(db, current.id):
         # 사진을 "냈는데 기다리는 중"과 "아직 안 냄(또는 반려)"을 나눠서 알려준다.
@@ -48,7 +50,18 @@ def _viewer(db: Session, current: CurrentUser) -> matching_service.Person:
     # 등급은 people_from_profiles가 이미 읽어 왔으므로 DB를 다시 조회하지 않는다.
     if viewer.tier is None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="EVALUATION_REQUIRED")
+    _require_membership(db, current)
     return viewer
+
+
+def _require_membership(db: Session, current: CurrentUser) -> None:
+    """이용권이 없거나 끝났으면 추천·LIKE·PASS·받은 LIKE를 막는다 (2026-10-04 구독제). 대화는 막지 않는다."""
+    user = current.user
+    # 쌓아 둔 일수가 있는데 이미 추천이 열린 상태면 지금 시작한다 (등급을 정할 때 시작하지만, 혹시 빠졌을 때를 대비)
+    if membership_service.enabled() and (user.member_days_banked or 0) > 0 and membership_service.start_banked(db, user):
+        db.commit()
+    if not membership_service.has_membership(user):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="MEMBERSHIP_REQUIRED")
 
 
 # ---------- 추천 ----------
@@ -121,8 +134,9 @@ def liked_me(current: CurrentUser = Depends(get_current_user), db: Session = Dep
     liked_at = {uid: at for uid, at in likers if uid not in excluded}
     if not liked_at:
         return {"profiles": []}
+    # 이용권이 끝난 사람도 보여준다 (이미 나를 LIKE했으니, LIKE하면 바로 매칭 → 대화는 이용권 없이도 된다)
     profiles = (
-        profile_service.discoverable_profiles_query(db, current.user.university_id)
+        profile_service.discoverable_profiles_query(db, current.user.university_id, members_only=False)
         .filter(PublicProfile.user_id.in_(list(liked_at)))
         .all()
     )
@@ -242,6 +256,7 @@ def like(payload: TargetRequest, current: CurrentUser = Depends(get_current_user
 @router.post("/passes")
 def pass_profile(payload: TargetRequest, current: CurrentUser = Depends(get_current_user), db: Session = Depends(get_db)):
     enforce_rate_limit(f"pass:{current.id}", 120, 60)
+    _require_membership(db, current)
     target = _target(db, current, payload.profile_id)
     _upsert_action(db, current.id, target.user_id, "PASS")
     db.commit()
@@ -251,6 +266,7 @@ def pass_profile(payload: TargetRequest, current: CurrentUser = Depends(get_curr
 @router.delete("/passes/{profile_id}")
 def undo_pass(profile_id: uuid.UUID, current: CurrentUser = Depends(get_current_user), db: Session = Depends(get_db)):
     """PASS 취소 (향후 Undo 기능용, 설계도 §21)."""
+    _require_membership(db, current)
     target = _target(db, current, profile_id)
     row = db.query(Like).filter(Like.from_user_id == current.id, Like.to_user_id == target.user_id, Like.action == "PASS").first()
     if row is None:

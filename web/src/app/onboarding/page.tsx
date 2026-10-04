@@ -27,10 +27,10 @@ function Onboarding() {
   const { campuses, interests, loaded } = useCatalog(me.university_id);
   // 멈췄던 단계부터 이어서 한다 (예전에는 들어올 때마다 1단계부터 시작)
   const [step, setStep] = useState(() => firstStep(me.onboarding));
-  // 가입비 단계가 있는 사람만 단계 표시에 "가입비"가 들어간다 (베타 회원은 3단계 그대로)
+  // 이용권 단계가 있는 사람만 단계 표시에 "이용권"이 들어간다 (유료화 전·테스트 계정은 3단계 그대로)
   const [withPayment] = useState(() => Boolean(me.onboarding.pays_signup_fee ?? me.onboarding.payment_required));
   const finished = step === STEP.DONE;
-  const labels = withPayment ? ["프로필", "매칭 조건", "가입비", "사진"] : ["프로필", "매칭 조건", "사진"];
+  const labels = withPayment ? ["프로필", "매칭 조건", "이용권", "사진"] : ["프로필", "매칭 조건", "사진"];
   const labelIndex = !withPayment && step === STEP.PHOTO ? 2 : step;
   const toPhoto = useCallback(() => {
     void refresh();
@@ -68,7 +68,10 @@ function Onboarding() {
 
       {step === STEP.PAYMENT && (
         <>
-          <PageTitle title="가입비를 입금해주세요" desc="입금이 확인되면 사진을 제출할 수 있어요." />
+          <PageTitle
+            title="이용권을 시작해주세요"
+            desc="4주 이용권이에요. 입금이 확인되면 사진을 제출할 수 있고, 사진 검수가 끝나 추천이 열리는 날부터 4주를 세요. 자동 결제는 없어요."
+          />
           <PaymentStep onConfirmed={toPhoto} />
         </>
       )}

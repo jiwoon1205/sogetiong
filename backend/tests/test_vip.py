@@ -1,7 +1,7 @@
-"""VIP 2주 이용권 (2026-10-03).
+"""VIP 이용권 (2026-10-03, 2026-10-04 구독제: 4주 6,000원, 기본 포함, 할인 없음).
 
-- 정가 6,000원, 오픈 할인 기간(VIP_DISCOUNT_UNTIL까지) 4,000원
-- 결제는 가입비와 같은 직접 입금 (결제 코드 → "입금했어요" → 관리자 확인), 확인한 순간부터 14일
+- 결제는 기본 이용권과 같은 직접 입금 (결제 코드 → "입금했어요" → 관리자 확인), 확인한 날부터 28일 뒤 밤 12시까지
+- 기본 이용권과의 기간 계산(남은 기본 기간 뒤로 미루기)은 test_membership.py
 - VIP 중에는 다시 살 수 없고, 입금 확인 후에는 환불하지 않는다
 - 혜택: LIKE 10개 / PASS 24시간 / 받은 LIKE 목록 / 사진 재검토 3일 / 남이 PASS하면 그날만 숨김
 """
@@ -12,7 +12,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from app.core.config import get_settings
-from app.core.time import KST, kst_today, utcnow
+from app.core.time import KST, utcnow
 from app.models import Like, PublicProfile, User
 from app.models.payment import Payment
 from tests.conftest import admin_login, discover_ids, ready_user
@@ -71,13 +71,13 @@ def buy_vip(admin, client):
 # ---------- 구매 ----------
 
 
-def test_buy_vip_for_two_weeks(sent_codes, db, vip_on, mails):
+def test_buy_vip_for_four_weeks(sent_codes, db, vip_on, mails):
     admin = admin_login(db)
     me = ready_user(sent_codes, db, admin, "me@hufs.ac.kr", gender="MALE", want="FEMALE")
 
     info = me.get("/api/v1/me/vip").json()
     assert info["visible"] is True and info["active"] is False and info["can_buy"] is True
-    assert info["price"] == 6000 and info["regular_price"] == 6000 and info["discount_until"] is None
+    assert info["price"] == 6000 and "discount_until" not in info
     assert info["days"] == 28
     pay = info["payment"]
     assert pay["amount"] == 6000 and len(pay["code"]) == 6 and pay["account_number"] == "123-456-7890"
@@ -91,33 +91,9 @@ def test_buy_vip_for_two_weeks(sent_codes, db, vip_on, mails):
 
     until = user_of(db, me).vip_until
     db.refresh(user_of(db, me))
-    assert timedelta(days=27, hours=23) < until.replace(tzinfo=timezone.utc) - utcnow() <= timedelta(days=28)
+    assert timedelta(days=28) < until.replace(tzinfo=timezone.utc) - utcnow() <= timedelta(days=29)
+    assert until.replace(tzinfo=timezone.utc).astimezone(KST).hour == 0  # 밤 12시(한국 시간)에 끝남
     assert me.get("/api/v1/me").json()["vip"]["active"] is True
-
-
-def test_open_discount_price(sent_codes, db, vip_on, monkeypatch):
-    admin = admin_login(db)
-    me = ready_user(sent_codes, db, admin, "me@hufs.ac.kr", gender="MALE", want="FEMALE")
-    monkeypatch.setattr(vip_on, "vip_discount_until", kst_today())  # 오늘까지 할인
-    info = me.get("/api/v1/me/vip").json()
-    assert info["price"] == 4000 and info["regular_price"] == 6000 and info["discount_until"] == kst_today().isoformat()
-    assert info["payment"]["amount"] == 4000
-
-    # 할인이 끝난 뒤 다시 열면, 아직 "입금했어요"를 안 누른 코드는 정가로 바뀐다
-    monkeypatch.setattr(vip_on, "vip_discount_until", kst_today() - timedelta(days=1))
-    info = me.get("/api/v1/me/vip").json()
-    assert info["price"] == 6000 and info["payment"]["amount"] == 6000 and info["discount_until"] is None
-
-
-def test_price_is_kept_after_request(sent_codes, db, vip_on, monkeypatch):
-    """할인 마지막 날 "입금했어요"를 누른 사람은 확인이 늦어져도 4,000원."""
-    admin = admin_login(db)
-    me = ready_user(sent_codes, db, admin, "me@hufs.ac.kr", gender="MALE", want="FEMALE")
-    monkeypatch.setattr(vip_on, "vip_discount_until", kst_today())
-    me.post("/api/v1/me/vip/request")
-    monkeypatch.setattr(vip_on, "vip_discount_until", kst_today() - timedelta(days=1))
-    rows = admin.get("/api/v1/admin/payments").json()["payments"]
-    assert [(p["kind"], p["amount"]) for p in rows] == [("VIP", 4000)]
 
 
 def test_vip_not_for_sale_when_off(sent_codes, db, monkeypatch):

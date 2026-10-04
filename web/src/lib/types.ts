@@ -58,17 +58,37 @@ export type Me = {
     photo_status: "NOT_SUBMITTED" | "PENDING" | "IN_REVIEW" | "APPROVED" | "REJECTED" | "SUPERSEDED";
     preferences_done: boolean;
     photo_approved?: boolean;
-    /** 가입비 입금이 확인돼야 사진을 낼 수 있다 (2026-10-03). 베타 회원·가입비 끔 → false */
+    /** 첫 이용권 입금이 확인돼야 사진을 낼 수 있다 (2026-10-03). 유료화 끔·이미 낸 사람 → false */
     payment_required?: boolean;
-    /** 가입비를 내는 회원인가 (이미 냈어도 true) → 가입 단계 표시에 "가입비"를 넣는다 */
+    /** 가입 단계 표시에 "이용권"을 넣을지 (유료화를 켰고 테스트 계정이 아님) */
     pays_signup_fee?: boolean;
   };
-  /** VIP (2026-10-03). visible = "받은 LIKE" 탭을 보여줄지 (정식 오픈 전에는 테스트 계정만) */
+  /** VIP (2026-10-03). visible = "받은 LIKE" 탭을 보여줄지 */
   vip?: { visible: boolean; active: boolean; until: string | null };
+  /** 이용권 (2026-10-04 구독제) */
+  membership?: Membership;
 };
 
-/** 결제 안내 한 건 (가입비·VIP 공통) */
-export type PaymentDetail = Extract<PaymentInfo, { required: true }>;
+/** 이용권 상태 (2026-10-04 구독제). 기본 4주 / VIP 4주(기본 포함) */
+export type Membership = {
+  /** 유료화를 켰는가. false면 모두 무료로 쓴다 */
+  enabled: boolean;
+  /** 지금 추천·좋아요를 쓸 수 있는가 */
+  active: boolean;
+  /** 테스트 계정 (결제 없이 항상 이용) */
+  free: boolean;
+  /** none: 산 적 없음 / banked: 사진 검수가 끝나면 시작 / active / expired */
+  status: "none" | "banked" | "active" | "expired";
+  /** 끝나는 시각 (밤 12시, 한국 시간) */
+  until: string | null;
+  days_left: number | null;
+  /** 아직 시작하지 않은 일수 (사진 검수 후 시작) */
+  banked_days: number;
+  days: number;
+  price: number;
+  /** 남은 날짜가 이 이하면 "○일 남았어요" 띠 */
+  warn_days: number;
+};
 
 /** GET /me/vip — VIP 안내·상태 (2026-10-03) */
 export type VipInfo = {
@@ -80,9 +100,8 @@ export type VipInfo = {
   until: string | null;
   days: number;
   price: number;
-  regular_price: number;
-  /** 오픈 할인 마지막 날 (YYYY-MM-DD). 할인 중이 아니면 null */
-  discount_until: string | null;
+  /** 지금 남은 기본 이용권 일수 (VIP를 사면 VIP가 끝난 뒤 이어서 씀) */
+  member_days_left: number | null;
   daily_like_limit: number;
   base_like_limit: number;
   pass_cooldown_hours: number;
@@ -97,11 +116,20 @@ export type VipInfo = {
 /** GET /liked-me — 나를 LIKE한 사람 (VIP 전용) */
 export type LikedMeCard = Card & { liked_at: string; passed: boolean };
 
-/** GET /me/payment — 가입비 입금 안내 (2026-10-03) */
+/** 결제 안내 한 건 (이용권·VIP 공통) */
+export type PaymentDetail = Extract<PaymentInfo, { code: string }>;
+
+/** 결제 안내가 들어 있는 응답인가 (유료화를 껐거나 테스트 계정이면 { required: false }만 온다) */
+export function hasPayment(info: PaymentInfo): info is PaymentDetail {
+  return "code" in info;
+}
+
+/** GET /me/payment — 기본 이용권 입금 안내 (2026-10-03, 2026-10-04 구독제: 첫 입금·연장 공통) */
 export type PaymentInfo =
   | { required: false }
   | {
-      required: true;
+      /** 가입 단계의 첫 입금인가 (연장이면 false) */
+      required: boolean;
       status: "CREATED" | "REQUESTED" | "REJECTED";
       amount: number;
       /** 입금자명에 실명 대신 적는 결제 코드 */
@@ -114,6 +142,7 @@ export type PaymentInfo =
       account_number: string | null;
       account_holder: string | null;
       support_email: string;
+      membership?: Membership;
     };
 
 export type Preferences = {

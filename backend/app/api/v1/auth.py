@@ -132,9 +132,9 @@ def register(payload: RegisterRequest, request: Request, response: Response, db:
         university_id=university.id,
         status="ACTIVE",
         email_verified_at=ticket.verified_at,
-        # 가입비를 받기 시작한 뒤(SIGNUP_FEE_ENABLED=true)에 가입한 사람만 일반 회원. 그 전 가입자는 베타 회원(면제).
-        # 탈퇴 후 다시 가입하면 새 계정이므로 이 규칙을 다시 따른다 (베타 회원이었어도 일반 회원이 됨).
-        is_beta_member=not settings.signup_fee_enabled,
+        # 유료화(MEMBERSHIP_ENABLED)를 켜기 전에 가입한 사람 = 베타 회원 (기록용).
+        # 2026-10-04 구독제부터는 결제 면제가 아니다 — 베타 회원도 이용권이 필요하다.
+        is_beta_member=not settings.membership_enabled,
     )
     db.add(user)
     db.flush()

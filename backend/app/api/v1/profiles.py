@@ -19,7 +19,7 @@ from app.models.profile import Interest, PublicProfile, UserInterest
 from app.models.university import Campus, Department
 from app.schemas.auth import DeleteAccountRequest
 from app.schemas.profile import PreferencesRequest, ProfileUpdateRequest
-from app.services import admin_alert_service, auth_service, payment_service, profile_service, vip_service
+from app.services import admin_alert_service, auth_service, membership_service, payment_service, profile_service, vip_service
 from app.services.email_service import EmailService
 from app.services.session_service import clear_user_cookies, revoke_all_user_sessions
 from app.services.storage_service import PhotoValidationError, get_storage, new_storage_key, process_upload
@@ -75,11 +75,15 @@ def get_me(current: CurrentUser = Depends(get_current_user), db: Session = Depen
             "preferences_done": has_prefs,
             # 예전에 승인된 사진이 있으면 (재검토가 반려돼도) 가입 과정은 끝난 것
             "photo_approved": profile_service.has_approved_photo(db, current.id),
-            # 가입비 (2026-10-03): 매칭 조건 다음, 사진 전에 입금이 확인돼야 한다
-            "payment_required": payment_service.needs_signup_payment(current.user),
-            # 가입비를 내는 회원인가 (이미 냈어도 true) → 가입 단계 표시에 "가입비" 단계를 넣을지
-            "pays_signup_fee": payment_service.pays_signup_fee(current.user),
+            # 첫 이용권 (2026-10-03, 2026-10-04 구독제): 매칭 조건 다음, 사진 전에 입금이 확인돼야 한다
+            "payment_required": membership_service.needs_first_payment(
+                current.user, has_approved_photo=profile_service.has_approved_photo(db, current.id)
+            ),
+            # 가입 단계 표시에 "이용권" 단계를 넣을지 (유료화를 켰고, 테스트 계정이 아님)
+            "pays_signup_fee": membership_service.enabled() and not vip_service.is_vip_tester(current.user),
         },
+        # 이용권 (2026-10-04 구독제): 남은 기간 표시·만료 화면용
+        "membership": membership_service.view(current.user),
         # VIP (2026-10-03). visible = "받은 LIKE" 탭을 보여줄지 (정식 오픈 전에는 테스트 계정만)
         "vip": {
             "visible": vip_service.feature_visible(current.user),
@@ -382,9 +386,13 @@ def upload_photo(
     if len(uploads) > settings.photo_max_count:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"사진은 한 번에 {settings.photo_max_count}장까지 올릴 수 있어요.")
 
-    # 가입비 입금이 확인되기 전에는 사진을 받지 않는다 (화면만이 아니라 서버에서 막음, 2026-10-03)
-    if payment_service.needs_signup_payment(current.user):
+    # 첫 이용권 입금이 확인되기 전에는 사진을 받지 않는다 (화면만이 아니라 서버에서 막음, 2026-10-03)
+    approved_before = profile_service.has_approved_photo(db, current.id)
+    if membership_service.needs_first_payment(current.user, has_approved_photo=approved_before):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="PAYMENT_REQUIRED")
+    # 이용권이 끝난 사람은 사진 재검토를 신청할 수 없다 (2026-10-04 D9). 첫 검수(반려 후 다시 내기 포함)는 된다.
+    if approved_before and not membership_service.has_membership(current.user):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="MEMBERSHIP_REQUIRED")
 
     enforce_rate_limit(f"photo:{current.id}", 5, 3600)
 
@@ -493,11 +501,11 @@ def get_my_evaluation(current: CurrentUser = Depends(get_current_user), db: Sess
 # ---------- 가입비 (2026-10-03, 운영자 통장 직접 입금) ----------
 
 
-def _payment_view(payment, *, open_now: bool) -> dict:
+def _payment_view(payment, *, open_now: bool, required: bool = True) -> dict:
     settings = get_settings()
     show_account = open_now or payment.status == "REQUESTED"
     return {
-        "required": True,
+        "required": required,
         "status": payment.status,  # CREATED / REQUESTED / REJECTED
         "amount": payment.amount,
         "code": payment.code,
@@ -513,7 +521,7 @@ def _payment_view(payment, *, open_now: bool) -> dict:
 
 
 def _request_check(db: Session, background: BackgroundTasks, payment) -> dict:
-    """"입금했어요" 공통 처리 (가입비·VIP). 관리자 확인 대기 목록에 올리고 알림 메일을 보낸다."""
+    """"입금했어요" 공통 처리 (기본 이용권·VIP). 관리자 확인 대기 목록에 올리고 알림 메일을 보낸다."""
     open_now = payment_service.is_payment_open()
     if payment.status == "REQUESTED":
         # 두 번 눌러도 알림 메일은 한 번만
@@ -544,15 +552,30 @@ def _payment_ready(db: Session, current: CurrentUser) -> None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="PREFERENCES_REQUIRED")
 
 
+def _pays_membership(current: CurrentUser) -> bool:
+    """이용권을 살 수 있는(내야 하는) 사람인가. 유료화가 꺼져 있거나 테스트 계정이면 아니다."""
+    return membership_service.enabled() and not vip_service.is_vip_tester(current.user)
+
+
 @router.get("/me/payment")
 def get_my_payment(current: CurrentUser = Depends(get_current_user), db: Session = Depends(get_db)):
-    """가입비 입금 안내. 처음 열면 결제 코드가 만들어지고, 다시 열어도 같은 코드가 나온다."""
-    if not payment_service.needs_signup_payment(current.user):
+    """기본 이용권(4주) 입금 안내 — 가입 단계의 첫 입금과 연장(언제든, D2)에 같이 쓴다.
+
+    처음 열면 결제 코드가 만들어지고, 다시 열어도 같은 코드가 나온다.
+    required: 가입 단계에서 아직 첫 입금을 해야 하는가 (연장일 때는 false).
+    """
+    if not _pays_membership(current):
         return {"required": False}
     _payment_ready(db, current)
+    required = membership_service.needs_first_payment(
+        current.user, has_approved_photo=profile_service.has_approved_photo(db, current.id)
+    )
     payment = payment_service.get_or_create_payment(db, current.user)
     db.commit()
-    return _payment_view(payment, open_now=payment_service.is_payment_open())
+    return {
+        **_payment_view(payment, open_now=payment_service.is_payment_open(), required=required),
+        "membership": membership_service.view(current.user),
+    }
 
 
 @router.post("/me/payment/request")
@@ -562,20 +585,23 @@ def request_payment_check(
     db: Session = Depends(get_db),
 ):
     """"입금했어요". 관리자 확인 대기 목록에 올라가고, 관리자에게 알림 메일이 간다."""
-    if not payment_service.needs_signup_payment(current.user):
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="이미 결제가 확인됐어요.")
+    if not _pays_membership(current):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="지금은 이용권을 판매하지 않아요.")
     _payment_ready(db, current)
     payment = payment_service.get_or_create_payment(db, current.user)
-    return _request_check(db, background, payment)
+    required = membership_service.needs_first_payment(
+        current.user, has_approved_photo=profile_service.has_approved_photo(db, current.id)
+    )
+    return {**_request_check(db, background, payment), "required": required, "membership": membership_service.view(current.user)}
 
 
-# ---------- VIP 2주 이용권 (2026-10-03) ----------
+# ---------- VIP 4주 이용권 (2026-10-03, 2026-10-04 구독제: 기본 포함) ----------
 
 
 def _vip_info(db: Session, current: CurrentUser) -> dict:
     settings = get_settings()
     user = current.user
-    price = vip_service.current_price()
+    price = vip_service.price()
     info = {
         "visible": vip_service.feature_visible(user),
         "active": vip_service.is_vip(user),
@@ -583,8 +609,8 @@ def _vip_info(db: Session, current: CurrentUser) -> dict:
         "until": user.vip_until.isoformat() if vip_service.has_paid_vip(user) else None,
         "days": settings.vip_days,
         "price": price,
-        "regular_price": settings.vip_price,
-        "discount_until": settings.vip_discount_until.isoformat() if vip_service.discount_active() else None,
+        # 지금 남은 기본 이용권 일수 → "VIP를 사면 남은 ○일은 VIP가 끝난 뒤 이어서 써요" 안내
+        "member_days_left": membership_service.days_left(user) if membership_service.enabled() else None,
         "daily_like_limit": settings.vip_daily_like_limit,
         "base_like_limit": settings.daily_like_limit,
         "pass_cooldown_hours": settings.vip_pass_cooldown_hours,
@@ -601,7 +627,8 @@ def _vip_info(db: Session, current: CurrentUser) -> dict:
     elif vip_service.has_paid_vip(user):
         # VIP가 끝난 뒤에만 다시 살 수 있다 (2026-10-03)
         info["blocked_reason"] = "VIP 기간이 끝난 뒤에 다시 살 수 있어요."
-    elif payment_service.needs_signup_payment(user) or not profile_service.has_approved_photo(db, user.id):
+    elif not membership_service.can_start(db, user):
+        # 추천이 열려야(승인 사진 + 등급) VIP를 쓸 수 있다. 그 전에 사면 날짜만 줄어든다.
         info["blocked_reason"] = "사진 검수가 끝난 뒤에 VIP를 살 수 있어요."
     else:
         info["can_buy"] = True
@@ -613,7 +640,7 @@ def _vip_info(db: Session, current: CurrentUser) -> dict:
 
 @router.get("/me/vip")
 def get_my_vip(current: CurrentUser = Depends(get_current_user), db: Session = Depends(get_db)):
-    """VIP 안내·상태. 살 수 있으면 VIP 결제 코드가 만들어진다 (가입비 코드와 따로)."""
+    """VIP 안내·상태. 살 수 있으면 VIP 결제 코드가 만들어진다 (기본 이용권 코드와 따로)."""
     return _vip_info(db, current)
 
 
@@ -623,7 +650,7 @@ def request_vip_check(
     current: CurrentUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """VIP "입금했어요". 관리자가 확인하는 순간부터 2주. 확인 후에는 환불하지 않는다."""
+    """VIP "입금했어요". 관리자가 확인하는 순간부터 4주 (기본 포함). 확인 후에는 환불하지 않는다."""
     info = _vip_info(db, current)
     if not info["can_buy"]:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=info["blocked_reason"])

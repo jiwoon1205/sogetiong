@@ -1,4 +1,6 @@
-"""VIP 2주 이용권 (2026-10-03 정식 규칙, `유료화 계획` 1장·5-1장).
+"""VIP 이용권 (2026-10-03 정식 규칙, 2026-10-04 구독제: 4주 6,000원, 기본 이용권 포함).
+
+기간 계산(vip_until·member_until)은 membership_service.add_vip에 있다.
 
 누가 VIP인가: users.vip_until이 지금보다 뒤인 사람 + VIP_TEST_EMAILS 테스트 계정.
 VIP 혜택 5가지
@@ -17,7 +19,7 @@ from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
-from app.core.time import as_utc, kst_today, utcnow
+from app.core.time import as_utc, utcnow
 from app.models.user import User
 
 
@@ -71,12 +73,6 @@ def photo_resubmit_days(user: User) -> int:
     return s.vip_photo_resubmit_days if is_vip(user) else s.photo_resubmit_days
 
 
-def discount_active(now: datetime | None = None) -> bool:
-    """오픈 할인 기간인가 (VIP_DISCOUNT_UNTIL 날짜까지, 한국 시간, 그날 포함)."""
-    until = get_settings().vip_discount_until
-    return until is not None and kst_today(now) <= until
-
-
-def current_price(now: datetime | None = None) -> int:
-    s = get_settings()
-    return s.vip_discount_price if discount_active(now) else s.vip_price
+def price() -> int:
+    """VIP 가격 (4주, 기본 포함). 할인 없음 (2026-10-04)."""
+    return get_settings().vip_price

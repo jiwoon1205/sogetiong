@@ -34,7 +34,7 @@ const STATUS_LABEL: Record<string, string> = {
 
 const PROMISE_MINUTES = 15; // 사용자에게 "15분 이내 확인"이라고 안내함
 
-/** 가입비·VIP 입금 확인 (2026-10-03). 은행 앱의 입금자명(결제 코드)·금액과 맞춰 보고 처리한다.
+/** 기본 이용권·VIP 입금 확인 (2026-10-03, 2026-10-04 구독제). 은행 앱의 입금자명(결제 코드)·금액과 맞춰 보고 처리한다.
  *  닉네임·이메일은 보여주지 않는다 (익명성). */
 export default function PaymentsPage() {
   const [view, setView] = useState<(typeof TABS)[number]["value"]>("pending");
@@ -74,7 +74,7 @@ export default function PaymentsPage() {
       <PageTitle
         eyebrow="결제"
         title="입금 확인"
-        desc="은행 앱에서 입금자명(결제 코드)과 금액이 맞는지 확인한 뒤 처리하세요. 가입비와 VIP가 함께 나와요. 사용자에게는 15분 이내 확인이라고 안내돼 있어요."
+        desc="은행 앱에서 입금자명(결제 코드)과 금액이 맞는지 확인한 뒤 처리하세요. 기본 이용권과 VIP가 함께 나와요. 사용자에게는 15분 이내 확인이라고 안내돼 있어요."
       />
       <div className="mb-6 flex gap-6 border-b border-line text-[14px]">
         {TABS.map((t) => (
@@ -112,7 +112,7 @@ export default function PaymentsPage() {
                   <span className="font-mono text-[16px] font-semibold tracking-wider">{p.code}</span>
                   <span className="num ml-3 text-[14px]">{p.amount.toLocaleString()}원</span>
                   <span className={cn("ml-2 rounded px-1.5 py-0.5 text-[11.5px]", p.kind === "VIP" ? "bg-brick-wash text-brick" : "bg-paper-deep text-ink-soft")}>
-                    {p.kind === "VIP" ? "VIP" : "가입비"}
+                    {p.kind === "VIP" ? "VIP" : "기본 이용권"}
                   </span>
                   {p.user_status && p.user_status !== "ACTIVE" && (
                     <span className="ml-2 rounded bg-paper-deep px-1.5 py-0.5 text-[11.5px] text-ink-soft">
@@ -168,7 +168,7 @@ export default function PaymentsPage() {
       )}
       {view === "history" && (
         <p className="mt-4 text-[12.5px] text-ink-faint">
-          가입비 환불: 사용자가 고객센터 메일로 보낸 계좌로 먼저 송금한 뒤 [환불 처리]를 누르세요. 사진 검수를 받은 사용자(반려 포함)는 환불할 수 없어요. VIP는 입금 확인 후 환불하지 않아요.
+          기본 이용권 환불: 사용자가 고객센터 메일로 보낸 계좌로 먼저 송금한 뒤 [환불 처리]를 누르세요. 첫 이용권을 사진 검수 전에 취소하는 경우만 환불돼요. 사진 검수를 받았거나(반려 포함) 이용권이 이미 시작된 사람(연장 결제)은 환불할 수 없어요. VIP는 입금 확인 후 환불하지 않아요.
         </p>
       )}
     </>

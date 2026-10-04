@@ -1,12 +1,13 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { Button, Notice, Spinner } from "@/components/ui";
 import { api, errorMessage } from "@/lib/api";
 import { usePolling } from "@/lib/polling";
-import type { PaymentDetail, PaymentInfo } from "@/lib/types";
+import { hasPayment, type PaymentDetail, type PaymentInfo } from "@/lib/types";
 
-/** 가입비 입금 단계 (2026-10-03). 운영자 통장으로 직접 입금 → 관리자가 확인하면 사진 제출이 열린다.
+/** 첫 이용권 입금 단계 (2026-10-03 가입비, 2026-10-04 구독제). 운영자 통장으로 직접 입금 → 관리자가 확인하면 사진 제출이 열린다.
+ *  4주는 사진 검수가 끝나 추천이 열리는 날부터 센다.
  *
  *  - 입금자명에는 실명 대신 결제 코드를 적게 한다 (익명성).
  *  - 오전 6시 ~ 밤 12시만 결제할 수 있다. 밤에는 계좌번호를 숨긴다.
@@ -20,7 +21,7 @@ export function PaymentStep({ onConfirmed }: { onConfirmed: () => void }) {
   const load = useCallback(async () => {
     try {
       const next = await api<PaymentInfo>("/me/payment");
-      if (!next.required) {
+      if (!next.required || !hasPayment(next)) {
         onConfirmed();
         return;
       }
@@ -45,7 +46,7 @@ export function PaymentStep({ onConfirmed }: { onConfirmed: () => void }) {
     setSending(true);
     try {
       const next = await api<PaymentInfo>("/me/payment/request", { method: "POST" });
-      if (next.required) setInfo(next);
+      if (hasPayment(next)) setInfo(next);
     } catch (err) {
       setError(errorMessage(err));
       void load(); // 운영 시간이 막 끝난 경우 화면을 새로 그린다
@@ -63,12 +64,92 @@ export function PaymentStep({ onConfirmed }: { onConfirmed: () => void }) {
       error={error}
       onRequest={request}
       waitingText="입금 후 15분 이내 확인돼요. 확인되면 자동으로 사진 제출 화면으로 넘어가요."
-      refundNote="환불은 사진 검수를 받기 전에만 돼요. 사진이 반려돼도 검수를 받은 것이라 환불되지 않아요."
+      refundNote={REFUND_NOTE}
     />
   );
 }
 
-/** 입금 안내 화면 (가입비·VIP 공통): 계좌·결제 코드, "입금했어요" 버튼, 안내 문구 */
+export const REFUND_NOTE =
+  "환불은 첫 이용권을 사진 검수 전에 취소할 때만 돼요. 사진이 반려돼도 검수를 받은 것이라 환불되지 않고, 연장 결제는 입금 확인 후 환불되지 않아요.";
+
+/** 기본 이용권 연장·다시 사기 (2026-10-04 구독제). 이용권이 끝났을 때 화면, 설정 화면에서 쓴다.
+ *  언제든 살 수 있고, 남아 있으면 끝나는 날 뒤에 28일이 붙는다. 확인되면 onActivated를 부른다. */
+export function MembershipRenew({ onActivated }: { onActivated: () => void }) {
+  const [info, setInfo] = useState<PaymentDetail | null>(null);
+  const [error, setError] = useState("");
+  const [sending, setSending] = useState(false);
+  const [paying, setPaying] = useState(false);
+  const last = useRef<PaymentDetail | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      const next = await api<PaymentInfo>("/me/payment");
+      if (!hasPayment(next)) return;
+      // 확인 대기 중이던 결제가 처리돼서 새 코드가 나왔다 = 이용권이 늘어남
+      const prev = last.current;
+      last.current = next;
+      if (prev?.status === "REQUESTED" && next.code !== prev.code) {
+        setPaying(false);
+        onActivated();
+      } else if (next.status !== "CREATED") setPaying(true);
+      setInfo(next);
+    } catch (err) {
+      setError(errorMessage(err));
+    }
+  }, [onActivated]);
+
+  const shouldPoll = info === null || info.status === "REQUESTED";
+  usePolling(
+    () => {
+      if (shouldPoll) void load();
+    },
+    30_000,
+    [shouldPoll],
+  );
+
+  async function request() {
+    setError("");
+    setSending(true);
+    try {
+      const next = await api<PaymentInfo>("/me/payment/request", { method: "POST" });
+      if (hasPayment(next)) {
+        last.current = next;
+        setInfo(next);
+      }
+    } catch (err) {
+      setError(errorMessage(err));
+      void load();
+    } finally {
+      setSending(false);
+    }
+  }
+
+  if (!info) return error ? <Notice tone="error">{error}</Notice> : <Spinner />;
+  const m = info.membership;
+  const days = m?.days ?? 28;
+  if (!paying)
+    return (
+      <Button size="lg" className="w-full" onClick={() => setPaying(true)}>
+        {m?.status === "active" ? "미리 연장하기" : "기본 이용권 시작하기"} · {days}일 {info.amount.toLocaleString()}원
+      </Button>
+    );
+  return (
+    <PaymentPanel
+      info={info}
+      sending={sending}
+      error={error}
+      onRequest={request}
+      waitingText={
+        m?.status === "active"
+          ? `입금 후 15분 이내 확인돼요. 지금 남은 기간 뒤에 ${days}일이 더해져요.`
+          : `입금 후 15분 이내 확인돼요. 확인되면 ${days}일 뒤 밤 12시까지 이용할 수 있어요.`
+      }
+      refundNote={REFUND_NOTE}
+    />
+  );
+}
+
+/** 입금 안내 화면 (이용권·VIP 공통): 계좌·결제 코드, "입금했어요" 버튼, 안내 문구 */
 export function PaymentPanel({
   info,
   sending,

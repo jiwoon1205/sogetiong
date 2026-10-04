@@ -114,7 +114,8 @@ function safeJson(text: string): unknown {
 
 /** 서버가 코드(영문 대문자)로만 알려 주는 에러를 문장으로 */
 const CODE_MESSAGES: Record<string, string> = {
-  PAYMENT_REQUIRED: "가입비 입금이 확인된 뒤에 사진을 제출할 수 있어요.",
+  PAYMENT_REQUIRED: "이용권 입금이 확인된 뒤에 사진을 제출할 수 있어요.",
+  MEMBERSHIP_REQUIRED: "이용권이 끝났어요. 이용권을 연장하면 다시 이용할 수 있어요. 대화는 계속할 수 있어요.",
 };
 
 export function errorMessage(err: unknown): string {

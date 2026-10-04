@@ -22,6 +22,11 @@ type Detail = {
   is_beta_member?: boolean;
   signup_paid_at?: string | null;
   vip_until?: string | null;
+  /** 이용권 (2026-10-04 구독제) */
+  member_until?: string | null;
+  member_days_banked?: number;
+  membership_status?: "none" | "banked" | "active" | "expired";
+  membership_free?: boolean;
   profile: Card | null;
   campus: { id: string; name: string } | null;
   department: { id: string; name: string } | null;
@@ -71,7 +76,9 @@ export default function UserDetail() {
           {dateTime(d.created_at)} 가입{d.deleted_at && <> · {dateTime(d.deleted_at)} 탈퇴</>} · 마지막 접속{" "}
           {d.last_active_at ? <span title={dateTime(d.last_active_at)}>{timeAgo(d.last_active_at)}</span> : "기록 없음"} · {USER_STATUS_LABEL[d.status] ?? d.status} · 받은 신고 <span className="num">{d.reports_received}</span>건
           {" · "}
-          {d.is_beta_member ? "베타 회원" : d.signup_paid_at ? `가입비 ${dateTime(d.signup_paid_at)} 확인` : "가입비 미확인"}
+          {d.is_beta_member ? "베타 가입" : "유료화 뒤 가입"}
+          {" · "}
+          {membershipLabel(d)}
           {d.vip_until && <> · VIP 끝 {dateTime(d.vip_until)}</>}
         </p>
       </div>
@@ -125,11 +132,15 @@ export default function UserDetail() {
             />
           )}
 
+          {admin.can("payments:confirm") && !d.deleted_at && (
+            <MembershipForm key={`${d.user_id}-${d.member_until}`} userId={d.user_id} onDone={() => load(!!d.private)} />
+          )}
+
           {admin.can("photos:evaluate") && d.profile && !d.deleted_at && (
             <TierForm key={`${d.user_id}-${d.appearance_tier}`} userId={d.user_id} current={d.appearance_tier} onDone={() => load(!!d.private)} />
           )}
 
-          {admin.can("photos:read") && (d.photos?.length ?? 0) > 0 && <UserPhotos key={d.user_id} photos={d.photos!} />}
+          {admin.can("photos:read") && (d.photos?.length ?? 0) > 0 && <UserPhotos key={`${d.user_id}-photos`} photos={d.photos!} />}
 
           {admin.can("chats:read") && <UserChats userId={d.user_id} />}
 
@@ -482,6 +493,68 @@ function GenderForm({ userId, gender, want, onDone }: { userId: string; gender: 
       {ok && <Notice tone="ok">변경했어요. 사용자에게 알림이 갔어요.</Notice>}
       <Button type="submit" loading={loading} disabled={(g === gender && w === want) || reason.trim().length < 2}>
         변경
+      </Button>
+    </form>
+  );
+}
+
+function membershipLabel(d: Detail): string {
+  if (d.membership_free) return "이용권 무료 (테스트 계정)";
+  switch (d.membership_status) {
+    case "active":
+      return `이용권 끝 ${d.member_until ? dateTime(d.member_until) : "—"}`;
+    case "banked":
+      return `이용권 ${d.member_days_banked ?? 0}일 대기 (사진 검수 후 시작)`;
+    case "expired":
+      return `이용권 끝남 (${d.member_until ? dateTime(d.member_until) : "—"})`;
+    default:
+      return "이용권 없음";
+  }
+}
+
+/** 이용권 기간 늘리기/줄이기 (2026-10-04 D8). 입금 확인 지연·서버 장애 보상, 실수 정정용. 최고 관리자만 */
+function MembershipForm({ userId, onDone }: { userId: string; onDone: () => void }) {
+  const [days, setDays] = useState("");
+  const [reason, setReason] = useState("");
+  const [error, setError] = useState("");
+  const [ok, setOk] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const n = Number(days);
+  const valid = Number.isInteger(n) && n !== 0 && Math.abs(n) <= 60 && reason.trim().length >= 2;
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!window.confirm(`이용권을 ${n > 0 ? `${n}일 늘릴까요` : `${-n}일 줄일까요`}?`)) return;
+    setLoading(true);
+    setError("");
+    setOk(false);
+    try {
+      await adminApi(`/users/${userId}/membership-adjust`, { method: "POST", body: { days: n, reason } });
+      setOk(true);
+      setDays("");
+      setReason("");
+      onDone();
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <form onSubmit={submit} className="space-y-4">
+      <p className="eyebrow">이용권 기간 조정</p>
+      <Field label="일수 (늘리기는 양수, 줄이기는 음수, 최대 60)" htmlFor="member-days">
+        <Input id="member-days" inputMode="numeric" value={days} onChange={(e) => setDays(e.target.value.trim())} placeholder="예: 3 또는 -2" />
+      </Field>
+      <Field label="사유 (감사 로그에 남아요)" htmlFor="member-reason">
+        <Input id="member-reason" value={reason} onChange={(e) => setReason(e.target.value)} maxLength={300} placeholder="입금 확인 지연 보상" />
+      </Field>
+      <p className="text-[12.5px] text-ink-faint">남아 있으면 끝나는 날에서 더하거나 빼요. 끝난 사람은 오늘부터 더해요. 사용자에게 알림은 가지 않아요.</p>
+      {error && <Notice tone="error">{error}</Notice>}
+      {ok && <Notice tone="ok">변경했어요.</Notice>}
+      <Button type="submit" loading={loading} disabled={!valid}>
+        기간 조정
       </Button>
     </form>
   );

@@ -1,8 +1,7 @@
-from datetime import date
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import Field, field_validator
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 DEFAULT_SECRET = "change-me-in-production"
@@ -88,19 +87,15 @@ class Settings(BaseSettings):
 
     # --- VIP (2026-10-03 정식 규칙) ---
     # 꺼져 있으면 VIP를 살 수 없다 (아래 테스트 계정은 예외).
-    # 베타가 끝나는 날 SIGNUP_FEE_ENABLED와 함께 true로 바꾼다.
+    # 베타가 끝나는 날 MEMBERSHIP_ENABLED와 함께 true로 바꾼다 (VIP는 기본 이용권을 포함하므로 둘은 같이 켠다).
     vip_enabled: bool = False
     # 미리 보기 (2026-10-04): VIP 판매 전에도 모든 사람에게 "받은 LIKE" 탭을 보여준다.
     # 누르면 VIP 혜택 안내 + 아래 문구가 나오고, 결제 버튼은 없다 (VIP_ENABLED가 켜져야 살 수 있음).
     # 탭을 다시 숨기려면 .env에 VIP_PREVIEW=false
     vip_preview: bool = True
     vip_preview_notice: str = "VIP는 정식 출시일(10월 8일)부터 살 수 있어요."
-    vip_days: int = 28  # 한 번 사면 4주 (2026-10-04 구독제 결정, 이전 2주)
-    vip_price: int = 6000
-    # 오픈 할인: 이 날짜(한국 시간, 그날 포함)까지 vip_discount_price. 비우면 할인 없음.
-    # 베타 종료일 + 2주로 정해서 .env에 넣는다 (예: VIP_DISCOUNT_UNTIL=2026-12-14)
-    vip_discount_price: int = 4000
-    vip_discount_until: date | None = None
+    vip_days: int = 28  # 한 번 사면 4주, 기본 이용권 포함 (2026-10-04 구독제)
+    vip_price: int = 6000  # 할인 없음 (2026-10-04, 오픈 할인 4,000원 취소)
     # VIP 혜택 숫자 (유료화 계획 1장)
     vip_daily_like_limit: int = 10  # 무료 5개 + 5개
     liker_boost_limit: int = 5  # "나를 LIKE한 사람" 우대는 보낸 사람의 하루 처음 5개 LIKE에만
@@ -115,11 +110,17 @@ class Settings(BaseSettings):
     # 매칭 조건은 하루(24시간)에 이 횟수만큼만 바꿀 수 있다 (처음 저장은 세지 않음)
     preferences_changes_per_day: int = 3
 
-    # --- 가입비 (2026-10-03, 운영자 통장 직접 입금) ---
-    # 꺼져 있으면 지금처럼 가입비 없이 사진을 낼 수 있고, 새 가입자도 베타 회원(면제)이 된다.
-    # 베타가 끝나는 날 .env에 SIGNUP_FEE_ENABLED=true 를 넣고 다시 시작한다.
-    signup_fee_enabled: bool = False
-    signup_fee: int = 3000  # 남녀 같음
+    # --- 이용권 (2026-10-04 구독제, 운영자 통장 직접 입금) ---
+    # 꺼져 있으면 지금처럼 모두 무료로 쓴다 (결제 단계 없음, 추천 제한 없음).
+    # 켜면 모든 회원(베타 회원 포함)이 기본 이용권(4주) 또는 VIP(4주, 기본 포함)가 있어야 추천을 본다.
+    # 이용권이 없어도 이미 매칭된 사람과 대화는 된다.
+    # 베타가 끝나는 날 .env에 MEMBERSHIP_ENABLED=true, VIP_ENABLED=true 를 넣고 다시 시작한다.
+    # (예전 이름 SIGNUP_FEE_ENABLED는 더 이상 읽지 않는다)
+    membership_enabled: bool = False
+    membership_price: int = 3000  # 남녀 같음
+    membership_days: int = 28
+    # 남은 기간이 이 일수 이하면 추천 화면 위에 "○일 남았어요" 띠를 보여준다 (알림은 보내지 않음)
+    membership_warn_days: int = 3
     # 입금받을 계좌. 코드·GitHub에 넣지 않고 서버 .env에만 적는다.
     payment_bank_name: str = ""
     payment_account_number: str = ""
@@ -148,12 +149,6 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    @field_validator("vip_discount_until", mode="before")
-    @classmethod
-    def _empty_date_is_none(cls, value):
-        # .env에 VIP_DISCOUNT_UNTIL= (빈 값)으로 적어도 "할인 없음"으로 본다
-        return None if isinstance(value, str) and not value.strip() else value
-
     @property
     def cookies_secure(self) -> bool:
         if self.cookie_secure is not None:
@@ -175,15 +170,17 @@ class Settings(BaseSettings):
             raise ValueError("LIKED_ME_PROBABILITY는 0~1 사이여야 합니다")
         if not 0 <= self.payment_open_hour < self.payment_close_hour <= 24:
             raise ValueError("PAYMENT_OPEN_HOUR < PAYMENT_CLOSE_HOUR (0~24) 이어야 합니다")
-        if self.signup_fee_enabled and self.signup_fee <= 0:
-            raise ValueError("SIGNUP_FEE는 0보다 커야 합니다")
-        if self.vip_enabled and not (self.vip_price > 0 and self.vip_discount_price > 0 and self.vip_days > 0):
-            raise ValueError("VIP_PRICE, VIP_DISCOUNT_PRICE, VIP_DAYS는 0보다 커야 합니다")
-        if (self.signup_fee_enabled or self.vip_enabled) and not (
+        if self.membership_enabled and not (self.membership_price > 0 and self.membership_days > 0):
+            raise ValueError("MEMBERSHIP_PRICE, MEMBERSHIP_DAYS는 0보다 커야 합니다")
+        if self.vip_enabled and not (self.vip_price > 0 and self.vip_days > 0):
+            raise ValueError("VIP_PRICE, VIP_DAYS는 0보다 커야 합니다")
+        if self.vip_enabled and not self.membership_enabled:
+            raise ValueError("VIP_ENABLED를 켜려면 MEMBERSHIP_ENABLED도 켜야 합니다 (VIP는 기본 이용권을 포함)")
+        if (self.membership_enabled or self.vip_enabled) and not (
             self.payment_bank_name and self.payment_account_number and self.payment_account_holder
         ):
             raise ValueError(
-                "SIGNUP_FEE_ENABLED 또는 VIP_ENABLED가 true 이면 PAYMENT_BANK_NAME, PAYMENT_ACCOUNT_NUMBER, "
+                "MEMBERSHIP_ENABLED 또는 VIP_ENABLED가 true 이면 PAYMENT_BANK_NAME, PAYMENT_ACCOUNT_NUMBER, "
                 "PAYMENT_ACCOUNT_HOLDER를 .env에 넣어야 합니다"
             )
         if self.environment != "prod":

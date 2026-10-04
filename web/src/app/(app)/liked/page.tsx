@@ -6,7 +6,7 @@ import { PaymentPanel } from "@/components/PaymentStep";
 import { ProfileCard } from "@/components/ProfileCard";
 import { Button, Notice, PageTitle, Spinner } from "@/components/ui";
 import { ApiError, api, errorMessage } from "@/lib/api";
-import { dateTime, timeAgo } from "@/lib/format";
+import { timeAgo, untilDay } from "@/lib/format";
 import { usePolling } from "@/lib/polling";
 import { markMatchSeen } from "@/lib/seenMatches";
 import { useSession } from "@/lib/session";
@@ -94,7 +94,7 @@ function LikedList({ vip }: { vip: VipInfo }) {
       <PageTitle
         eyebrow="VIP"
         title="받은 LIKE"
-        desc={vip.until ? `VIP는 ${dateTime(vip.until)}까지예요.` : "나를 LIKE한 사람이에요. 서로 LIKE하면 바로 매칭돼요."}
+        desc={vip.until ? `VIP는 ${untilDay(vip.until)}예요.` : "나를 LIKE한 사람이에요. 서로 LIKE하면 바로 매칭돼요."}
       />
       {error && (
         <div className="mb-4">
@@ -188,7 +188,6 @@ function VipShop({ vip, onChange, onActivated }: { vip: VipInfo; onChange: (v: V
     }
   }
 
-  const discount = vip.price < vip.regular_price;
   const benefits = [
     { title: `좋아요 하루 ${vip.base_like_limit}+${vip.daily_like_limit - vip.base_like_limit}개`, body: `무료는 하루 ${vip.base_like_limit}개예요.` },
     { title: "나를 LIKE한 사람 보기", body: "목록에서 바로 좋아요를 누르면 바로 매칭돼요." },
@@ -202,15 +201,16 @@ function VipShop({ vip, onChange, onActivated }: { vip: VipInfo; onChange: (v: V
       <PageTitle eyebrow="VIP" title="받은 LIKE는 VIP에서 볼 수 있어요" />
 
       <div className="mb-6 rounded-card border border-line bg-paper-card px-6 py-5">
-        <p className="text-[13px] text-ink-soft">VIP {vip.days}일 이용권</p>
+        <p className="text-[13px] text-ink-soft">VIP {vip.days}일 이용권 · 기본 이용권 포함</p>
         <p className="mt-1.5 flex items-baseline gap-2">
-          {discount && <span className="num text-[16px] text-ink-faint line-through">{vip.regular_price.toLocaleString()}원</span>}
           <span className="num font-serif text-[30px] font-semibold">{vip.price.toLocaleString()}원</span>
         </p>
-        {discount && vip.discount_until && (
-          <p className="mt-1 text-[13px] font-medium text-brick">오픈 할인 · {vip.discount_until.replaceAll("-", ".")}까지</p>
-        )}
         <p className="mt-2 text-[12.5px] text-ink-faint">자동 결제 없어요. 기간이 끝나면 다시 살 수 있어요.</p>
+        {vip.member_days_left ? (
+          <p className="mt-1 text-[12.5px] text-ink-soft">
+            지금 남은 기본 이용권 <span className="num">{vip.member_days_left}</span>일은 VIP가 끝난 뒤 이어서 쓸 수 있어요.
+          </p>
+        ) : null}
       </div>
 
       <ul className="mb-8 space-y-3">
@@ -233,7 +233,7 @@ function VipShop({ vip, onChange, onActivated }: { vip: VipInfo; onChange: (v: V
           sending={sending}
           error={error}
           onRequest={request}
-          waitingText={`입금 후 15분 이내 확인돼요. 확인되는 순간부터 ${vip.days}일 동안 VIP예요.`}
+          waitingText={`입금 후 15분 이내 확인돼요. 확인되면 ${vip.days}일 뒤 밤 12시까지 VIP예요 (기본 이용권 포함).`}
           refundNote="VIP는 입금이 확인되면 바로 시작돼서 환불되지 않아요."
         />
       ) : (
