@@ -109,7 +109,6 @@ export default function Landing() {
             </p>
           </div>
           <p>
-            안전한 이용을 위해 권한을 받은 운영진이 대화 내용과 사진을 확인할 수 있고, 열람 기록은 모두 남습니다.{" "}
             <a href="/privacy" className="underline underline-offset-4">
               개인정보처리방침
             </a>
