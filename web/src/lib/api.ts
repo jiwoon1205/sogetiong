@@ -116,6 +116,8 @@ function safeJson(text: string): unknown {
 const CODE_MESSAGES: Record<string, string> = {
   PAYMENT_REQUIRED: "이용권 입금이 확인된 뒤에 사진을 제출할 수 있어요.",
   MEMBERSHIP_REQUIRED: "이용권이 끝났어요. 이용권을 연장하면 다시 이용할 수 있어요. 대화는 계속할 수 있어요.",
+  // 점검 기간 (2026-10-04): 정식 오픈 전에는 추천·좋아요·받은 LIKE·사진 재검토가 막힌다
+  MAINTENANCE: "지금은 정식 오픈 전 점검 기간이에요. 오픈하면 바로 이용할 수 있어요. 대화와 이용권 결제는 지금도 돼요.",
 };
 
 export function errorMessage(err: unknown): string {

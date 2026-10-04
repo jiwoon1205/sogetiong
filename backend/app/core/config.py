@@ -1,8 +1,11 @@
+from datetime import datetime, timezone
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from app.core.time import KST
 
 DEFAULT_SECRET = "change-me-in-production"
 # 문서·예시 파일에 공개된 값. 길이가 충분해도 운영에서 쓰면 안 된다.
@@ -93,7 +96,7 @@ class Settings(BaseSettings):
     # 누르면 VIP 혜택 안내 + 아래 문구가 나오고, 결제 버튼은 없다 (VIP_ENABLED가 켜져야 살 수 있음).
     # 탭을 다시 숨기려면 .env에 VIP_PREVIEW=false
     vip_preview: bool = True
-    vip_preview_notice: str = "VIP는 정식 출시일(10월 8일)부터 살 수 있어요."
+    vip_preview_notice: str = "VIP는 무료 베타가 끝나는 날(10월 8일)부터 살 수 있어요."
     vip_days: int = 28  # 한 번 사면 4주, 기본 이용권 포함 (2026-10-04 구독제)
     vip_price: int = 6000  # 할인 없음 (2026-10-04, 오픈 할인 4,000원 취소)
     # VIP 혜택 숫자 (유료화 계획 1장)
@@ -130,6 +133,13 @@ class Settings(BaseSettings):
     payment_open_hour: int = 6
     payment_close_hour: int = 24
 
+    # --- 점검 기간 (2026-10-04, `점검 기간 설계`) ---
+    # 정식 오픈 시각. 이 시각 전에는 추천·LIKE·PASS·받은 LIKE·기존 회원 사진 재검토를 막고 "점검 중"으로 안내한다.
+    # 대화와 결제(이용권·VIP)는 된다. 점검 기간에 낸 이용권·VIP는 이 시각부터 4주를 센다.
+    # 시각이 지나면 자동으로 열린다 (서버를 다시 시작할 필요 없음). 비워 두면 점검 없음.
+    # 예: OPEN_AT=2026-10-10T18:00:00+09:00  (시간대를 빼고 쓰면 한국 시간으로 본다)
+    open_at: datetime | None = None
+
     # --- 문의 ---
     # 학과 변경 요청·"내 학과가 목록에 없어요" 문의를 받는 메일 주소 (화면에 표시됨)
     support_email: str = "support@private-matching.com"
@@ -158,6 +168,21 @@ class Settings(BaseSettings):
     @property
     def cors_origin_list(self) -> list[str]:
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
+
+    @field_validator("open_at", mode="before")
+    @classmethod
+    def _blank_open_at(cls, v):
+        # .env에 OPEN_AT= (빈 값)으로 남아 있어도 서버가 안 켜지는 일이 없게 "점검 없음"으로 본다
+        return None if isinstance(v, str) and not v.strip() else v
+
+    @property
+    def open_at_utc(self) -> datetime | None:
+        """오픈 시각(UTC). 시간대 없이 적었으면 한국 시간으로 본다."""
+        if self.open_at is None:
+            return None
+        if self.open_at.tzinfo is None:
+            return self.open_at.replace(tzinfo=KST).astimezone(timezone.utc)
+        return self.open_at.astimezone(timezone.utc)
 
     @property
     def vip_test_email_set(self) -> set[str]:

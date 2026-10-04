@@ -88,6 +88,10 @@ export type Membership = {
   price: number;
   /** 남은 날짜가 이 이하면 "○일 남았어요" 띠 */
   warn_days: number;
+  /** 정식 오픈 시각 (점검 기간, 2026-10-04). 없으면 점검 없음 */
+  open_at?: string | null;
+  /** 지금 점검 기간인가 (추천·좋아요가 막히고 대화·결제만 됨) */
+  before_open?: boolean;
 };
 
 /** GET /me/vip — VIP 안내·상태 (2026-10-03) */

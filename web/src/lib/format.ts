@@ -34,6 +34,17 @@ export function cn(...parts: Array<string | false | null | undefined>): string {
   return parts.filter(Boolean).join(" ");
 }
 
+/** 정식 오픈 시각 (점검 기간, 2026-10-04). 예: "10월 10일 오후 6시" */
+export function openTime(iso: string): string {
+  return parseTime(iso).toLocaleString("ko-KR", {
+    timeZone: "Asia/Seoul",
+    month: "long",
+    day: "numeric",
+    hour: "numeric",
+    minute: parseTime(iso).getUTCMinutes() ? "2-digit" : undefined,
+  });
+}
+
 /** 이용권이 끝나는 날 (2026-10-04). 서버는 "그날 밤 12시"(= 다음 날 0시, 한국 시간)를 보내므로 1초 빼서 그날로 보여준다.
  *  예: "11월 26일 밤 12시까지" */
 export function untilDay(iso: string): string {

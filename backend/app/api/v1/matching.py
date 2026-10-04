@@ -57,6 +57,10 @@ def _viewer(db: Session, current: CurrentUser) -> matching_service.Person:
 def _require_membership(db: Session, current: CurrentUser) -> None:
     """이용권이 없거나 끝났으면 추천·LIKE·PASS·받은 LIKE를 막는다 (2026-10-04 구독제). 대화는 막지 않는다."""
     user = current.user
+    # 점검 기간(OPEN_AT 전)에는 모두 막는다. 대화·결제는 된다 (2026-10-04 `점검 기간 설계`).
+    # 운영자 테스트 계정은 오픈 전에 추천이 잘 되는지 확인할 수 있게 열어 둔다.
+    if membership_service.before_open() and not vip_service.is_vip_tester(user):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="MAINTENANCE")
     # 쌓아 둔 일수가 있는데 이미 추천이 열린 상태면 지금 시작한다 (등급을 정할 때 시작하지만, 혹시 빠졌을 때를 대비)
     if membership_service.enabled() and (user.member_days_banked or 0) > 0 and membership_service.start_banked(db, user):
         db.commit()

@@ -3,6 +3,7 @@
 import { useCallback, useRef, useState } from "react";
 import { Button, Notice, Spinner } from "@/components/ui";
 import { api, errorMessage } from "@/lib/api";
+import { openTime } from "@/lib/format";
 import { usePolling } from "@/lib/polling";
 import { hasPayment, type PaymentDetail, type PaymentInfo } from "@/lib/types";
 
@@ -63,10 +64,17 @@ export function PaymentStep({ onConfirmed }: { onConfirmed: () => void }) {
       sending={sending}
       error={error}
       onRequest={request}
-      waitingText="입금 후 15분 이내 확인돼요. 확인되면 자동으로 사진 제출 화면으로 넘어가요."
+      waitingText={
+        "입금 후 15분 이내 확인돼요. 확인되면 자동으로 사진 제출 화면으로 넘어가요." + maintenanceNote(info.membership?.before_open ? info.membership.open_at : null)
+      }
       refundNote={REFUND_NOTE}
     />
   );
+}
+
+/** 점검 기간에 결제하면 4주가 오픈 시각부터 시작된다는 안내 (2026-10-04) */
+function maintenanceNote(openAt: string | null | undefined): string {
+  return openAt ? ` 이용권 기간은 사진 평가가 끝난 뒤, 빨라도 정식 오픈(${openTime(openAt)})부터 시작돼요.` : "";
 }
 
 export const REFUND_NOTE =
@@ -140,9 +148,11 @@ export function MembershipRenew({ onActivated }: { onActivated: () => void }) {
       error={error}
       onRequest={request}
       waitingText={
-        m?.status === "active"
-          ? `입금 후 15분 이내 확인돼요. 지금 남은 기간 뒤에 ${days}일이 더해져요.`
-          : `입금 후 15분 이내 확인돼요. 확인되면 ${days}일 뒤 밤 12시까지 이용할 수 있어요.`
+        m?.before_open && m.open_at
+          ? `입금 후 15분 이내 확인돼요. 지금은 점검 기간이라 ${days}일은 정식 오픈(${openTime(m.open_at)})부터 시작돼요.`
+          : m?.status === "active"
+            ? `입금 후 15분 이내 확인돼요. 지금 남은 기간 뒤에 ${days}일이 더해져요.`
+            : `입금 후 15분 이내 확인돼요. 확인되면 ${days}일 뒤 밤 12시까지 이용할 수 있어요.`
       }
       refundNote={REFUND_NOTE}
     />

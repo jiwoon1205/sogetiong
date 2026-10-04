@@ -9,6 +9,7 @@
 - 이용권이 없으면 추천·LIKE·PASS·받은 LIKE·사진 재검토만 막는다. 대화는 막지 않는다.
 - 스위치(MEMBERSHIP_ENABLED)가 꺼져 있으면 모두 이용권이 있는 것으로 본다 (베타 동작 그대로).
 - VIP 테스트 계정(VIP_TEST_EMAILS)은 항상 이용권 + VIP (D10).
+- 점검 기간 (2026-10-04, `점검 기간 설계`): OPEN_AT 전에 낸 이용권·VIP·쌓아 둔 일수는 오픈 시각부터 센다.
 """
 
 import math
@@ -24,6 +25,29 @@ from app.services import profile_service, vip_service
 
 def enabled() -> bool:
     return get_settings().membership_enabled
+
+
+def open_at() -> datetime | None:
+    """정식 오픈 시각(UTC). 없으면 점검 없음."""
+    return get_settings().open_at_utc
+
+
+def before_open(now: datetime | None = None) -> bool:
+    """지금 점검 기간(오픈 전)인가. 이때는 추천·LIKE·PASS·받은 LIKE·기존 회원 사진 재검토를 막는다."""
+    at = open_at()
+    return at is not None and (now or utcnow()) < at
+
+
+def _start(now: datetime) -> datetime:
+    """기간을 세기 시작하는 시각 = max(지금, 오픈 시각). 점검 기간에 낸 날짜를 잃지 않게."""
+    at = open_at()
+    return at if at is not None and at > now else now
+
+
+def _base(until: datetime | None, now: datetime) -> datetime:
+    """새 기간을 붙일 기준: 남아 있는 기간의 끝, 없으면 시작 시각."""
+    start = _start(now)
+    return until if until is not None and until > start else start
 
 
 def end_of_kst_day(t: datetime) -> datetime:
@@ -73,8 +97,7 @@ def add_membership(db: Session, user: User, now: datetime | None = None, days: i
     if not active and not can_start(db, user):
         user.member_days_banked = (user.member_days_banked or 0) + days
         return
-    base = until if active else now
-    user.member_until = end_of_kst_day(base + timedelta(days=days))
+    user.member_until = end_of_kst_day(_base(until, now) + timedelta(days=days))
 
 
 def add_vip(db: Session, user: User, now: datetime | None = None) -> None:
@@ -82,11 +105,8 @@ def add_vip(db: Session, user: User, now: datetime | None = None) -> None:
     now = now or utcnow()
     days = get_settings().vip_days
     vip_until = as_utc(user.vip_until)
-    vip_base = vip_until if vip_until is not None and vip_until > now else now
-    user.vip_until = end_of_kst_day(vip_base + timedelta(days=days))
-    until = _until(user)
-    base = until if until is not None and until > now else now
-    user.member_until = end_of_kst_day(base + timedelta(days=days))
+    user.vip_until = end_of_kst_day(_base(vip_until, now) + timedelta(days=days))
+    user.member_until = end_of_kst_day(_base(_until(user), now) + timedelta(days=days))
 
 
 def start_banked(db: Session, user: User, now: datetime | None = None) -> bool:
@@ -95,9 +115,7 @@ def start_banked(db: Session, user: User, now: datetime | None = None) -> bool:
     if banked <= 0 or not can_start(db, user):
         return False
     now = now or utcnow()
-    until = _until(user)
-    base = until if until is not None and until > now else now
-    user.member_until = end_of_kst_day(base + timedelta(days=banked))
+    user.member_until = end_of_kst_day(_base(_until(user), now) + timedelta(days=banked))
     user.member_days_banked = 0
     return True
 
@@ -109,7 +127,7 @@ def adjust(user: User, days: int, now: datetime | None = None) -> None:
     if until is not None and until > now:
         user.member_until = until + timedelta(days=days)
     elif days > 0:
-        user.member_until = end_of_kst_day(now + timedelta(days=days))
+        user.member_until = end_of_kst_day(_start(now) + timedelta(days=days))
 
 
 def status(user: User, now: datetime | None = None) -> str:
@@ -147,4 +165,7 @@ def view(user: User, now: datetime | None = None) -> dict:
         "days": s.membership_days,
         "price": s.membership_price,
         "warn_days": s.membership_warn_days,
+        # 점검 기간: 오픈 시각과 지금 점검 중인지 (화면에서 "○월 ○일 ○시 오픈" 안내)
+        "open_at": open_at().isoformat() if open_at() else None,
+        "before_open": before_open(now),
     }

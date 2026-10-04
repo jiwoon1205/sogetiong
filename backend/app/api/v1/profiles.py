@@ -390,6 +390,9 @@ def upload_photo(
     approved_before = profile_service.has_approved_photo(db, current.id)
     if membership_service.needs_first_payment(current.user, has_approved_photo=approved_before):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="PAYMENT_REQUIRED")
+    # 점검 기간에는 기존 회원의 사진 재검토를 받지 않는다 (관리자 일이 몰리지 않게). 새 가입자의 첫 사진은 받는다.
+    if approved_before and membership_service.before_open() and not vip_service.is_vip_tester(current.user):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="MAINTENANCE")
     # 이용권이 끝난 사람은 사진 재검토를 신청할 수 없다 (2026-10-04 D9). 첫 검수(반려 후 다시 내기 포함)는 된다.
     if approved_before and not membership_service.has_membership(current.user):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="MEMBERSHIP_REQUIRED")

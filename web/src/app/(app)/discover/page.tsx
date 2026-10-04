@@ -7,6 +7,7 @@ import { MembershipRenew } from "@/components/PaymentStep";
 import { ProfileCard } from "@/components/ProfileCard";
 import { Button, ButtonLink, Notice, Spinner } from "@/components/ui";
 import { ApiError, api, errorMessage } from "@/lib/api";
+import { openTime, untilDay } from "@/lib/format";
 import { markMatchSeen } from "@/lib/seenMatches";
 import { useSession } from "@/lib/session";
 import { useKstNewDay } from "@/lib/useKstNewDay";
@@ -127,8 +128,8 @@ export default function DiscoverPage() {
       } catch (err) {
         // 하루 한도를 다 쓴 경우 (다른 기기에서 쓴 경우 등)
         if (action === "like" && err instanceof ApiError && err.status === 429) setLikes((prev) => (prev ? { ...prev, left: 0 } : prev));
-        // 보는 사이에 이용권이 끝난 경우 → 이용권 화면으로
-        if (err instanceof ApiError && err.code === "MEMBERSHIP_REQUIRED") {
+        // 보는 사이에 이용권이 끝난 경우 → 이용권 화면으로 (점검이 시작된 경우도 점검 화면으로)
+        if (err instanceof ApiError && (err.code === "MEMBERSHIP_REQUIRED" || err.code === "MAINTENANCE")) {
           setState({ kind: "blocked", code: err.code });
           void refresh();
           return;
@@ -175,6 +176,17 @@ export default function DiscoverPage() {
   function renderBody() {
     if (state.kind === "loading") return <Spinner label="오늘의 추천을 고르는 중" />;
     if (state.kind === "error") return <Notice tone="error">{state.message}</Notice>;
+    if (state.kind === "blocked" && state.code === "MAINTENANCE") {
+      return (
+        <Maintenance
+          showVip={Boolean(me.vip?.visible)}
+          onRetry={load}
+          onActivated={() => {
+            void refresh();
+          }}
+        />
+      );
+    }
     if (state.kind === "blocked" && state.code === "MEMBERSHIP_REQUIRED") {
       const m = me.membership;
       return (
@@ -367,6 +379,62 @@ function MembershipEnded({ ended, showVip, onActivated }: { ended: boolean; show
           </Link>
         )}
         <p className="text-center text-[12.5px] text-ink-faint">자동 결제는 없어요. 기간이 끝나면 다시 사면 돼요.</p>
+      </div>
+    </div>
+  );
+}
+
+/** 점검 기간 (2026-10-04, `점검 기간 설계`). 정식 오픈 전에는 추천·좋아요가 막히고 대화·결제만 된다.
+ *  미리 결제하면 이용권 기간은 오픈 시각부터 센다. 오픈 시각이 지나면 서버가 자동으로 연다. */
+function Maintenance({ showVip, onRetry, onActivated }: { showVip: boolean; onRetry: () => void; onActivated: () => void }) {
+  const { me } = useSession();
+  const m = me.membership;
+  const when = m?.open_at ? openTime(m.open_at) : null;
+  const ready = Boolean(m && (m.free || m.status === "active" || m.status === "banked"));
+  return (
+    <div className="mx-auto max-w-app py-10">
+      <div className="text-center">
+        <div className="mx-auto mb-8 h-px w-12 bg-ink" />
+        <p className="eyebrow">정식 오픈 준비 중</p>
+        <h1 className="mt-2 font-serif text-[23px] font-semibold">점검 중이에요</h1>
+        <p className="mx-auto mt-3 max-w-xs text-[14.5px] leading-relaxed text-ink-soft">
+          {when ? (
+            <>
+              <b className="text-ink">{when}</b>에 정식 오픈해요.
+            </>
+          ) : (
+            "곧 정식 오픈해요."
+          )}{" "}
+          그때까지 추천과 좋아요는 쉬어요. 이미 매칭된 사람과 대화는 계속할 수 있어요.
+        </p>
+      </div>
+      <div className="mt-8 space-y-4">
+        {ready ? (
+          <Notice tone="ok">
+            이용권 준비가 끝났어요.
+            {m?.until ? ` 오픈부터 ${untilDay(m.until)} 이용할 수 있어요.` : " 사진 평가가 끝나면 오픈부터 이용할 수 있어요."}
+          </Notice>
+        ) : (
+          <>
+            <p className="text-center text-[13.5px] text-ink-soft">
+              지금 미리 결제해도 이용권 기간은 <b className="text-ink">오픈 시각부터</b> 시작돼요.
+            </p>
+            <MembershipRenew onActivated={onActivated} />
+          </>
+        )}
+        {showVip && (
+          <Link
+            href="/liked"
+            className="block rounded-card border border-line bg-paper-card px-5 py-4 text-center text-[14px] hover:bg-paper-deep/60"
+          >
+            <span className="font-semibold">VIP 4주</span> <span className="text-ink-soft">· 기본 이용권 포함 · 오픈부터 시작</span>
+          </Link>
+        )}
+        <div className="text-center">
+          <Button variant="ghost" onClick={onRetry}>
+            다시 불러오기
+          </Button>
+        </div>
       </div>
     </div>
   );
