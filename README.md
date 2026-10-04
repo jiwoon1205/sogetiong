@@ -25,7 +25,6 @@ deploy/      운영 서버 설정 (Caddyfile, backend.env.example, backup.sh)
 .github/     GitHub Actions — 푸시하면 서버용 Docker 이미지를 자동으로 만듦
 docker-compose.yml   운영 서버에서 backend·web·caddy를 한 번에 실행
 01_ ~ 13_*.md        설계 문서
-frontend/    예전 화면(HTML/JS). 더 이상 쓰지 않음
 ```
 
 ## 내 PC에서 실행하기 (Windows PowerShell 기준)

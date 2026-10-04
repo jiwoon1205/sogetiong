@@ -8,7 +8,6 @@ import uuid
 from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
-from typing import Protocol
 
 from fastapi import UploadFile
 from PIL import Image, ImageOps, UnidentifiedImageError
@@ -107,12 +106,6 @@ def _check_pixels(size: tuple[int, int]) -> None:
 
 # ---------- 저장소 ----------
 
-class StorageBackend(Protocol):
-    def save(self, key: str, data: bytes) -> None: ...
-    def read(self, key: str) -> bytes: ...
-    def delete(self, key: str) -> None: ...
-
-
 class LocalStorage:
     """개발용 저장소. 운영에서는 R2/S3 private bucket 구현으로 교체한다 (설계도 §50)."""
 
@@ -137,9 +130,8 @@ class LocalStorage:
         self._path(key).unlink(missing_ok=True)
 
 
-def get_storage() -> StorageBackend:
-    settings = get_settings()
-    return LocalStorage(settings.local_storage_dir)
+def get_storage() -> LocalStorage:
+    return LocalStorage(get_settings().local_storage_dir)
 
 
 def new_storage_key(user_id: uuid.UUID) -> str:

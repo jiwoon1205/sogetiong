@@ -35,9 +35,8 @@ from app.schemas.admin import (
     UserGenderRequest,
     UserStatusRequest,
 )
-from app.services import admin_alert_service, membership_service, payment_service, profile_service, vip_service, withdrawal_service
+from app.services import admin_alert_service, audit_service, membership_service, payment_service, profile_service, vip_service, withdrawal_service
 from app.services.email_service import EmailDeliveryError, EmailService
-from app.services.audit_service import AuditService
 from app.services.notification_service import notify
 from app.services.session_service import (
     clear_admin_cookies,
@@ -80,7 +79,7 @@ def admin_two_factor(
     now = utcnow()
     admin.session.mfa_verified_at = now
     admin.admin.last_login_at = now
-    AuditService.record(db, admin_id=admin.id, action="ADMIN_LOGIN", target_type="ADMIN", target_id=admin.id, request=request)
+    audit_service.record(db, admin_id=admin.id, action="ADMIN_LOGIN", target_type="ADMIN", target_id=admin.id, request=request)
     db.commit()
     return {"role": admin.role, "permissions": sorted(admin.permissions)}
 
@@ -309,7 +308,7 @@ def get_photo_image(
         data = get_storage().read(photo.storage_key)
     except (FileNotFoundError, ValueError) as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="사진 파일이 없습니다.") from exc
-    AuditService.record(db, admin_id=admin.id, action="PHOTO_VIEW", target_type="USER_PHOTO", target_id=photo.id, request=request)
+    audit_service.record(db, admin_id=admin.id, action="PHOTO_VIEW", target_type="USER_PHOTO", target_id=photo.id, request=request)
     db.commit()
     stamped = _watermark(data, f"{admin.admin.email} {utcnow():%Y-%m-%d %H:%M}")
     return Response(
@@ -381,7 +380,7 @@ def evaluate_photo(
         notify(db, photo.user_id, "PHOTO_REVIEWED", "사진이 반려되었어요", f"사유: {payload.reject_reason}", photo.id)
 
     # 평가 수정 시 이전 값을 남긴다 (설계도 §60)
-    AuditService.record(
+    audit_service.record(
         db,
         admin_id=admin.id,
         action=action,
@@ -611,7 +610,7 @@ def get_user(
             )
         ],
     }
-    AuditService.record(db, admin_id=admin.id, action="USER_VIEW", target_type="USER", target_id=user.id, request=request)
+    audit_service.record(db, admin_id=admin.id, action="USER_VIEW", target_type="USER", target_id=user.id, request=request)
 
     if include_private:
         # 실명·이메일 등은 별도 권한(SUPER_ADMIN)이 있어야 하고, 조회 기록이 남는다
@@ -625,7 +624,7 @@ def get_user(
             "student_id": private.student_id if private else None,
             "birth_date": private.birth_date.isoformat() if private else None,
         }
-        AuditService.record(db, admin_id=admin.id, action="USER_PRIVATE_VIEW", target_type="USER", target_id=user.id, request=request)
+        audit_service.record(db, admin_id=admin.id, action="USER_PRIVATE_VIEW", target_type="USER", target_id=user.id, request=request)
     db.commit()
     return result
 
@@ -650,7 +649,7 @@ def adjust_user_membership(
     before = user.member_until.isoformat() if user.member_until else None
     membership_service.adjust(user, payload.days)
     after = user.member_until.isoformat() if user.member_until else None
-    AuditService.record(
+    audit_service.record(
         db,
         admin_id=admin.id,
         action="MEMBERSHIP_ADJUST",
@@ -684,7 +683,7 @@ def update_user_status(
         revoke_all_user_sessions(db, user.id)  # 즉시 로그아웃
     if user.deleted_at is None:  # 탈퇴한 사람에게는 알림을 보내지 않는다
         notify(db, user.id, "ACCOUNT_STATUS", "계정 상태가 변경되었어요", f"현재 상태: {payload.status}")
-    AuditService.record(
+    audit_service.record(
         db,
         admin_id=admin.id,
         action="USER_STATUS_CHANGE",
@@ -716,7 +715,7 @@ def update_user_department(
     before = profile.department_id
     profile.department_id = dept.id
     notify(db, user.id, "PROFILE_UPDATED", "학과가 변경되었어요", f"요청하신 대로 학과를 '{dept.name}'(으)로 바꿨어요.")
-    AuditService.record(
+    audit_service.record(
         db,
         admin_id=admin.id,
         action="USER_DEPARTMENT_CHANGE",
@@ -762,7 +761,7 @@ def update_user_gender(
 
     if changes:
         notify(db, user.id, "PROFILE_UPDATED", "성별 정보가 변경되었어요", "요청하신 대로 바꿨어요. " + ", ".join(changes))
-        AuditService.record(
+        audit_service.record(
             db,
             admin_id=admin.id,
             action="USER_GENDER_CHANGE",
@@ -811,7 +810,7 @@ def update_user_appearance_tier(
                 created_at=max(utcnow(), as_utc(latest.created_at) + timedelta(microseconds=1)),
             )
         )
-        AuditService.record(
+        audit_service.record(
             db,
             admin_id=admin.id,
             action="EVALUATION_TIER_CHANGE",
@@ -982,7 +981,7 @@ def read_match_messages(
     rows = list(reversed(rows[:limit]))
 
     nicknames = _nicknames(db, [match.user_a_id, match.user_b_id])
-    AuditService.record(
+    audit_service.record(
         db,
         admin_id=admin.id,
         action="CHAT_VIEW",
@@ -1062,7 +1061,7 @@ def update_report(
         report.resolved_at = utcnow()
         # 신고자에게는 결과만 알린다 (조치 내용 상세는 알리지 않음)
         notify(db, report.reporter_user_id, "REPORT_RESULT", "신고 처리 결과", "접수하신 신고가 처리되었습니다.", report.id)
-    AuditService.record(
+    audit_service.record(
         db,
         admin_id=admin.id,
         action="REPORT_UPDATE",
@@ -1145,7 +1144,7 @@ def _payment_or_404(db: Session, payment_id: uuid.UUID) -> Payment:
 
 
 def _record_payment(db: Session, admin: CurrentAdmin, request: Request, payment: Payment, action: str, before: str):
-    AuditService.record(
+    audit_service.record(
         db,
         admin_id=admin.id,
         action=action,

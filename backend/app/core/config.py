@@ -59,7 +59,6 @@ class Settings(BaseSettings):
     smtp_from_email: str = "no-reply@sogetiong.local"
 
     # --- 사진 ---
-    storage_backend: Literal["local"] = "local"
     local_storage_dir: str = "./private_storage"
     photo_max_bytes: int = 10 * 1024 * 1024  # 한 장당. 화면에서 먼저 줄여서 보내므로 보통 1~2MB
     photo_max_count: int = 3  # 한 번에 제출할 수 있는 사진 수
@@ -221,7 +220,7 @@ class Settings(BaseSettings):
         # 다만 서버를 다시 만들면 사라지는 컨테이너 내부 경로가 아니라, 절대 경로(볼륨)여야 한다.
         if self.database_url.startswith("sqlite") and not self.database_url.startswith("sqlite:////"):
             raise ValueError("운영 환경의 SQLite 경로는 절대 경로여야 합니다 (예: sqlite:////data/sogetiong.db)")
-        if self.storage_backend == "local" and not self.local_storage_dir.startswith("/"):
+        if not self.local_storage_dir.startswith("/"):
             raise ValueError("운영 환경의 LOCAL_STORAGE_DIR는 절대 경로여야 합니다 (예: /data/photos)")
         if self.email_backend != "smtp":
             raise ValueError("운영 환경에서는 EMAIL_BACKEND=smtp 이어야 합니다")
