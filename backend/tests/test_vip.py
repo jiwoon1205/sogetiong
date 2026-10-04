@@ -78,7 +78,7 @@ def test_buy_vip_for_two_weeks(sent_codes, db, vip_on, mails):
     info = me.get("/api/v1/me/vip").json()
     assert info["visible"] is True and info["active"] is False and info["can_buy"] is True
     assert info["price"] == 6000 and info["regular_price"] == 6000 and info["discount_until"] is None
-    assert info["days"] == 14
+    assert info["days"] == 28
     pay = info["payment"]
     assert pay["amount"] == 6000 and len(pay["code"]) == 6 and pay["account_number"] == "123-456-7890"
 
@@ -91,7 +91,7 @@ def test_buy_vip_for_two_weeks(sent_codes, db, vip_on, mails):
 
     until = user_of(db, me).vip_until
     db.refresh(user_of(db, me))
-    assert timedelta(days=13, hours=23) < until.replace(tzinfo=timezone.utc) - utcnow() <= timedelta(days=14)
+    assert timedelta(days=27, hours=23) < until.replace(tzinfo=timezone.utc) - utcnow() <= timedelta(days=28)
     assert me.get("/api/v1/me").json()["vip"]["active"] is True
 
 
@@ -122,12 +122,32 @@ def test_price_is_kept_after_request(sent_codes, db, vip_on, monkeypatch):
 
 def test_vip_not_for_sale_when_off(sent_codes, db, monkeypatch):
     monkeypatch.setattr(get_settings(), "vip_test_emails", "")
+    monkeypatch.setattr(get_settings(), "vip_preview", False)
     admin = admin_login(db)
     me = ready_user(sent_codes, db, admin, "me@hufs.ac.kr", gender="MALE", want="FEMALE")
     info = me.get("/api/v1/me/vip").json()
     assert info["visible"] is False and info["can_buy"] is False and info["payment"] is None
     assert me.post("/api/v1/me/vip/request").status_code == 409
     assert me.get("/api/v1/me").json()["vip"]["visible"] is False
+
+
+def test_vip_preview_shows_tab_without_sale(sent_codes, db, monkeypatch):
+    """판매 전 미리 보기 (2026-10-04): 일반 계정도 "받은 LIKE" 탭이 보이지만 살 수는 없다."""
+    monkeypatch.setattr(get_settings(), "vip_test_emails", "")
+    monkeypatch.setattr(get_settings(), "vip_preview", True)
+    admin = admin_login(db)
+    me = ready_user(sent_codes, db, admin, "me@hufs.ac.kr", gender="MALE", want="FEMALE")
+    assert me.get("/api/v1/me").json()["vip"]["visible"] is True
+    info = me.get("/api/v1/me/vip").json()
+    assert info["visible"] is True and info["active"] is False
+    assert info["can_buy"] is False and info["payment"] is None
+    assert info["blocked_reason"] == get_settings().vip_preview_notice
+    assert info["days"] == 28 and info["price"] == 6000
+    # 결제 요청도, 받은 LIKE 목록도 안 된다
+    assert me.post("/api/v1/me/vip/request").status_code == 409
+    assert me.get("/api/v1/liked-me").status_code == 403
+    # 관리자 입금 목록에 VIP 결제가 생기지 않는다
+    assert admin.get("/api/v1/admin/payments").json()["payments"] == []
 
 
 def test_vip_needs_approved_photo(sent_codes, db, vip_on):

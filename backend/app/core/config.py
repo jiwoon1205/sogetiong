@@ -87,10 +87,15 @@ class Settings(BaseSettings):
     daily_like_limit: int = 5
 
     # --- VIP (2026-10-03 정식 규칙) ---
-    # 꺼져 있으면 VIP를 살 수 없고 "받은 LIKE" 탭도 안 보인다 (아래 테스트 계정은 예외).
+    # 꺼져 있으면 VIP를 살 수 없다 (아래 테스트 계정은 예외).
     # 베타가 끝나는 날 SIGNUP_FEE_ENABLED와 함께 true로 바꾼다.
     vip_enabled: bool = False
-    vip_days: int = 14  # 한 번 사면 2주 (2026-10-03, 30일에서 변경)
+    # 미리 보기 (2026-10-04): VIP 판매 전에도 모든 사람에게 "받은 LIKE" 탭을 보여준다.
+    # 누르면 VIP 혜택 안내 + 아래 문구가 나오고, 결제 버튼은 없다 (VIP_ENABLED가 켜져야 살 수 있음).
+    # 탭을 다시 숨기려면 .env에 VIP_PREVIEW=false
+    vip_preview: bool = True
+    vip_preview_notice: str = "VIP는 정식 출시일(10월 8일)부터 살 수 있어요."
+    vip_days: int = 28  # 한 번 사면 4주 (2026-10-04 구독제 결정, 이전 2주)
     vip_price: int = 6000
     # 오픈 할인: 이 날짜(한국 시간, 그날 포함)까지 vip_discount_price. 비우면 할인 없음.
     # 베타 종료일 + 2주로 정해서 .env에 넣는다 (예: VIP_DISCOUNT_UNTIL=2026-12-14)

@@ -46,8 +46,14 @@ def vip_user_ids(db: Session) -> set[uuid.UUID]:
 
 
 def feature_visible(user: User) -> bool:
-    """"받은 LIKE" 탭과 VIP 구매를 보여줄까? 정식 오픈(VIP_ENABLED) 전에는 테스트 계정에만."""
-    return get_settings().vip_enabled or is_vip_tester(user)
+    """"받은 LIKE" 탭을 보여줄까?
+
+    VIP 판매 중(VIP_ENABLED)이거나, 판매 전 미리 보기(VIP_PREVIEW, 2026-10-04)면 모든 사람에게 보여준다.
+    미리 보기에서는 혜택 안내만 나오고 살 수는 없다 (profiles._vip_info의 can_buy=False).
+    둘 다 꺼져 있으면 테스트 계정에만.
+    """
+    s = get_settings()
+    return s.vip_enabled or s.vip_preview or is_vip_tester(user)
 
 
 def daily_like_limit(user: User) -> int:

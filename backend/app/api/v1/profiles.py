@@ -596,7 +596,8 @@ def _vip_info(db: Session, current: CurrentUser) -> dict:
         "payment": None,
     }
     if not settings.vip_enabled:
-        info["blocked_reason"] = "VIP는 아직 판매하지 않아요."
+        # 판매 전 미리 보기 (2026-10-04): 탭은 보이지만 결제 버튼 대신 출시 안내
+        info["blocked_reason"] = settings.vip_preview_notice if settings.vip_preview else "VIP는 아직 판매하지 않아요."
     elif vip_service.has_paid_vip(user):
         # VIP가 끝난 뒤에만 다시 살 수 있다 (2026-10-03)
         info["blocked_reason"] = "VIP 기간이 끝난 뒤에 다시 살 수 있어요."
