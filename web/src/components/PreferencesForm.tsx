@@ -136,6 +136,11 @@ export function PreferencesForm({
 
   return (
     <form onSubmit={save} className="space-y-7">
+      {/* 매칭 조건은 양쪽 모두 맞아야 추천된다 (서버 규칙). 2026-10-04: 사용자에게 분명히 알리려고 추가 */}
+      <Notice>
+        <strong className="font-medium text-ink">내 조건에 맞는 사람에게만 내 프로필이 추천돼요.</strong> 예를 들어 서울캠퍼스만 고르면 서울캠퍼스 학생만 나에게 추천되고, 나도 서울캠퍼스 학생에게만 보여요.
+      </Notice>
+
       <Notice>
         여기서 정한 조건은 상대에게 보이지 않아요. 조건에 맞지 않는 사람은 이유를 알리지 않고 조용히 걸러집니다.
         {p.configured && (
