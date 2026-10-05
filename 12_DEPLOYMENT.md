@@ -164,7 +164,7 @@ GitHub Actions (.github/workflows/build-images.yml)
    docker compose pull            # 새 이미지 내려받기
    docker compose up -d           # 새 이미지로 교체 (DB 구조 변경은 backend가 켜질 때 자동 적용)
    docker compose ps
-   docker image prune -f          # 안 쓰는 예전 이미지 정리 (디스크 20GB 아끼기)
+   docker image prune -a -f       # 지금 안 쓰는 예전 이미지 전부 정리 (디스크 20GB 아끼기, 실행 중인 이미지는 안 지워짐)
    ```
 4. https://private-matching.com/health 확인 → `"version"`이 방금 푸시한 커밋 번호 7자리인지 본다
 5. 휴대폰으로 사이트 → 설정 화면 맨 아래 **버전**도 같은 7자리인지 확인 (다르면 화면 이미지가 안 바뀐 것)
@@ -174,6 +174,18 @@ GitHub Actions (.github/workflows/build-images.yml)
 - 서버에서 `docker compose pull` → `docker compose up -d`를 했는지 (push만 하면 서버는 바뀌지 않는다)
 - 서버에서 `docker compose images` → web·backend가 방금 받은 이미지인지 (`IMAGE_TAG`로 예전 번호에 고정해 두지 않았는지 `echo $IMAGE_TAG`, `.env` 확인)
 - 휴대폰 브라우저 새로고침 (앱처럼 홈 화면에 추가했다면 완전히 닫았다가 다시 열기)
+
+#### 디스크가 가득 찼을 때 (2026-10-05: web 이미지만 못 받아서 화면이 옛 버전으로 남음)
+- 증상: `docker compose pull`에 `no space left on device`. backend는 새 버전인데 화면은 옛 버전 → 새 서버 값을 옛 화면이 못 읽어서 글자가 깨짐
+- 확인: `df -h /` (사용률), `docker system df` (Docker가 쓰는 양)
+- 정리: 아래를 실행한 뒤 다시 pull. 실행 중인 컨테이너의 이미지와 `./data`(DB·사진·백업)는 지워지지 않는다
+  ```bash
+  docker image prune -a -f
+  docker builder prune -f
+  docker compose pull web
+  docker compose up -d --force-recreate web
+  ```
+- 정리 후에도 `df -h /`가 90%를 넘으면 로그(`docker compose logs` 크기)·`data/backups`를 살펴본다
 
 ⚠️ 서버에서 `docker compose up -d --build`는 쓰지 않는다 (서버에서 직접 빌드 → 멈춤).
 
