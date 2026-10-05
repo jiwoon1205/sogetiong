@@ -1223,7 +1223,9 @@ def update_report(
 PAYMENT_HISTORY_LIMIT = 300
 
 
-def _payment_row(p: Payment, user_status: str | None, admin_emails: dict, reviewed: set, started: set) -> dict:
+def _payment_row(
+    p: Payment, user_status: str | None, match_suspended: bool, admin_emails: dict, reviewed: set, started: set
+) -> dict:
     return {
         "payment_id": str(p.id),
         "kind": p.kind,  # SIGNUP(기본 이용권, 예전 이름 가입비) / VIP
@@ -1231,6 +1233,10 @@ def _payment_row(p: Payment, user_status: str | None, admin_emails: dict, review
         "amount": p.amount,
         "status": p.status,
         "user_status": user_status,  # ACTIVE / SUSPENDED / BANNED / DELETED
+        # 매칭 정지 중인 사람의 결제 (2026-10-05): 관리자 화면에만 경고를 띄운다. 사용자 화면은 그대로.
+        # 돈을 받기 전에 정지를 풀지, "입금 없음"으로 돌려보낼지 관리자가 정한다. 정지된 사람만 상세 화면 링크용 ID를 준다.
+        "match_suspended": match_suspended,
+        "user_id": str(p.user_id) if match_suspended else None,
         "requested_at": p.requested_at.isoformat() if p.requested_at else None,
         "processed_at": p.processed_at.isoformat() if p.processed_at else None,
         "processed_by": admin_emails.get(p.processed_by_admin_id),
@@ -1247,7 +1253,7 @@ def list_payments(
     db: Session = Depends(get_db),
 ):
     """pending = 확인 대기 (오래된 순), history = 처리한 내역 (최근 순)."""
-    query = db.query(Payment, User.status).join(User, User.id == Payment.user_id)
+    query = db.query(Payment, User.status, User.match_suspended).join(User, User.id == Payment.user_id)
     if view == "pending":
         rows = query.filter(Payment.status == "REQUESTED").order_by(Payment.requested_at.asc()).all()
     else:
@@ -1257,9 +1263,9 @@ def list_payments(
             .limit(PAYMENT_HISTORY_LIMIT)
             .all()
         )
-    admin_ids = {p.processed_by_admin_id for p, _ in rows if p.processed_by_admin_id}
+    admin_ids = {p.processed_by_admin_id for p, _, _ in rows if p.processed_by_admin_id}
     admin_emails = dict(db.query(AdminUser.id, AdminUser.email).filter(AdminUser.id.in_(admin_ids)).all()) if admin_ids else {}
-    confirmed_users = [p.user_id for p, _ in rows if p.status == "CONFIRMED"]
+    confirmed_users = [p.user_id for p, _, _ in rows if p.status == "CONFIRMED"]
     reviewed = (
         {
             uid
@@ -1275,7 +1281,7 @@ def list_payments(
         if confirmed_users
         else set()
     )
-    return {"payments": [_payment_row(p, st, admin_emails, reviewed, started) for p, st in rows]}
+    return {"payments": [_payment_row(p, st, bool(ms), admin_emails, reviewed, started) for p, st, ms in rows]}
 
 
 def _payment_or_404(db: Session, payment_id: uuid.UUID) -> Payment:

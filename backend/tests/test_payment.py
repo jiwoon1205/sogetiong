@@ -301,3 +301,31 @@ def test_fee_on_requires_account_settings(monkeypatch):
     monkeypatch.setattr(s, "payment_account_number", "")
     with pytest.raises(ValueError):
         s.validate_settings()
+
+
+def test_payment_from_match_suspended_user_is_flagged_for_admin(sent_codes, db, fee_on, mails):
+    """매칭 정지 중인 사람의 결제 (2026-10-05): 관리자 입금 확인 목록에만 경고가 뜨고, 사용자 화면은 그대로다."""
+    admin = admin_login(db)
+    a = new_user(sent_codes, db, "a@hufs.ac.kr")
+    b = new_user(sent_codes, db, "b@hufs.ac.kr")
+    a_info_before = a.get("/api/v1/me/payment").json()
+    user_a = db.query(User).filter(User.email == "a@hufs.ac.kr").one()
+    r = admin.patch(f"/api/v1/admin/users/{user_a.id}/match-suspension", json={"suspended": True, "reason": "테스트 사유"})
+    assert r.status_code == 200, r.text
+
+    # 사용자 화면: 정지 전과 똑같다
+    a_info = a.get("/api/v1/me/payment").json()
+    assert a_info == a_info_before and "match_suspended" not in a.get("/api/v1/me/payment").text
+    a.post("/api/v1/me/payment/request")
+    b.post("/api/v1/me/payment/request")
+
+    rows = {p["code"]: p for p in pending(admin)}
+    flagged = rows[a_info["code"]]
+    assert flagged["match_suspended"] is True and flagged["user_id"] == str(user_a.id)
+    normal = rows[b.get("/api/v1/me/payment").json()["code"]]
+    assert normal["match_suspended"] is False and normal["user_id"] is None
+
+    # 경고만 할 뿐, 관리자가 확인하면 그대로 처리된다
+    assert admin.post(f"/api/v1/admin/payments/{flagged['payment_id']}/confirm").status_code == 200
+    history = admin.get("/api/v1/admin/payments?view=history").json()["payments"]
+    assert history[0]["match_suspended"] is True

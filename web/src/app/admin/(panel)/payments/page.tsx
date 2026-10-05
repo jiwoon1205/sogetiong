@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useState } from "react";
 import { Button, Notice, PageTitle, Spinner } from "@/components/ui";
 import { USER_STATUS_LABEL, adminApi } from "@/lib/admin";
@@ -14,6 +15,10 @@ type PaymentRow = {
   amount: number;
   status: "REQUESTED" | "CONFIRMED" | "REJECTED" | "REFUNDED";
   user_status: string | null;
+  /** 매칭 정지 중인 사람의 결제 (2026-10-05). 관리자에게만 보이는 경고 */
+  match_suspended?: boolean;
+  /** 매칭 정지 중일 때만 옴 (사용자 상세 화면 링크용) */
+  user_id?: string | null;
   requested_at: string | null;
   processed_at: string | null;
   processed_by: string | null;
@@ -54,6 +59,14 @@ export default function PaymentsPage() {
   usePolling(load, 30_000, [view]);
 
   async function act(row: PaymentRow, action: "confirm" | "reject" | "refund") {
+    if (
+      action === "confirm" &&
+      row.match_suspended &&
+      !window.confirm(
+        `⚠ 매칭 정지 중인 사용자의 결제예요.\n지금 확인하면 ${row.kind === "VIP" ? "VIP" : "이용권"}가 켜지지만, 정지를 풀기 전까지 매칭은 계속 숨겨져요.\n\n그래도 입금 확인할까요?`,
+      )
+    )
+      return;
     if (action === "refund" && !window.confirm(`${row.code} (${row.amount.toLocaleString()}원)을 환불 처리할까요?\n사용자 계좌로 송금을 먼저 끝낸 뒤 누르세요.`)) return;
     setError("");
     setBusy(row.payment_id + action);
@@ -118,6 +131,22 @@ export default function PaymentsPage() {
                     <span className="ml-2 rounded bg-paper-deep px-1.5 py-0.5 text-[11.5px] text-ink-soft">
                       {USER_STATUS_LABEL[p.user_status] ?? p.user_status}
                     </span>
+                  )}
+                  {p.match_suspended && (
+                    <span className="ml-2 rounded bg-brick-wash px-1.5 py-0.5 text-[11.5px] font-semibold text-brick-deep">⚠ 매칭 정지 중</span>
+                  )}
+                  {p.match_suspended && view === "pending" && (
+                    <p className="mt-1 text-[12.5px] text-brick">
+                      확인하기 전에 정할 것: 정지를 풀거나(
+                      {p.user_id ? (
+                        <Link href={`/admin/users/${p.user_id}`} className="underline underline-offset-4">
+                          사용자 상세
+                        </Link>
+                      ) : (
+                        "사용자 상세"
+                      )}
+                      ), 받지 않으려면 입금액을 돌려보낸 뒤 [입금 없음]. 사용자에게는 정지 사실이 보이지 않아요.
+                    </p>
                   )}
                   <p className={cn("mt-1 text-[12.5px]", late ? "font-semibold text-brick" : "text-ink-faint")}>
                     {view === "pending" ? (
