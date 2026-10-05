@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
+import { AnnouncementModal } from "@/components/AnnouncementModal";
 import { Brand } from "@/components/Brand";
 import { MemberStat } from "@/components/MemberStat";
 import { PushPrompt } from "@/components/PushPrompt";
@@ -91,6 +92,8 @@ function Shell({ children }: { children: React.ReactNode }) {
       </header>
       {/* 휴대폰 알림 안내 (2026-10-05): 이 기기에서 아직 안 켰으면 한 줄 보여준다 */}
       <PushPrompt />
+      {/* 한 번만 보여주는 공지 팝업 (2026-10-05) */}
+      <AnnouncementModal announcement={me.announcement} />
 
       <main className="mx-auto max-w-3xl px-5 py-8 sm:py-12">{children}</main>
 

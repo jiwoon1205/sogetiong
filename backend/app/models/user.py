@@ -56,6 +56,9 @@ class User(Base):
     # 휴대폰 알림을 못 받을 때(알림을 안 켰거나 배달 실패) 새 메시지·새 매칭을 학교 메일로 알려줄지
     # (2026-10-05, 마이그레이션 0019). 본인이 설정 화면에서 끌 수 있다.
     email_notify: Mapped[bool] = mapped_column(Boolean, default=True, server_default=true(), nullable=False)
+    # 한 번만 보여주는 공지 팝업에서 마지막으로 "확인"을 누른 공지 이름 (2026-10-05, 마이그레이션 0020)
+    # → services/announcement_service.py
+    announcement_seen: Mapped[str | None] = mapped_column(String(60), nullable=True)
 
     public_profile = relationship("PublicProfile", back_populates="user", uselist=False)
     private_profile = relationship("PrivateProfile", back_populates="user", uselist=False)

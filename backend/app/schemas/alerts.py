@@ -30,3 +30,7 @@ class PushUnsubscribeRequest(BaseModel):
 
 class AlertSettingsRequest(BaseModel):
     email_notify: bool
+
+
+class AnnouncementSeenRequest(BaseModel):
+    key: str = Field(max_length=60)

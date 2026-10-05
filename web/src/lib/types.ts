@@ -69,6 +69,8 @@ export type Me = {
   membership?: Membership;
   /** 설문 (2026-10-05). pending = 설문을 받는 중이고 아직 안 답함 → 설문 화면만 보여준다 */
   survey?: { pending: boolean };
+  /** 아직 안 본 한 번짜리 공지 이름 (2026-10-05). 없으면 null */
+  announcement?: string | null;
 };
 
 /** 이용권 상태 (2026-10-04 구독제). 기본 4주 / VIP 4주(기본 포함) */

@@ -11,8 +11,8 @@ from app.core.rate_limit import enforce_rate_limit
 from app.db.session import get_db
 from app.deps import CurrentUser, get_current_user
 from app.models.push import PushSubscription
-from app.schemas.alerts import AlertSettingsRequest, PushSubscribeRequest, PushUnsubscribeRequest
-from app.services import push_service
+from app.schemas.alerts import AlertSettingsRequest, AnnouncementSeenRequest, PushSubscribeRequest, PushUnsubscribeRequest
+from app.services import announcement_service, push_service
 
 router = APIRouter()
 
@@ -113,3 +113,17 @@ def test_push(current: CurrentUser = Depends(get_current_user), db: Session = De
             detail="알림을 보내지 못했어요. 알림을 껐다가 다시 켜 보세요.",
         )
     return {"delivered": delivered}
+
+
+# ---------- 한 번만 보여주는 공지 팝업 (2026-10-05) ----------
+
+@router.post("/me/announcement/seen")
+def mark_announcement_seen(
+    payload: AnnouncementSeenRequest, current: CurrentUser = Depends(get_current_user), db: Session = Depends(get_db)
+):
+    """공지 팝업에서 "확인"(또는 "알림 켜러 가기")을 누름 → 이 계정에는 다시 안 뜬다."""
+    if payload.key != announcement_service.CURRENT:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="지금 보여주는 공지가 아니에요.")
+    current.user.announcement_seen = payload.key
+    db.commit()
+    return {"announcement": None}
