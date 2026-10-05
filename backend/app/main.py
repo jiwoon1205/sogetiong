@@ -6,7 +6,16 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.v1 import admin_router, auth_router, catalog_router, matching_router, me_router, safety_router
+from app.api.v1 import (
+    admin_router,
+    auth_router,
+    catalog_router,
+    matching_router,
+    me_router,
+    safety_router,
+    survey_admin_router,
+    survey_router,
+)
 from app.core.config import get_settings
 from app.core.dev_bootstrap import prepare_dev_database
 from app.db.session import SessionLocal
@@ -87,6 +96,9 @@ app.include_router(catalog_router, prefix=API, tags=["catalog"])
 app.include_router(matching_router, prefix=API, tags=["matching"])
 app.include_router(safety_router, prefix=API, tags=["safety"])
 app.include_router(admin_router, prefix=f"{API}/admin", tags=["admin"])
+# 설문 (2026-10-05)
+app.include_router(survey_router, prefix=API, tags=["survey"])
+app.include_router(survey_admin_router, prefix=f"{API}/admin", tags=["admin"])
 
 
 @app.get("/health")

@@ -15,6 +15,7 @@ const NAV = [
   { href: "/admin/chats", label: "대화", perm: "chats:read" },
   { href: "/admin/users", label: "사용자", perm: "users:read" },
   { href: "/admin/match-suspensions", label: "매칭 정지된 사용자", perm: "users:status" },
+  { href: "/admin/survey", label: "설문", perm: "surveys:manage" },
   { href: "/admin/audit-logs", label: "감사 로그", perm: "audit:read" },
 ];
 

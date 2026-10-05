@@ -88,6 +88,8 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         "audit:read",
         # 가입비 입금 확인·거절·환불 (2026-10-03). 통장을 보는 사람(최고 관리자)만.
         "payments:confirm",
+        # 설문 켜기/끄기·결과 보기 (2026-10-05)
+        "surveys:manage",
     ],
     # chats:read = 모든 대화 열람 (열 때마다 감사 로그에 CHAT_VIEW로 기록)
     "MODERATOR": ["dashboard:read", "users:read", "users:status", "reports:read", "reports:update", "chats:read"],

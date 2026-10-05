@@ -4,3 +4,5 @@ from app.api.v1.catalog import router as catalog_router
 from app.api.v1.matching import router as matching_router
 from app.api.v1.profiles import router as me_router
 from app.api.v1.safety import router as safety_router
+from app.api.v1.survey import admin_router as survey_admin_router
+from app.api.v1.survey import router as survey_router

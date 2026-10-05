@@ -19,7 +19,15 @@ from app.models.profile import Interest, PublicProfile, UserInterest
 from app.models.university import Campus, Department
 from app.schemas.auth import DeleteAccountRequest
 from app.schemas.profile import PreferencesRequest, ProfileUpdateRequest
-from app.services import admin_alert_service, auth_service, membership_service, payment_service, profile_service, vip_service
+from app.services import (
+    admin_alert_service,
+    auth_service,
+    membership_service,
+    payment_service,
+    profile_service,
+    survey_service,
+    vip_service,
+)
 from app.services.email_service import EmailService
 from app.services.session_service import clear_user_cookies, revoke_all_user_sessions
 from app.services.storage_service import PhotoValidationError, get_storage, new_storage_key, process_upload
@@ -90,6 +98,8 @@ def get_me(current: CurrentUser = Depends(get_current_user), db: Session = Depen
             "active": vip_service.is_vip(current.user),
             "until": current.user.vip_until.isoformat() if vip_service.has_paid_vip(current.user) else None,
         },
+        # 설문 (2026-10-05). pending = 설문을 받는 중이고 아직 안 답함 → 화면이 설문만 보여준다
+        "survey": {"pending": survey_service.pending(db, current.id)},
     }
 
 
