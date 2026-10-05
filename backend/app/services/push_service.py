@@ -5,7 +5,12 @@
 - 잠금화면에 보이는 글에는 상대 닉네임·대화 내용을 넣지 않는다 ("훕팅 · 새 메시지가 왔어요").
 - 휴대폰 알림은 메시지마다 보낸다 (카톡·DM처럼, 2026-10-05 변경. 처음엔 같은 방 10분에 한 번이었음).
   잠금화면에는 대화방마다 한 줄만 남고(같은 tag), 새 메시지가 올 때마다 다시 울린다(renotify).
-- 방금(45초 안에) 사이트를 쓰고 있던 사람에게는 보내지 않는다 (화면을 보고 있으면 이미 알 수 있으므로).
+- 새 메시지 알림은 그 사람이 "지금 그 대화방 화면을 보고 있을 때"만 생략한다 (2026-10-06 변경).
+  예전에는 "45초 안에 사이트를 쓴 사람"이면 아무 화면이든 생략했는데, 그러면
+  ① 앱을 막 닫은 직후 온 답장, ② PC에 사이트를 켜 둔 동안 휴대폰으로 와야 할 알림이 사라졌다.
+  대화방 화면은 4초마다 새 메시지를 확인하므로, 그 확인이 12초(PUSH_SKIP_IF_VIEWING_SECONDS) 안에 있었으면 "보는 중".
+  화면을 닫거나 다른 앱으로 가면 화면이 /me/alerts/away로 바로 알려서 그때부터는 알림이 온다.
+- 새 매칭 알림은 항상 보낸다 (자주 생기지 않고 중요해서).
 - 휴대폰 알림이 켜진 기기가 하나도 없거나 모두 배달에 실패하면 → 학교 메일로 보낸다 (본인이 메일 알림을 끄지 않았다면).
   메일만은 같은 대화방·같은 종류에 10분(EMAIL_ALERT_THROTTLE_MINUTES)에 한 번 (메일함이 넘치지 않게).
 
@@ -65,7 +70,7 @@ class Alert:
 # ---------- 기억해 두는 값 (서버 프로세스가 1개라 메모리에 둔다. 재시작하면 비워지는데 그래도 괜찮다) ----------
 
 _lock = threading.Lock()
-_last_seen: dict[uuid.UUID, float] = {}  # 사용자 → 마지막으로 사이트를 쓴 시각
+_viewing: dict[tuple[uuid.UUID, uuid.UUID], float] = {}  # (사용자, 대화방) → 그 대화방 화면이 마지막으로 새 메시지를 확인한 시각
 _last_sent: dict[tuple[uuid.UUID, uuid.UUID, str], float] = {}  # (사용자, 대화방, 종류) → 마지막 메일 알림 시각
 _executor: ThreadPoolExecutor | None = None
 
@@ -73,14 +78,21 @@ _executor: ThreadPoolExecutor | None = None
 def reset() -> None:
     """테스트용: 기억해 둔 값을 모두 지운다."""
     with _lock:
-        _last_seen.clear()
+        _viewing.clear()
         _last_sent.clear()
 
 
-def mark_seen(user_id: uuid.UUID) -> None:
-    """로그인한 사용자가 API를 부를 때마다 (deps.get_current_user). DB에 쓰지 않는다."""
+def mark_viewing(user_id: uuid.UUID, match_id: uuid.UUID) -> None:
+    """대화방 화면이 새 메시지를 확인할 때마다 (GET /matches/{id}/messages). DB에 쓰지 않는다."""
     with _lock:
-        _last_seen[user_id] = time.monotonic()
+        _viewing[(user_id, match_id)] = time.monotonic()
+
+
+def mark_away(user_id: uuid.UUID) -> None:
+    """화면을 닫거나 다른 앱·대화방으로 갔을 때 (POST /me/alerts/away). 이때부터 바로 알림이 간다."""
+    with _lock:
+        for key in [k for k in _viewing if k[0] == user_id]:
+            del _viewing[key]
 
 
 def is_allowed_endpoint(endpoint: str) -> bool:
@@ -133,10 +145,12 @@ def _deliver_safely(alert: Alert) -> None:
 
 # ---------- 3) 실제로 보내기 ----------
 
-def _using_site(alert: Alert) -> bool:
-    """방금(45초 안에) 사이트를 쓰고 있었나."""
-    seen = _last_seen.get(alert.user_id)
-    return seen is not None and time.monotonic() - seen < get_settings().push_skip_if_active_seconds
+def _viewing_room(alert: Alert) -> bool:
+    """지금 그 대화방 화면을 보고 있나 (새 메시지 알림만 해당)."""
+    if alert.kind != MESSAGE:
+        return False
+    seen = _viewing.get((alert.user_id, alert.match_id))
+    return seen is not None and time.monotonic() - seen < get_settings().push_skip_if_viewing_seconds
 
 
 def _email_allowed(alert: Alert) -> bool:
@@ -154,7 +168,7 @@ def _email_allowed(alert: Alert) -> bool:
 def deliver(alert: Alert) -> str:
     """결과: "push" / "email" / "skipped" (테스트에서 확인용)."""
     with _lock:
-        if _using_site(alert):
+        if _viewing_room(alert):
             return "skipped"
     db = SessionLocal()
     try:

@@ -256,7 +256,8 @@ def like(payload: TargetRequest, current: CurrentUser = Depends(get_current_user
         db.flush()
         if not hidden:
             for uid in (a, b):
-                notify_match_created(db, uid, match.id)
+                # 방금 LIKE를 누른 본인은 화면에서 바로 보므로 휴대폰 알림은 상대에게만
+                notify_match_created(db, uid, match.id, push=uid != current.id)
             # 하루 매칭 3번 (2026-10-06): 이번 매칭으로 오늘 한도에 닿은 사람은 자동 매칭 정지.
             # 이번 매칭은 그대로 보이고, 다음 매칭부터 숨김이 된다.
             match_limit_service.check_and_suspend(db, [a, b])
@@ -482,6 +483,8 @@ def list_messages(
       (같은 시각에 저장된 메시지를 놓치지 않도록 "같은 시각 이상"으로 가져오고, 화면에서 중복을 걸러낸다)
     """
     match = _my_match(db, current, match_id)
+    # 지금 이 대화방 화면을 보고 있다는 표시 (메모리에만) → 이 방의 새 메시지는 휴대폰 알림을 생략한다
+    push_service.mark_viewing(current.id, match.id)
     query = db.query(Message).filter(Message.match_id == match.id)
     anchor_id = after or before
     anchor = db.get(Message, anchor_id) if anchor_id else None
@@ -522,7 +525,7 @@ def send_message(
     partner = match.partner_of(current.id)
     if not has_unread(db, partner, "NEW_MESSAGE", match.id):
         notify(db, partner, "NEW_MESSAGE", "새 메시지가 도착했어요", "매칭된 상대가 메시지를 보냈습니다.", match.id)
-    # 휴대폰 알림 (못 켠 사람은 메일): 같은 방은 10분에 한 번, 상대가 사이트를 보고 있으면 안 보냄 (2026-10-05)
+    # 휴대폰 알림 (못 켠 사람은 메일): 메시지마다. 상대가 지금 이 대화방을 보고 있으면 안 보냄 (2026-10-06)
     push_service.queue(db, partner, push_service.MESSAGE, match.id)
     db.commit()
     return {"message_id": str(message.id), "body": message.body, "is_mine": True, "sent_at": message.created_at.isoformat()}

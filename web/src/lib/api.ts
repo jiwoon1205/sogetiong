@@ -21,6 +21,8 @@ type Options = {
   body?: unknown;
   form?: FormData;
   admin?: boolean;
+  /** 화면을 닫는 중에도 요청이 끝까지 가게 (브라우저가 페이지를 정리해도 보냄) */
+  keepalive?: boolean;
 };
 
 function readCookie(name: string): string | undefined {
@@ -82,7 +84,7 @@ export async function api<T = unknown>(path: string, opts: Options = {}): Promis
 
   let res: Response;
   try {
-    res = await fetch(`/api/v1${path}`, { method, headers, body, credentials: "include", cache: "no-store" });
+    res = await fetch(`/api/v1${path}`, { method, headers, body, credentials: "include", cache: "no-store", keepalive: opts.keepalive });
   } catch {
     throw new ApiError(0, "서버에 연결할 수 없습니다. 백엔드가 켜져 있는지 확인해주세요.", "NETWORK");
   }

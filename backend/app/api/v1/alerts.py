@@ -115,6 +115,14 @@ def test_push(current: CurrentUser = Depends(get_current_user), db: Session = De
     return {"delivered": delivered}
 
 
+@router.post("/me/alerts/away")
+def mark_away(current: CurrentUser = Depends(get_current_user)):
+    """대화방 화면을 닫거나 다른 앱으로 갔을 때 화면이 부른다 (2026-10-06).
+    이때부터 새 메시지가 오면 바로 휴대폰 알림이 간다 (12초를 기다리지 않음)."""
+    push_service.mark_away(current.id)
+    return {"ok": True}
+
+
 # ---------- 한 번만 보여주는 공지 팝업 (2026-10-05) ----------
 
 @router.post("/me/announcement/seen")

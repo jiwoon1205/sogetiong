@@ -73,7 +73,26 @@ export default function ChatPage() {
   }, [matchId]);
 
   // 새 메시지 확인: 탭이 안 보이면 멈추고, 다시 보이면 바로 확인
+  // (서버는 이 확인으로 "이 대화방을 보는 중"을 알고, 보는 동안에는 이 방의 휴대폰 알림을 생략한다)
   usePolling(loadMessages, POLL_MS, [loadMessages]);
+
+  // 화면을 끄거나 다른 앱·화면으로 가면 서버에 "안 보는 중"을 바로 알린다 (2026-10-06)
+  // → 그 직후 온 답장도 휴대폰 알림이 온다 (예전에는 나간 직후 45초 동안 온 알림이 사라졌다)
+  useEffect(() => {
+    const away = () => {
+      api("/me/alerts/away", { method: "POST", keepalive: true }).catch(() => {});
+    };
+    const onVisibility = () => {
+      if (document.hidden) away();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("pagehide", away);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("pagehide", away);
+      away(); // 대화방에서 다른 화면으로 이동
+    };
+  }, [matchId]);
 
   // 메시지 목록만 맨 아래로 내린다.
   // (예전 scrollIntoView는 페이지 전체까지 같이 스크롤해서, 모바일에서 화면이 통째로 밀리는 원인이었다)

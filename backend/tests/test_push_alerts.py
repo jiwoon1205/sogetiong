@@ -3,7 +3,7 @@
 규칙
 - 새 메시지·새 매칭만 알린다. 알림 글에 닉네임·대화 내용이 없다.
 - 휴대폰 알림은 메시지마다 (카톡·DM처럼). 메일로 대신 보낼 때만 같은 방 10분에 한 번.
-- 방금 사이트를 쓰던 사람에게는 안 보낸다.
+- 새 메시지 알림은 그 대화방 화면을 보고 있을 때만 생략한다 (2026-10-06).
 - 휴대폰 알림이 켜진 기기가 없거나 모두 실패하면 메일 (메일 알림을 끄면 아무것도 안 감).
 - 로그아웃하면 그 기기의 알림 주소가 지워진다.
 """
@@ -173,15 +173,48 @@ def test_new_message_push_without_names_or_text(sent_codes, db, push_on, sent):
     assert {p["tag"] for _, p in sent["push"]} == {f"message-{match_id}"}
 
 
-def test_no_alert_while_using_site(sent_codes, db, push_on, sent):
+def test_no_alert_only_while_viewing_that_room(sent_codes, db, push_on, sent):
+    """그 대화방 화면을 보고 있을 때만 생략한다 (2026-10-06)."""
     a, b = _pair(sent_codes, db)
     match_id = _match(a, b)
     subscribe(a)
     _away()
     sent["push"].clear()
-    a.get("/api/v1/notifications/unread-count")  # a가 화면을 보고 있음 (20초마다 부름)
+    sent["mail"].clear()
+    a.get(f"/api/v1/matches/{match_id}/messages")  # a가 이 대화방을 보고 있음 (4초마다 부름)
     b.post(f"/api/v1/matches/{match_id}/messages", json={"body": "안녕"})
     assert sent["push"] == [] and sent["mail"] == []
+
+    # 대화방을 닫으면(away) 바로 다시 알림이 간다
+    assert a.post("/api/v1/me/alerts/away").status_code == 200
+    b.post(f"/api/v1/matches/{match_id}/messages", json={"body": "갔니?"})
+    assert len(sent["push"]) == 1
+
+
+def test_alert_while_using_other_screens(sent_codes, db, push_on, sent):
+    """다른 화면을 보거나 PC에 사이트를 켜 둔 상태여도 휴대폰 알림이 간다 (예전 버그: 45초 동안 사라짐)."""
+    a, b = _pair(sent_codes, db)
+    match_id = _match(a, b)
+    subscribe(a)
+    _away()
+    sent["push"].clear()
+    a.get("/api/v1/notifications/unread-count")  # 머리말이 20초마다 부르는 요청
+    a.get("/api/v1/me")
+    b.post(f"/api/v1/matches/{match_id}/messages", json={"body": "안녕"})
+    assert len(sent["push"]) == 1
+
+
+def test_viewing_expires_after_few_seconds(sent_codes, db, push_on, sent, monkeypatch):
+    """대화방 화면이 확인을 멈추면(화면 꺼짐 등) 12초 뒤부터 알림이 간다 (away를 못 보낸 경우 대비)."""
+    a, b = _pair(sent_codes, db)
+    match_id = _match(a, b)
+    subscribe(a)
+    _away()
+    sent["push"].clear()
+    a.get(f"/api/v1/matches/{match_id}/messages")
+    monkeypatch.setattr(get_settings(), "push_skip_if_viewing_seconds", 0)
+    b.post(f"/api/v1/matches/{match_id}/messages", json={"body": "안녕"})
+    assert len(sent["push"]) == 1
 
 
 def test_email_when_no_device_and_can_turn_off(sent_codes, db, sent):

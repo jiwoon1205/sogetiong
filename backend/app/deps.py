@@ -18,7 +18,6 @@ from app.core.time import as_utc, utcnow
 from app.db.session import get_db
 from app.models.admin import ALL_PERMISSIONS, SUPER_ADMIN_ROLE, AdminSession, AdminUser
 from app.models.user import User, UserSession
-from app.services import push_service
 from app.services.session_service import CSRF_HEADER, mark_user_active
 
 SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
@@ -99,8 +98,6 @@ def get_current_user(
         changed = True
     if changed:
         db.commit()
-    # 지금 사이트를 쓰고 있다는 표시 (메모리에만). 이러면 방금 온 메시지를 휴대폰 알림으로 또 보내지 않는다.
-    push_service.mark_seen(user.id)
 
     return CurrentUser(id=user.id, user=user, session=session)
 
