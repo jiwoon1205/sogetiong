@@ -21,6 +21,7 @@ APPEARANCE_CHOICES: dict[str, str] = {
     "AI_ONLY": "지금처럼 AI 평가 (4가지 기준)",
     "AI_NEW_CRITERIA": "AI 평가 + 기준 변경",
     "AI_PLUS_ADMIN": "AI 점수 + 운영자 ±2점 조정",
+    "AI_PLUS_ADMIN_OPT_IN": "AI + 원하는 사람만 ±2점 요청",
     "ADMIN_ONLY": "운영자 혼자 평가",
     "OTHER": "기타",
 }

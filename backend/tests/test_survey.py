@@ -109,3 +109,13 @@ def test_survey_admin_permission(sent_codes, db):
     assert mod.put("/api/v1/admin/survey/open", json={"open": True}).status_code == 403
     a = signup(sent_codes, db, "a@hufs.ac.kr")
     assert a.get("/api/v1/admin/survey").status_code == 401
+
+
+def test_opt_in_choice(sent_codes, db):
+    """'원하는 사람만 운영자 조정 요청' 보기 (2026-10-05 추가)"""
+    admin = admin_login(db)
+    open_survey(admin)
+    a = signup(sent_codes, db, "a@hufs.ac.kr")
+    assert a.post("/api/v1/me/survey", json={**ANSWER, "appearance_choice": "AI_PLUS_ADMIN_OPT_IN"}).status_code == 201
+    rows = {row["key"]: row["total"] for row in admin.get("/api/v1/admin/survey").json()["appearance"]}
+    assert rows["AI_PLUS_ADMIN_OPT_IN"] == 1

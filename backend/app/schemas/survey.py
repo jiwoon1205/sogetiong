@@ -14,7 +14,7 @@ def _clean(text: str | None) -> str | None:
 class SurveyAnswerRequest(BaseModel):
     """POST /me/survey"""
 
-    appearance_choice: Literal["AI_ONLY", "AI_NEW_CRITERIA", "AI_PLUS_ADMIN", "ADMIN_ONLY", "OTHER"]
+    appearance_choice: Literal["AI_ONLY", "AI_NEW_CRITERIA", "AI_PLUS_ADMIN", "AI_PLUS_ADMIN_OPT_IN", "ADMIN_ONLY", "OTHER"]
     appearance_comment: str | None = Field(default=None, max_length=500)
     payment_rating: int = Field(ge=1, le=5)
     payment_comment: str | None = Field(default=None, max_length=500)
