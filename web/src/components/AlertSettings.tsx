@@ -125,9 +125,12 @@ export function AlertSettings() {
           ) : denied ? (
             <DeniedGuide />
           ) : env === "ready" ? (
-            <Button className="w-full" onClick={turnOn} loading={busy}>
-              휴대폰 알림 켜기
-            </Button>
+            <>
+              {!isIos() && <AndroidGuide />}
+              <Button className="w-full" onClick={turnOn} loading={busy}>
+                휴대폰 알림 켜기
+              </Button>
+            </>
           ) : env === "ios-install" ? (
             <IosGuide />
           ) : env === "in-app" ? (
@@ -146,13 +149,24 @@ export function AlertSettings() {
           </div>
         )}
 
+        {/* 다른 휴대폰(PC에서 보는 중이거나, 친구에게 알려줄 때)용: 기기별 켜는 방법 모아 보기 */}
+        {alerts.push_available && !on && (
+          <details className="mt-3 text-[13.5px] text-ink-soft">
+            <summary className="cursor-pointer select-none text-ink-soft underline underline-offset-2">기기별로 켜는 방법 보기</summary>
+            <div className="mt-3 space-y-3">
+              <AndroidGuide />
+              <IosGuide />
+            </div>
+          </details>
+        )}
+
         {!on && alerts.device_count > 0 && (
           <p className="mt-3 text-[12.5px] text-ink-faint">다른 기기 {alerts.device_count}대에서는 알림을 받고 있어요.</p>
         )}
 
         <ul className="mt-4 space-y-1 border-t border-line pt-3 text-[12.5px] leading-relaxed text-ink-faint">
           <li>· 알림에는 &lsquo;훕팅 · 새 메시지가 왔어요&rsquo;만 보여요. 상대 닉네임이나 대화 내용은 잠금화면에 나오지 않아요.</li>
-          <li>· 같은 대화방 알림은 10분에 한 번만 와요. 사이트를 보고 있을 때는 오지 않아요.</li>
+          <li>· 카톡처럼 메시지가 올 때마다 알려드려요. 사이트를 보고 있을 때는 오지 않아요.</li>
           <li>· 로그아웃하면 그 기기에서는 알림이 꺼져요.</li>
         </ul>
       </div>
@@ -177,6 +191,33 @@ function Steps({ items }: { items: React.ReactNode[] }) {
         </li>
       ))}
     </ol>
+  );
+}
+
+function AndroidGuide() {
+  return (
+    <div className="mb-3 rounded-md border border-line bg-paper-deep px-4 py-3">
+      <p className="mb-3 text-[14px] font-semibold">안드로이드는 이렇게 켜요</p>
+      <Steps
+        items={[
+          <>
+            <b className="font-semibold text-ink">크롬</b> 또는 <b className="font-semibold text-ink">삼성 인터넷</b>으로 private-matching.com 을 열고 로그인해요.
+          </>,
+          <>
+            설정 → 알림 → <b className="font-semibold text-ink">휴대폰 알림 켜기</b>를 눌러요.
+          </>,
+          <>
+            &lsquo;알림을 보내도록 허용할까요?&rsquo;가 뜨면 <b className="font-semibold text-ink">허용</b>을 눌러요.
+          </>,
+          <>
+            <b className="font-semibold text-ink">테스트 알림 보내기</b>로 잘 오는지 확인해요.
+          </>,
+        ]}
+      />
+      <p className="mt-3 text-[12.5px] leading-relaxed text-ink-faint">
+        앱처럼 쓰고 싶다면: 크롬 오른쪽 위 ⋮ → <b className="font-semibold">홈 화면에 추가</b> (삼성 인터넷은 아래 ≡ → 현재 페이지 추가 → 홈 화면). 알림이 안 오면 휴대폰 설정 → 애플리케이션 → 크롬(또는 훕팅) → 알림이 켜져 있는지 확인해 주세요.
+      </p>
+    </div>
   );
 }
 

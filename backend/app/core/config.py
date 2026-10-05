@@ -157,8 +157,9 @@ class Settings(BaseSettings):
     vapid_public_key: str = ""
     vapid_private_key: str = ""
     vapid_subject: str = "mailto:support@private-matching.com"
-    # 같은 대화방(같은 종류)의 알림은 이 시간에 한 번만 (메시지가 연달아 와도 시끄럽지 않게)
-    push_throttle_minutes: int = 10
+    # 휴대폰 알림은 메시지마다 보낸다 (카톡·DM처럼, 2026-10-05 변경).
+    # 휴대폰 알림을 못 받아 메일로 대신 보낼 때만, 같은 대화방(같은 종류)은 이 시간에 한 번 (메일함이 넘치지 않게)
+    email_alert_throttle_minutes: int = 10
     # 이 시간(초) 안에 사이트를 쓰고 있던 사람에게는 알림을 보내지 않는다 (화면이 켜져 있으면 20초마다 서버를 부른다)
     push_skip_if_active_seconds: int = 45
     # 한 사람이 알림을 켤 수 있는 기기 수. 넘으면 가장 오래된 기기부터 지운다.

@@ -2,7 +2,8 @@
 
 규칙
 - 새 메시지·새 매칭만 알린다. 알림 글에 닉네임·대화 내용이 없다.
-- 같은 방·같은 종류는 10분에 한 번. 방금 사이트를 쓰던 사람에게는 안 보낸다.
+- 휴대폰 알림은 메시지마다 (카톡·DM처럼). 메일로 대신 보낼 때만 같은 방 10분에 한 번.
+- 방금 사이트를 쓰던 사람에게는 안 보낸다.
 - 휴대폰 알림이 켜진 기기가 없거나 모두 실패하면 메일 (메일 알림을 끄면 아무것도 안 감).
 - 로그아웃하면 그 기기의 알림 주소가 지워진다.
 """
@@ -165,9 +166,11 @@ def test_new_message_push_without_names_or_text(sent_codes, db, push_on, sent):
     assert "비밀 내용" not in text and "몰래닉네임" not in text and "user_b" not in text
     assert sent["mail"] == []  # 휴대폰으로 갔으면 메일은 안 감
 
-    # 10분 안에 같은 방 메시지가 또 오면 조용히
+    # 메시지가 연달아 와도 하나하나 알림 (카톡·DM처럼). 잠금화면에는 같은 tag라 한 줄로 묶인다
     b.post(f"/api/v1/matches/{match_id}/messages", json={"body": "또 보냄"})
-    assert len(sent["push"]) == 1
+    b.post(f"/api/v1/matches/{match_id}/messages", json={"body": "또또"})
+    assert len(sent["push"]) == 3
+    assert {p["tag"] for _, p in sent["push"]} == {f"message-{match_id}"}
 
 
 def test_no_alert_while_using_site(sent_codes, db, push_on, sent):
@@ -188,6 +191,9 @@ def test_email_when_no_device_and_can_turn_off(sent_codes, db, sent):
     sent["mail"].clear()
     b.post(f"/api/v1/matches/{match_id}/messages", json={"body": "안녕"})
     assert sent["mail"] == [("MESSAGE", "a@hufs.ac.kr", match_id)]
+    # 메일은 같은 방 10분에 한 번만 (메일함이 넘치지 않게)
+    b.post(f"/api/v1/matches/{match_id}/messages", json={"body": "또"})
+    assert len(sent["mail"]) == 1
 
     # 메일 알림 끄기
     r = a.patch("/api/v1/me/alerts", json={"email_notify": False})

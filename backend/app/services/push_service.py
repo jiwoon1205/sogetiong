@@ -3,9 +3,11 @@
 규칙
 - 알림을 보내는 일: 새 메시지(MESSAGE), 새 매칭(MATCH) 두 가지뿐.
 - 잠금화면에 보이는 글에는 상대 닉네임·대화 내용을 넣지 않는다 ("훕팅 · 새 메시지가 왔어요").
-- 같은 대화방·같은 종류의 알림은 10분(PUSH_THROTTLE_MINUTES)에 한 번만.
+- 휴대폰 알림은 메시지마다 보낸다 (카톡·DM처럼, 2026-10-05 변경. 처음엔 같은 방 10분에 한 번이었음).
+  잠금화면에는 대화방마다 한 줄만 남고(같은 tag), 새 메시지가 올 때마다 다시 울린다(renotify).
 - 방금(45초 안에) 사이트를 쓰고 있던 사람에게는 보내지 않는다 (화면을 보고 있으면 이미 알 수 있으므로).
 - 휴대폰 알림이 켜진 기기가 하나도 없거나 모두 배달에 실패하면 → 학교 메일로 보낸다 (본인이 메일 알림을 끄지 않았다면).
+  메일만은 같은 대화방·같은 종류에 10분(EMAIL_ALERT_THROTTLE_MINUTES)에 한 번 (메일함이 넘치지 않게).
 
 흐름
 1) API가 DB에 메시지·매칭을 쓰면서 queue()로 "보낼 알림"을 세션에 적어 둔다.
@@ -64,7 +66,7 @@ class Alert:
 
 _lock = threading.Lock()
 _last_seen: dict[uuid.UUID, float] = {}  # 사용자 → 마지막으로 사이트를 쓴 시각
-_last_sent: dict[tuple[uuid.UUID, uuid.UUID, str], float] = {}  # (사용자, 대화방, 종류) → 마지막 알림 시각
+_last_sent: dict[tuple[uuid.UUID, uuid.UUID, str], float] = {}  # (사용자, 대화방, 종류) → 마지막 메일 알림 시각
 _executor: ThreadPoolExecutor | None = None
 
 
@@ -131,17 +133,19 @@ def _deliver_safely(alert: Alert) -> None:
 
 # ---------- 3) 실제로 보내기 ----------
 
-def _should_send(alert: Alert) -> bool:
-    """방금 사이트를 쓰고 있었거나, 같은 방 알림을 10분 안에 보냈으면 False. 보내기로 하면 시각을 기록한다."""
-    settings = get_settings()
+def _using_site(alert: Alert) -> bool:
+    """방금(45초 안에) 사이트를 쓰고 있었나."""
+    seen = _last_seen.get(alert.user_id)
+    return seen is not None and time.monotonic() - seen < get_settings().push_skip_if_active_seconds
+
+
+def _email_allowed(alert: Alert) -> bool:
+    """같은 방 메일 알림을 10분 안에 보냈으면 False. 보내기로 하면 시각을 기록한다."""
     now = time.monotonic()
+    key = (alert.user_id, alert.match_id, alert.kind)
     with _lock:
-        seen = _last_seen.get(alert.user_id)
-        if seen is not None and now - seen < settings.push_skip_if_active_seconds:
-            return False
-        key = (alert.user_id, alert.match_id, alert.kind)
         sent = _last_sent.get(key)
-        if sent is not None and now - sent < settings.push_throttle_minutes * 60:
+        if sent is not None and now - sent < get_settings().email_alert_throttle_minutes * 60:
             return False
         _last_sent[key] = now
         return True
@@ -149,8 +153,9 @@ def _should_send(alert: Alert) -> bool:
 
 def deliver(alert: Alert) -> str:
     """결과: "push" / "email" / "skipped" (테스트에서 확인용)."""
-    if not _should_send(alert):
-        return "skipped"
+    with _lock:
+        if _using_site(alert):
+            return "skipped"
     db = SessionLocal()
     try:
         user = db.get(User, alert.user_id)
@@ -160,7 +165,7 @@ def deliver(alert: Alert) -> str:
             subs = db.query(PushSubscription).filter(PushSubscription.user_id == user.id).all()
             if subs and send_to_devices(db, subs, payload_for(alert)) > 0:
                 return "push"
-        if not user.email_notify:
+        if not user.email_notify or not _email_allowed(alert):
             return "skipped"
         email = user.email
     finally:
