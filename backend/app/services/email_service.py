@@ -82,6 +82,33 @@ class EmailService:
             dev_log="사진 반려 안내 메일",
         )
 
+    # ---------- 새 메시지·새 매칭 (휴대폰 알림을 못 받는 사람에게만, 2026-10-05) ----------
+    # 상대 닉네임·대화 내용은 넣지 않는다 (휴대폰 알림과 같은 원칙). 같은 방은 10분에 한 번만 (push_service).
+
+    @staticmethod
+    def send_new_message_notice(email: str, match_id) -> None:
+        site = get_settings().site_url
+        _send(
+            email,
+            "[훕팅] 새 메시지가 왔어요",
+            "매칭된 상대가 메시지를 보냈어요.\n\n"
+            f"확인하기: {site}/chat/{match_id}\n\n"
+            + _ALERT_MAIL_FOOTER.format(site=site),
+            dev_log="새 메시지 안내 메일",
+        )
+
+    @staticmethod
+    def send_new_match_notice(email: str, match_id) -> None:
+        site = get_settings().site_url
+        _send(
+            email,
+            "[훕팅] 새로운 매칭이 생겼어요",
+            "서로 LIKE를 보내 매칭되었어요. 대화를 시작해 보세요.\n\n"
+            f"대화하러 가기: {site}/chat/{match_id}\n\n"
+            + _ALERT_MAIL_FOOTER.format(site=site),
+            dev_log="새 매칭 안내 메일",
+        )
+
     # ---------- 운영진 알림 ----------
 
     @staticmethod
@@ -123,6 +150,12 @@ class EmailService:
             "사용자에게는 \"15분 이내 확인\"이라고 안내돼 있어요.",
             dev_log=f"관리자 입금 알림 ({code})",
         )
+
+
+_ALERT_MAIL_FOOTER = (
+    "휴대폰 알림을 켜면 메일 대신 휴대폰으로 바로 알려드려요: {site}/settings#alerts\n"
+    "이 메일을 그만 받으려면 설정 → 알림에서 '메일로 알려주기'를 끄세요."
+)
 
 
 REPORT_REASON_LABELS = {

@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { AlertSettings } from "@/components/AlertSettings";
 import { MembershipRenew } from "@/components/PaymentStep";
 import { PreferencesForm } from "@/components/PreferencesForm";
 import { SupportContact } from "@/components/SupportContact";
@@ -9,6 +10,7 @@ import { Button, Field, Input, Modal, Notice, PageTitle, Spinner } from "@/compo
 import { api, errorMessage } from "@/lib/api";
 import { useCatalog } from "@/lib/catalog";
 import { untilDay } from "@/lib/format";
+import { disablePush } from "@/lib/push";
 import { useSession } from "@/lib/session";
 
 export default function SettingsPage() {
@@ -18,6 +20,8 @@ export default function SettingsPage() {
   const [deleteOpen, setDeleteOpen] = useState(false);
 
   async function logout() {
+    // 이 기기의 휴대폰 알림도 끈다 (다른 사람이 이 기기로 로그인해도 내 알림이 오지 않게)
+    await disablePush().catch(() => {});
     await api("/auth/logout", { method: "POST" }).catch(() => {});
     router.replace("/");
   }
@@ -30,6 +34,8 @@ export default function SettingsPage() {
       <PreferencesForm campuses={campuses} />
 
       <MyMembership onActivated={() => void refresh()} />
+
+      <AlertSettings />
 
       <section className="mt-14">
         <p className="eyebrow mb-4">계정</p>

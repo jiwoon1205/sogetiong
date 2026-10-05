@@ -53,6 +53,9 @@ class User(Base):
     # 정지를 풀어도 숨겨진 매칭은 그대로 숨김이다 → 관리자가 하나씩 골라서 다시 보이게 한다.
     match_suspended: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false(), nullable=False)
     match_suspended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # 휴대폰 알림을 못 받을 때(알림을 안 켰거나 배달 실패) 새 메시지·새 매칭을 학교 메일로 알려줄지
+    # (2026-10-05, 마이그레이션 0019). 본인이 설정 화면에서 끌 수 있다.
+    email_notify: Mapped[bool] = mapped_column(Boolean, default=True, server_default=true(), nullable=False)
 
     public_profile = relationship("PublicProfile", back_populates="user", uselist=False)
     private_profile = relationship("PrivateProfile", back_populates="user", uselist=False)

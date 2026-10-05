@@ -16,6 +16,7 @@ from app.models.matching import (
 )
 from app.models.payment import Payment
 from app.models.photo import AppearanceEvaluation, UserPhoto
+from app.models.push import PushSubscription
 from app.models.profile import Interest, PrivateProfile, PublicProfile, UserInterest
 from app.models.university import Campus, Department, University
 from app.models.user import User, UserDailyVisit, UserSession, VerificationToken

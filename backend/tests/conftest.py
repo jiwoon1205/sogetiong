@@ -36,6 +36,7 @@ from app.db.session import SessionLocal, engine  # noqa: E402
 from app.main import app  # noqa: E402
 from app.models import AdminRole, AdminUser, Campus, Department  # noqa: E402
 from app.scripts import seed  # noqa: E402
+from app.services import push_service  # noqa: E402
 from app.services.admin_alert_service import reset_photo_alert  # noqa: E402
 
 BASE_URL = "https://testserver"  # Secure 쿠키가 전송되도록 https
@@ -47,6 +48,7 @@ def fresh_db(monkeypatch):
     Base.metadata.create_all(engine)
     reset_rate_limits()
     reset_photo_alert()
+    push_service.reset()
     seed.run()
     yield
 

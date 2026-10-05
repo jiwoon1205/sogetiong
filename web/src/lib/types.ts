@@ -215,3 +215,14 @@ export const TIER_OPTIONS: { value: AppearanceTier; label: string }[] = [
 ];
 
 export const TIER_LABEL: Record<AppearanceTier, string> = { HIGH: "상", MID: "중", LOW: "하" };
+
+/** 휴대폰 알림·메일 알림 설정 (2026-10-05, GET /me/alerts) */
+export type Alerts = {
+  /** 서버에 알림 열쇠가 들어 있어 휴대폰 알림을 쓸 수 있는가 */
+  push_available: boolean;
+  public_key: string | null;
+  /** 알림을 켠 기기 수 (이 기기 포함 여부는 브라우저에 직접 확인) */
+  device_count: number;
+  /** 휴대폰 알림을 못 받을 때 학교 메일로 알려줄지 */
+  email_notify: boolean;
+};

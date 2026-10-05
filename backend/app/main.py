@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1 import (
     admin_router,
+    alerts_router,
     auth_router,
     catalog_router,
     matching_router,
@@ -99,6 +100,8 @@ app.include_router(admin_router, prefix=f"{API}/admin", tags=["admin"])
 # 설문 (2026-10-05)
 app.include_router(survey_router, prefix=API, tags=["survey"])
 app.include_router(survey_admin_router, prefix=f"{API}/admin", tags=["admin"])
+# 휴대폰 알림 (2026-10-05)
+app.include_router(alerts_router, prefix=API, tags=["alerts"])
 
 
 @app.get("/health")

@@ -149,6 +149,21 @@ class Settings(BaseSettings):
     # 검수 대기 사진이 이만큼 쌓이면 운영진에게 메일 한 통 (사진 한 장마다 보내면 메일이 너무 많다)
     photo_alert_threshold: int = 10
 
+    # --- 휴대폰 알림 (웹 푸시, 2026-10-05) ---
+    # VAPID 열쇠: 우리 서버가 보낸 알림이라는 걸 증명하는 열쇠 한 쌍. 서버에서 한 번 만들어 .env에 넣는다:
+    #   docker compose exec backend python -m app.scripts.make_vapid_keys
+    # 비어 있으면 휴대폰 알림은 꺼진 상태다 (설정 화면에 "준비 중"으로 보이고, 메일 알림만 간다).
+    # ⚠️ 한 번 쓰기 시작하면 바꾸지 않는다 (바꾸면 모든 사람이 알림을 다시 켜야 한다).
+    vapid_public_key: str = ""
+    vapid_private_key: str = ""
+    vapid_subject: str = "mailto:support@private-matching.com"
+    # 같은 대화방(같은 종류)의 알림은 이 시간에 한 번만 (메시지가 연달아 와도 시끄럽지 않게)
+    push_throttle_minutes: int = 10
+    # 이 시간(초) 안에 사이트를 쓰고 있던 사람에게는 알림을 보내지 않는다 (화면이 켜져 있으면 20초마다 서버를 부른다)
+    push_skip_if_active_seconds: int = 45
+    # 한 사람이 알림을 켤 수 있는 기기 수. 넘으면 가장 오래된 기기부터 지운다.
+    push_max_devices: int = 5
+
     cors_origins: str = "http://localhost:3000"
 
     model_config = SettingsConfigDict(
@@ -182,6 +197,10 @@ class Settings(BaseSettings):
         if self.open_at.tzinfo is None:
             return self.open_at.replace(tzinfo=KST).astimezone(timezone.utc)
         return self.open_at.astimezone(timezone.utc)
+
+    @property
+    def push_enabled(self) -> bool:
+        return bool(self.vapid_public_key.strip() and self.vapid_private_key.strip())
 
     @property
     def vip_test_email_set(self) -> set[str]:

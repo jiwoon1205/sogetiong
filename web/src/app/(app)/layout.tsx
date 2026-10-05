@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useState } from "react";
 import { Brand } from "@/components/Brand";
 import { MemberStat } from "@/components/MemberStat";
+import { PushPrompt } from "@/components/PushPrompt";
 import { Spinner } from "@/components/ui";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/format";
@@ -88,6 +89,8 @@ function Shell({ children }: { children: React.ReactNode }) {
           </div>
         </div>
       </header>
+      {/* 휴대폰 알림 안내 (2026-10-05): 이 기기에서 아직 안 켰으면 한 줄 보여준다 */}
+      <PushPrompt />
 
       <main className="mx-auto max-w-3xl px-5 py-8 sm:py-12">{children}</main>
 

@@ -17,7 +17,7 @@ from app.models.matching import Like, Match, MatchingPreference, Message, Report
 from app.models.profile import PublicProfile
 from app.models.user import User
 from app.schemas.matching import SendMessageRequest, TargetRequest
-from app.services import matching_service, membership_service, profile_service, vip_service
+from app.services import matching_service, membership_service, profile_service, push_service, vip_service
 from app.services.notification_service import has_unread, notify, notify_match_created
 
 router = APIRouter()
@@ -512,5 +512,7 @@ def send_message(
     partner = match.partner_of(current.id)
     if not has_unread(db, partner, "NEW_MESSAGE", match.id):
         notify(db, partner, "NEW_MESSAGE", "새 메시지가 도착했어요", "매칭된 상대가 메시지를 보냈습니다.", match.id)
+    # 휴대폰 알림 (못 켠 사람은 메일): 같은 방은 10분에 한 번, 상대가 사이트를 보고 있으면 안 보냄 (2026-10-05)
+    push_service.queue(db, partner, push_service.MESSAGE, match.id)
     db.commit()
     return {"message_id": str(message.id), "body": message.body, "is_mine": True, "sent_at": message.created_at.isoformat()}

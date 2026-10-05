@@ -3,6 +3,7 @@ import uuid
 from sqlalchemy.orm import Session
 
 from app.models.matching import Notification
+from app.services import push_service
 
 
 def notify(db: Session, user_id: uuid.UUID, type_: str, title: str, body: str, related_id: uuid.UUID | None = None) -> None:
@@ -28,3 +29,5 @@ def notify_match_created(db: Session, user_id: uuid.UUID, match_id: uuid.UUID) -
     """매칭 알림. 서로 LIKE했을 때, 그리고 관리자가 숨김 매칭을 다시 보이게 할 때 같은 문구를 쓴다
     (사용자가 둘을 구분할 수 없게)."""
     notify(db, user_id, "MATCH_CREATED", "새로운 매칭이 생겼어요", "서로 LIKE를 보내 매칭되었습니다. 대화를 시작해보세요.", match_id)
+    # 휴대폰 알림 (못 켠 사람은 메일). commit이 성공한 뒤에 보내진다 (2026-10-05)
+    push_service.queue(db, user_id, push_service.MATCH, match_id)
