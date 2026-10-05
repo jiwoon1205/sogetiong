@@ -4,7 +4,9 @@
 - 성비: "활성 사용자"의 남녀 비율 (관리자 대시보드 원그래프와 같은 기준)
   활성 사용자 = 사진 검수 완료 + 최근 7일(오늘 포함) 안에 접속한 정상 계정
 - 로그인 없이 누구나 부르는 숫자라서 5분 동안 기억해 두고 같은 값을 돌려준다 (서버 부담을 줄이려고).
-- 사람 수는 퍼센트로만 알려 준다 (활성 남녀 인원 자체는 공개하지 않는다).
+- 성비는 "여자를 1로 놓았을 때 남자가 몇인지"(male_per_female, 소수 첫째 자리)로 보낸다. 예: 1.2 → "여 1 : 남 1.2"
+  활성 여자가 0명이면 계산할 수 없으므로 None (화면에서 성비 줄을 숨김).
+- 막대 그래프용으로 여자 퍼센트(female_pct)도 함께 보낸다. 활성 남녀 인원 자체는 공개하지 않는다.
 """
 
 import threading
@@ -47,12 +49,12 @@ def _compute(db: Session) -> dict:
     male = active_gender("MALE")
     female = active_gender("FEMALE")
     active = male + female
-    female_pct = round(female / active * 100) if active else None
+    # 활성 여자가 0명이면 "여 1 : 남 ?"를 계산할 수 없으므로 비율을 보내지 않는다 (화면에서 성비 줄을 숨김)
+    has_ratio = female > 0
     return {
         "total": count(db, db.query(User.id)),
-        # 활성 사용자가 한 명도 없으면 비율을 보내지 않는다 (화면에서 성비 줄을 숨김)
-        "female_pct": female_pct,
-        "male_pct": (100 - female_pct) if female_pct is not None else None,
+        "male_per_female": round(male / female, 1) if has_ratio else None,
+        "female_pct": round(female / active * 100) if has_ratio else None,
     }
 
 

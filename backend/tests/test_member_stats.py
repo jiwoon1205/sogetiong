@@ -19,7 +19,7 @@ from tests.conftest import admin_login, ready_user, signup
 def test_member_stats_without_login_when_empty():
     r = TestClient(app).get("/api/v1/stats/members")
     assert r.status_code == 200
-    assert r.json() == {"total": 0, "female_pct": None, "male_pct": None}
+    assert r.json() == {"total": 0, "male_per_female": None, "female_pct": None}
 
 
 def test_member_stats_total_includes_all_and_ratio_uses_active_only(sent_codes, db):
@@ -40,6 +40,6 @@ def test_member_stats_total_includes_all_and_ratio_uses_active_only(sent_codes, 
 
     body = TestClient(app).get("/api/v1/stats/members").json()
     assert body["total"] == 6
-    # 활성: 남 1(m), 여 2(f1, f2) → 여 67 : 남 33
+    # 활성: 남 1(m), 여 2(f1, f2) → 여 1 : 남 0.5, 막대는 여 67%
+    assert body["male_per_female"] == 0.5
     assert body["female_pct"] == 67
-    assert body["male_pct"] == 33
