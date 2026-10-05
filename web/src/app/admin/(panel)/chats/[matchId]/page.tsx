@@ -20,7 +20,7 @@ type Chat = {
   has_more: boolean;
 };
 
-const MATCH_STATUS_LABEL: Record<string, string> = { ACTIVE: "대화 중", UNMATCHED: "매칭 해제", BLOCKED: "차단으로 종료" };
+const MATCH_STATUS_LABEL: Record<string, string> = { ACTIVE: "대화 중", UNMATCHED: "매칭 해제", BLOCKED: "차단으로 종료", HIDDEN: "숨김 (매칭 정지)" };
 
 /** 관리자 대화 열람 (읽기 전용). 열 때마다 감사 로그에 CHAT_VIEW가 남는다. */
 export default function ChatViewer() {

@@ -27,6 +27,10 @@ type Detail = {
   member_days_banked?: number;
   membership_status?: "none" | "banked" | "active" | "expired";
   membership_free?: boolean;
+  /** 매칭 정지 (2026-10-05, 관리자만 봄) */
+  match_suspended?: boolean;
+  match_suspended_at?: string | null;
+  hidden_matches?: number;
   profile: Card | null;
   campus: { id: string; name: string } | null;
   department: { id: string; name: string } | null;
@@ -118,6 +122,17 @@ export default function UserDetail() {
             <StatusForm key={d.user_id} userId={d.user_id} current={d.status} deleted={!!d.deleted_at} onDone={() => load(!!d.private)} />
           )}
 
+          {admin.can("users:status") && (!d.deleted_at || d.match_suspended) && (
+            <MatchSuspensionForm
+              key={`${d.user_id}-${d.match_suspended}`}
+              userId={d.user_id}
+              suspended={!!d.match_suspended}
+              since={d.match_suspended_at ?? null}
+              hiddenCount={d.hidden_matches ?? 0}
+              onDone={() => load(!!d.private)}
+            />
+          )}
+
           {admin.can("users:department") && d.campus && !d.deleted_at && (
             <DepartmentForm key={`${d.user_id}-${d.department?.id}`} userId={d.user_id} campusId={d.campus.id} current={d.department} onDone={() => load(!!d.private)} />
           )}
@@ -207,7 +222,7 @@ type MatchRow = {
   last_message_at: string | null;
 };
 
-const MATCH_STATUS_LABEL: Record<string, string> = { ACTIVE: "대화 중", UNMATCHED: "매칭 해제", BLOCKED: "차단으로 종료" };
+const MATCH_STATUS_LABEL: Record<string, string> = { ACTIVE: "대화 중", UNMATCHED: "매칭 해제", BLOCKED: "차단으로 종료", HIDDEN: "숨김 (매칭 정지)" };
 
 /** 이 사용자의 모든 대화방 (목록만. 내용은 눌러서 열면 감사 로그에 기록됨) */
 const PHOTO_STATUS_LABEL: Record<string, string> = {
@@ -357,6 +372,82 @@ function StatusForm({ userId, current, deleted, onDone }: { userId: string; curr
       {ok && <Notice tone="ok">변경했어요.</Notice>}
       <Button type="submit" variant={status === "ACTIVE" || status === "DELETED" ? "primary" : "danger"} loading={loading} disabled={status === current || reason.trim().length < 2}>
         상태 변경
+      </Button>
+    </form>
+  );
+}
+
+/** 매칭 정지 (2026-10-05): 켜면 서로 LIKE해도 매칭이 숨겨진다. 사용자에게는 절대 알리지 않는다 */
+function MatchSuspensionForm({
+  userId,
+  suspended,
+  since,
+  hiddenCount,
+  onDone,
+}: {
+  userId: string;
+  suspended: boolean;
+  since: string | null;
+  hiddenCount: number;
+  onDone: () => void;
+}) {
+  const [reason, setReason] = useState("");
+  const [error, setError] = useState("");
+  const [ok, setOk] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setLoading(true);
+    setError("");
+    setOk(false);
+    try {
+      await adminApi(`/users/${userId}/match-suspension`, { method: "PATCH", body: { suspended: !suspended, reason } });
+      setOk(true);
+      setReason("");
+      onDone();
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <form onSubmit={submit} className="space-y-4">
+      <p className="eyebrow">매칭 정지</p>
+      <p className="text-[14px]">
+        {suspended ? (
+          <span className="font-semibold text-brick">매칭 정지 중{since && <> · {dateTime(since)}부터</>}</span>
+        ) : (
+          <span className="text-ink-soft">정지 안 됨</span>
+        )}
+        {hiddenCount > 0 && (
+          <span className="ml-2 text-[13px] text-ink-soft">
+            숨겨진 매칭 <span className="num">{hiddenCount}</span>개 ·{" "}
+            <Link href="/admin/match-suspensions" className="underline underline-offset-4">
+              보러 가기
+            </Link>
+          </span>
+        )}
+      </p>
+      <Notice>
+        매칭 정지된 사람은 서로 LIKE해도 매칭이 뜨지 않아요 (상대에게도 안 보여요). 본인에게는 알림이 가지 않아요. 이미 있던 매칭과
+        대화는 그대로예요. 정지를 풀어도 숨겨진 매칭은 그대로 숨김이라, &lsquo;매칭 정지된 사용자&rsquo; 화면에서 하나씩 다시 보이게 해야 해요.
+      </Notice>
+      <Field label="사유 (감사 로그에 남아요)" htmlFor="match-suspend-reason">
+        <Input
+          id="match-suspend-reason"
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+          maxLength={300}
+          placeholder={suspended ? "확인 완료" : "프로필 확인 필요"}
+        />
+      </Field>
+      {error && <Notice tone="error">{error}</Notice>}
+      {ok && <Notice tone="ok">변경했어요.</Notice>}
+      <Button type="submit" variant={suspended ? "primary" : "danger"} loading={loading} disabled={reason.trim().length < 2}>
+        {suspended ? "매칭 정지 풀기" : "매칭 정지하기"}
       </Button>
     </form>
   );

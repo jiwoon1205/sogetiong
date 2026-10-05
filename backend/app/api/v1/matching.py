@@ -18,7 +18,7 @@ from app.models.profile import PublicProfile
 from app.models.user import User
 from app.schemas.matching import SendMessageRequest, TargetRequest
 from app.services import matching_service, membership_service, profile_service, vip_service
-from app.services.notification_service import has_unread, notify
+from app.services.notification_service import has_unread, notify, notify_match_created
 
 router = APIRouter()
 
@@ -133,6 +133,9 @@ def liked_me(current: CurrentUser = Depends(get_current_user), db: Session = Dep
     if not vip_service.is_vip(current.user):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="VIP_REQUIRED")
 
+    # 매칭 정지된 사람(2026-10-05): 받은 LIKE에 답해도 매칭이 안 뜨므로, 이상하게 느끼지 않게 목록을 비워 둔다
+    if current.user.match_suspended:
+        return {"profiles": []}
     likers = profile_service.likers_of(db, current.id)
     excluded = profile_service.excluded_user_ids(db, current.id, include_passed=False)
     liked_at = {uid: at for uid, at in likers if uid not in excluded}
@@ -236,11 +239,17 @@ def like(payload: TargetRequest, current: CurrentUser = Depends(get_current_user
     match = None
     if reverse:
         a, b = profile_service.match_pair(current.id, target.user_id)
-        match = Match(user_a_id=a, user_b_id=b, status="ACTIVE")
+        # 매칭 정지 (2026-10-05): 둘 중 한 명이라도 정지면 숨김 매칭으로 만든다.
+        # 두 사람 모두에게 매칭·알림이 보이지 않고, 관리자가 "다시 보이게"를 누르면 그때 알림이 간다.
+        hidden = current.user.match_suspended or bool(
+            db.query(User.match_suspended).filter(User.id == target.user_id).scalar()
+        )
+        match = Match(user_a_id=a, user_b_id=b, status="HIDDEN" if hidden else "ACTIVE")
         db.add(match)
         db.flush()
-        for uid in (a, b):
-            notify(db, uid, "MATCH_CREATED", "새로운 매칭이 생겼어요", "서로 LIKE를 보내 매칭되었습니다. 대화를 시작해보세요.", match.id)
+        if not hidden:
+            for uid in (a, b):
+                notify_match_created(db, uid, match.id)
     try:
         db.commit()
     except IntegrityError:
@@ -250,9 +259,11 @@ def like(payload: TargetRequest, current: CurrentUser = Depends(get_current_user
         match = db.query(Match).filter(Match.user_a_id == a, Match.user_b_id == b).first()
 
     # 매칭되기 전에는 상대가 나를 LIKE했는지 알려주지 않는다 (설계도 §23)
+    # 숨김 매칭은 "매칭 안 됨"과 똑같이 응답한다 (매칭 정지 사실을 알 수 없게)
+    visible = match is not None and match.status == "ACTIVE"
     return {
-        "matched": match is not None,
-        "match_id": str(match.id) if match else None,
+        "matched": visible,
+        "match_id": str(match.id) if visible else None,
         "likes_left_today": profile_service.likes_left_today(db, current.id, limit),
     }
 
@@ -285,7 +296,8 @@ def undo_pass(profile_id: uuid.UUID, current: CurrentUser = Depends(get_current_
 def _my_match(db: Session, current: CurrentUser, match_id: uuid.UUID, *, require_active: bool = True) -> Match:
     """내가 속한 매칭만 조회. 남의 매칭이면 존재 여부도 알려주지 않도록 404."""
     match = db.get(Match, match_id)
-    if match is None or not match.has_member(current.id):
+    # 숨김 매칭(매칭 정지)은 없는 것처럼 404
+    if match is None or not match.has_member(current.id) or match.status == "HIDDEN":
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="대화방을 찾을 수 없습니다.")
     if require_active:
         partner = match.partner_of(current.id)
@@ -380,7 +392,8 @@ def list_ended_matches(current: CurrentUser = Depends(get_current_user), db: Ses
         db.query(Match)
         .filter(
             ((Match.user_a_id == current.id) | (Match.user_b_id == current.id)),
-            Match.status != "ACTIVE",
+            # 숨김 매칭(HIDDEN)은 끝난 대화에도 절대 나오지 않는다
+            Match.status.in_(["UNMATCHED", "BLOCKED"]),
             Match.ended_at >= since,
         )
         .order_by(Match.ended_at.desc())

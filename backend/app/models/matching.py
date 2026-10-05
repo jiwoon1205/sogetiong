@@ -91,7 +91,10 @@ class Like(Base):
 
 class Match(Base):
     """user_a_id < user_b_id 순서로 저장해 같은 쌍이 두 번 생기지 않게 한다.
-    status: ACTIVE / UNMATCHED / BLOCKED"""
+    status: ACTIVE / UNMATCHED / BLOCKED / HIDDEN
+
+    HIDDEN (2026-10-05): 둘 중 한 명이 "매칭 정지" 상태일 때 생긴 매칭. 두 사람 모두에게 보이지 않고
+    (매칭 목록·끝난 대화·알림 어디에도 없음), 관리자가 "다시 보이게"를 누르면 ACTIVE가 된다."""
 
     __tablename__ = "matches"
     __table_args__ = (UniqueConstraint("user_a_id", "user_b_id", name="uq_matches_user_pair"),)

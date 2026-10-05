@@ -19,7 +19,7 @@ type ChatRow = {
 };
 type ChatList = { matches: ChatRow[]; has_more: boolean };
 
-const MATCH_STATUS_LABEL: Record<string, string> = { ACTIVE: "대화 중", UNMATCHED: "매칭 해제", BLOCKED: "차단으로 종료" };
+const MATCH_STATUS_LABEL: Record<string, string> = { ACTIVE: "대화 중", UNMATCHED: "매칭 해제", BLOCKED: "차단으로 종료", HIDDEN: "숨김 (매칭 정지)" };
 const PAGE = 50;
 
 /** 매칭으로 생긴 모든 대화방 목록 (신고 여부와 상관없음). 대화 내용을 열면 감사 로그에 남는다. */

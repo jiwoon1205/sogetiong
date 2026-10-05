@@ -402,11 +402,15 @@ def liked_me_ids(db: Session, user_id: uuid.UUID) -> set[uuid.UUID]:
 
 
 def likers_of(db: Session, user_id: uuid.UUID) -> list[tuple[uuid.UUID, datetime]]:
-    """나를 LIKE한 사람과 그 시각, 최근 순 (VIP "받은 LIKE" 목록용, 우대 제한과 상관없이 전부)."""
+    """나를 LIKE한 사람과 그 시각, 최근 순 (VIP "받은 LIKE" 목록용, 우대 제한과 상관없이 전부).
+
+    매칭 정지된 사람의 LIKE는 뺀다 (2026-10-05): 받은 LIKE에 답했는데 매칭이 안 뜨면 이상하게 보이기 때문.
+    """
     return [
         (uid, at)
         for uid, at in db.query(Like.from_user_id, Like.created_at)
-        .filter(Like.to_user_id == user_id, Like.action == "LIKE")
+        .join(User, User.id == Like.from_user_id)
+        .filter(Like.to_user_id == user_id, Like.action == "LIKE", User.match_suspended.is_(False))
         .order_by(Like.created_at.desc())
         .all()
     ]

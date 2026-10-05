@@ -30,6 +30,7 @@ from app.schemas.admin import (
     EvaluationRequest,
     ReportUpdateRequest,
     AppearanceTierRequest,
+    MatchSuspensionRequest,
     MembershipAdjustRequest,
     UserDepartmentRequest,
     UserGenderRequest,
@@ -37,7 +38,7 @@ from app.schemas.admin import (
 )
 from app.services import admin_alert_service, audit_service, membership_service, payment_service, profile_service, vip_service, withdrawal_service
 from app.services.email_service import EmailDeliveryError, EmailService
-from app.services.notification_service import notify
+from app.services.notification_service import notify, notify_match_created
 from app.services.session_service import (
     clear_admin_cookies,
     create_admin_session,
@@ -561,6 +562,15 @@ def get_user(
         "member_days_banked": user.member_days_banked or 0,
         "membership_status": membership_service.status(user),
         "membership_free": vip_service.is_vip_tester(user),
+        # 매칭 정지 (2026-10-05, 관리자만 봄): 켜져 있으면 서로 LIKE해도 매칭이 숨겨진다
+        "match_suspended": user.match_suspended,
+        "match_suspended_at": user.match_suspended_at.isoformat() if user.match_suspended_at else None,
+        "hidden_matches": profile_service.count(
+            db,
+            db.query(Match.id).filter(
+                (Match.user_a_id == user.id) | (Match.user_b_id == user.id), Match.status == "HIDDEN"
+            ),
+        ),
         "profile": profile_service.build_card(db, profile) if profile else None,
         # 카드는 공개 설정에 따라 캠퍼스·학과가 숨겨질 수 있어서, 관리자에게는 실제 값을 따로 보여준다
         "campus": {"id": str(profile.campus_id), "name": profile.campus.name} if profile else None,
@@ -694,6 +704,138 @@ def update_user_status(
     )
     db.commit()
     return {"user_id": str(user.id), "status": user.status}
+
+
+# ---------- 매칭 정지 (2026-10-05) ----------
+# 매칭 정지된 사람은 서로 LIKE해도 매칭이 "숨김(HIDDEN)"으로 생겨서, 두 사람 모두에게 보이지 않는다.
+# 본인에게는 절대 알리지 않는다 (알림·화면 문구 없음). 정지를 풀어도 숨겨진 매칭은 그대로 숨김이고,
+# 관리자가 "매칭 정지" 화면에서 하나씩 골라 다시 보이게 한다.
+
+
+@router.patch("/users/{user_id}/match-suspension")
+def update_match_suspension(
+    user_id: uuid.UUID,
+    payload: MatchSuspensionRequest,
+    request: Request,
+    admin: CurrentAdmin = Depends(require_permission("users:status")),
+    db: Session = Depends(get_db),
+):
+    user = _user_or_404(db, user_id)
+    if user.deleted_at is not None and payload.suspended:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="탈퇴한 사용자는 매칭 정지할 수 없습니다.")
+    before = user.match_suspended
+    if before != payload.suspended:
+        user.match_suspended = payload.suspended
+        user.match_suspended_at = utcnow() if payload.suspended else None
+    # 사용자에게 알림을 보내지 않는다 (notify 없음)
+    audit_service.record(
+        db,
+        admin_id=admin.id,
+        action="MATCH_SUSPEND" if payload.suspended else "MATCH_UNSUSPEND",
+        target_type="USER",
+        target_id=user.id,
+        request=request,
+        metadata={"before": before, "after": payload.suspended, "reason": payload.reason},
+    )
+    db.commit()
+    return {"user_id": str(user.id), "match_suspended": user.match_suspended}
+
+
+def _reveal_problem(db: Session, match: Match, users: dict[uuid.UUID, User]) -> str | None:
+    """숨김 매칭을 다시 보이게 할 수 없는 이유. 문제가 없으면 None."""
+    for uid in (match.user_a_id, match.user_b_id):
+        u = users.get(uid)
+        if u is None or u.deleted_at is not None or u.status == "DELETED":
+            return "탈퇴한 사용자가 있어요"
+        if u.status != "ACTIVE":
+            return "이용 정지된 사용자가 있어요"
+    if profile_service.is_blocked_between(db, match.user_a_id, match.user_b_id):
+        return "둘 사이에 차단이 있어요"
+    return None
+
+
+@router.get("/match-suspensions")
+def list_match_suspensions(
+    admin: CurrentAdmin = Depends(require_permission("users:status")),
+    db: Session = Depends(get_db),
+):
+    """매칭 정지된 사용자 목록 + 숨겨진 매칭 전체 (정지를 이미 푼 사람의 숨김 매칭도 포함)."""
+    suspended = (
+        db.query(User).filter(User.match_suspended.is_(True)).order_by(User.match_suspended_at.desc()).all()
+    )
+    hidden = db.query(Match).filter(Match.status == "HIDDEN").order_by(Match.created_at.desc()).all()
+
+    member_ids = {uid for m in hidden for uid in (m.user_a_id, m.user_b_id)} | {u.id for u in suspended}
+    users = {u.id: u for u in db.query(User).filter(User.id.in_(member_ids)).all()} if member_ids else {}
+    nicknames = _nicknames(db, list(member_ids)) if member_ids else {}
+    hidden_counts: dict[uuid.UUID, int] = {}
+    for m in hidden:
+        for uid in (m.user_a_id, m.user_b_id):
+            hidden_counts[uid] = hidden_counts.get(uid, 0) + 1
+
+    def member(uid: uuid.UUID) -> dict:
+        u = users.get(uid)
+        return {**_person(uid, nicknames), "match_suspended": bool(u and u.match_suspended)}
+
+    return {
+        "users": [
+            {
+                **_person(u.id, nicknames),
+                "status": u.status,
+                "match_suspended_at": u.match_suspended_at.isoformat() if u.match_suspended_at else None,
+                "hidden_matches": hidden_counts.get(u.id, 0),
+            }
+            for u in suspended
+        ],
+        "hidden_matches": [
+            {
+                "match_id": str(m.id),
+                "members": [member(m.user_a_id), member(m.user_b_id)],
+                "hidden_at": m.created_at.isoformat(),
+                "reveal_blocked_reason": _reveal_problem(db, m, users),
+            }
+            for m in hidden
+        ],
+    }
+
+
+@router.post("/matches/{match_id}/reveal")
+def reveal_hidden_match(
+    match_id: uuid.UUID,
+    request: Request,
+    admin: CurrentAdmin = Depends(require_permission("users:status")),
+    db: Session = Depends(get_db),
+):
+    """숨겨진 매칭을 두 사람에게 다시 보이게 한다.
+
+    매칭 시각을 지금으로 바꾸고 보통 매칭과 똑같은 알림을 보낸다 → 사용자는 방금 매칭된 것으로 보인다.
+    아직 매칭 정지 중인 사람이 있어도 관리자가 골랐으면 보이게 한다.
+    """
+    match = db.get(Match, match_id)
+    if match is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="매칭을 찾을 수 없습니다.")
+    if match.status != "HIDDEN":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="숨겨진 매칭이 아닙니다.")
+    users = {u.id: u for u in db.query(User).filter(User.id.in_([match.user_a_id, match.user_b_id])).all()}
+    problem = _reveal_problem(db, match, users)
+    if problem:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"다시 보이게 할 수 없어요: {problem}")
+    hidden_at = match.created_at.isoformat()
+    match.status = "ACTIVE"
+    match.created_at = utcnow()
+    for uid in (match.user_a_id, match.user_b_id):
+        notify_match_created(db, uid, match.id)
+    audit_service.record(
+        db,
+        admin_id=admin.id,
+        action="MATCH_REVEAL",
+        target_type="MATCH",
+        target_id=match.id,
+        request=request,
+        metadata={"hidden_at": hidden_at},
+    )
+    db.commit()
+    return {"match_id": str(match.id), "status": match.status}
 
 
 @router.patch("/users/{user_id}/department")
@@ -862,7 +1004,7 @@ def _person(user_id: uuid.UUID, nicknames: dict[uuid.UUID, str]) -> dict:
 
 @router.get("/matches")
 def list_all_matches(
-    status_filter: str | None = Query(default=None, alias="status", pattern="^(ACTIVE|UNMATCHED|BLOCKED)$"),
+    status_filter: str | None = Query(default=None, alias="status", pattern="^(ACTIVE|UNMATCHED|BLOCKED|HIDDEN)$"),
     nickname: str | None = Query(default=None, max_length=20),
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=50, ge=1, le=200),

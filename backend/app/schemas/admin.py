@@ -77,6 +77,13 @@ class UserStatusRequest(BaseModel):
     reason: str = Field(min_length=2, max_length=300)
 
 
+class MatchSuspensionRequest(BaseModel):
+    """매칭 정지 켜기/끄기 (2026-10-05). 본인에게는 알리지 않는다."""
+
+    suspended: bool
+    reason: str = Field(min_length=2, max_length=300)
+
+
 class ReportUpdateRequest(BaseModel):
     status: Literal["IN_REVIEW", "RESOLVED", "DISMISSED"]
     admin_note: str | None = Field(default=None, max_length=1000)
