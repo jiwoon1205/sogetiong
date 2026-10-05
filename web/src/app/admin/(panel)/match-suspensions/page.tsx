@@ -13,6 +13,9 @@ type SuspendedUser = Person & {
   status: string;
   match_suspended_at: string | null;
   hidden_matches: number;
+  /** 하루 매칭 3번으로 서버가 자동으로 건 정지인가 (2026-10-06) */
+  auto_suspended: boolean;
+  suspend_reason: string | null;
 };
 
 type HiddenMatch = {
@@ -73,7 +76,7 @@ export default function MatchSuspensionsPage() {
       <PageTitle
         eyebrow="사용자"
         title="매칭 정지된 사용자"
-        desc="매칭 정지된 사람은 서로 LIKE해도 매칭이 두 사람 모두에게 보이지 않아요. 본인은 정지 사실을 알 수 없어요. 숨겨진 매칭은 아래에서 하나씩 골라 다시 보이게 할 수 있어요."
+        desc="매칭 정지된 사람은 서로 LIKE해도 매칭이 두 사람 모두에게 보이지 않아요. 본인은 정지 사실을 알 수 없어요. 하루(한국 시간 0시부터)에 매칭이 3번 생긴 사람은 자동으로 정지돼요. 숨겨진 매칭은 아래에서 하나씩 골라 다시 보이게 할 수 있어요."
       />
       {error && (
         <div className="mb-4">
@@ -104,6 +107,11 @@ export default function MatchSuspensionsPage() {
                         {u.subject_code}
                       </Link>
                       <span className="text-ink-soft"> · {u.nickname ?? "(탈퇴)"}</span>
+                      {u.auto_suspended ? (
+                        <span className="ml-2 rounded bg-brick-wash px-1.5 py-0.5 text-[11.5px] text-brick-deep">자동 · {u.suspend_reason ?? "하루 매칭 한도"}</span>
+                      ) : (
+                        u.suspend_reason && <span className="ml-2 text-[12.5px] text-ink-faint">사유: {u.suspend_reason}</span>
+                      )}
                       {u.status !== "ACTIVE" && <span className="ml-2 text-[12.5px] text-brick">{USER_STATUS_LABEL[u.status] ?? u.status}</span>}
                     </span>
                     <span className="text-[13px] text-ink-faint">

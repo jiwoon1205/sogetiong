@@ -51,6 +51,11 @@ class Settings(BaseSettings):
     # 다시 나온 사람은 "처음 보는 사람" 뒤에 나온다. 다시 PASS하면 또 이 시간만큼 안 나온다.
     pass_cooldown_hours: int = 48
 
+    # 하루 매칭 N번이면 자동 매칭 정지 (2026-10-06). 한국 시간 0시부터 센다.
+    # N번째 매칭까지는 보통대로 보이고, 그 뒤로 생기는 매칭은 숨김(HIDDEN).
+    # 자동으로 풀리지 않는다 → 관리자가 "매칭 정지된 사용자" 화면에서 푼다. 0이면 끔.
+    match_auto_suspend_daily: int = 3
+
     # --- 이메일 ---
     # smtp: 실제 발송 / console: 서버 콘솔에 코드 출력 (dev 전용)
     email_backend: Literal["smtp", "console"] = "smtp"

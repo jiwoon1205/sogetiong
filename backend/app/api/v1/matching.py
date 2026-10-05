@@ -17,7 +17,14 @@ from app.models.matching import Like, Match, MatchingPreference, Message, Report
 from app.models.profile import PublicProfile
 from app.models.user import User
 from app.schemas.matching import SendMessageRequest, TargetRequest
-from app.services import matching_service, membership_service, profile_service, push_service, vip_service
+from app.services import (
+    match_limit_service,
+    matching_service,
+    membership_service,
+    profile_service,
+    push_service,
+    vip_service,
+)
 from app.services.notification_service import has_unread, notify, notify_match_created
 
 router = APIRouter()
@@ -250,6 +257,9 @@ def like(payload: TargetRequest, current: CurrentUser = Depends(get_current_user
         if not hidden:
             for uid in (a, b):
                 notify_match_created(db, uid, match.id)
+            # 하루 매칭 3번 (2026-10-06): 이번 매칭으로 오늘 한도에 닿은 사람은 자동 매칭 정지.
+            # 이번 매칭은 그대로 보이고, 다음 매칭부터 숨김이 된다.
+            match_limit_service.check_and_suspend(db, [a, b])
     try:
         db.commit()
     except IntegrityError:

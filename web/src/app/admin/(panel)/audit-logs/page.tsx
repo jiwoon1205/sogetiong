@@ -18,6 +18,10 @@ const ACTION_LABEL: Record<string, string> = {
   USER_STATUS_CHANGE: "계정 상태 변경",
   REPORT_UPDATE: "신고 처리",
   CHAT_VIEW: "대화 열람",
+  MATCH_SUSPEND: "매칭 정지",
+  MATCH_AUTO_SUSPEND: "자동 매칭 정지 (하루 매칭 한도)",
+  MATCH_UNSUSPEND: "매칭 정지 풀기",
+  MATCH_REVEAL: "숨김 매칭 공개",
 };
 
 export default function AuditLogsPage() {
@@ -52,7 +56,7 @@ export default function AuditLogsPage() {
                   <td className="px-5 py-3 font-mono text-[12.5px] text-ink-soft">
                     {l.target_type} {l.target_id?.slice(0, 8)}
                   </td>
-                  <td className="px-5 py-3 font-mono text-[12.5px] text-ink-soft">{l.admin_id?.slice(0, 8)}</td>
+                  <td className="px-5 py-3 font-mono text-[12.5px] text-ink-soft">{l.admin_id ? l.admin_id.slice(0, 8) : "자동"}</td>
                   <td className="max-w-[16rem] truncate px-5 py-3 font-mono text-[12px] text-ink-faint">{l.metadata ? JSON.stringify(l.metadata) : ""}</td>
                 </tr>
               ))}

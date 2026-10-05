@@ -36,7 +36,7 @@ from app.schemas.admin import (
     UserGenderRequest,
     UserStatusRequest,
 )
-from app.services import admin_alert_service, audit_service, membership_service, payment_service, profile_service, vip_service, withdrawal_service
+from app.services import admin_alert_service, audit_service, match_limit_service, membership_service, payment_service, profile_service, vip_service, withdrawal_service
 from app.services.email_service import EmailDeliveryError, EmailService
 from app.services.notification_service import notify, notify_match_created
 from app.services.session_service import (
@@ -777,6 +777,27 @@ def list_match_suspensions(
         u = users.get(uid)
         return {**_person(uid, nicknames), "match_suspended": bool(u and u.match_suspended)}
 
+    # 자동 정지(하루 매칭 3번)인지, 관리자가 직접 건 정지인지: 가장 최근 정지 기록으로 구분한다 (2026-10-06)
+    last_suspend: dict[str, AuditLog] = {}
+    if suspended:
+        rows = (
+            db.query(AuditLog)
+            .filter(
+                AuditLog.action.in_(["MATCH_SUSPEND", match_limit_service.AUTO_ACTION]),
+                AuditLog.target_id.in_([str(u.id) for u in suspended]),
+            )
+            .order_by(AuditLog.created_at.asc())
+            .all()
+        )
+        for row in rows:
+            last_suspend[row.target_id] = row
+
+    def suspend_info(u: User) -> dict:
+        row = last_suspend.get(str(u.id))
+        auto = bool(row and row.action == match_limit_service.AUTO_ACTION)
+        reason = (row.metadata_json or {}).get("reason") if row else None
+        return {"auto_suspended": auto, "suspend_reason": reason}
+
     return {
         "users": [
             {
@@ -784,6 +805,7 @@ def list_match_suspensions(
                 "status": u.status,
                 "match_suspended_at": u.match_suspended_at.isoformat() if u.match_suspended_at else None,
                 "hidden_matches": hidden_counts.get(u.id, 0),
+                **suspend_info(u),
             }
             for u in suspended
         ],
