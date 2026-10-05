@@ -1,4 +1,5 @@
 import { Brand } from "@/components/Brand";
+import { MemberStat } from "@/components/MemberStat";
 import { SupportContact } from "@/components/SupportContact";
 import { ButtonLink } from "@/components/ui";
 
@@ -24,7 +25,10 @@ export default function Landing() {
   return (
     <div className="min-h-dvh">
       <header className="mx-auto flex max-w-5xl items-center justify-between px-5 py-6 sm:px-8">
-        <Brand />
+        <div className="flex items-center gap-3">
+          <Brand />
+          <MemberStat />
+        </div>
         <nav className="flex items-center gap-1">
           <ButtonLink href="/login" variant="ghost" size="sm">
             로그인

@@ -19,6 +19,9 @@ const config: Config = {
       letterSpacing: { label: "0.14em" },
       borderRadius: { card: "10px" },
       maxWidth: { app: "30rem" },
+      // 머리말 가입자 수가 살며시 나타나게 (2026-10-05)
+      keyframes: { fadein: { from: { opacity: "0" }, to: { opacity: "1" } } },
+      animation: { fadein: "fadein .6s ease-out" },
     },
   },
   plugins: [],

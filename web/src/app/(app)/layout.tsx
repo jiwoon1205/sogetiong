@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 import { Brand } from "@/components/Brand";
+import { MemberStat } from "@/components/MemberStat";
 import { Spinner } from "@/components/ui";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/format";
@@ -63,7 +64,10 @@ function Shell({ children }: { children: React.ReactNode }) {
     <div className="min-h-dvh pb-20 sm:pb-0">
       <header className="sticky top-0 z-30 border-b border-line bg-paper/95 backdrop-blur">
         <div className="mx-auto flex h-14 max-w-3xl items-center justify-between px-5">
-          <Brand href="/discover" />
+          <div className="flex items-center gap-3">
+            <Brand href="/discover" />
+            <MemberStat />
+          </div>
           <nav className="hidden items-center gap-6 sm:flex">
             {NAV.map((n) => (
               <Link key={n.href} href={n.href} className={cn("text-[14px] transition-colors", path.startsWith(n.href) ? "font-semibold text-ink" : "text-ink-soft hover:text-ink")}>

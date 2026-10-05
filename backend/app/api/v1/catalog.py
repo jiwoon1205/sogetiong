@@ -9,6 +9,7 @@ from app.core.config import get_settings
 from app.db.session import get_db
 from app.models.profile import Interest
 from app.models.university import Campus, Department, University
+from app.services import stats_service
 
 router = APIRouter()
 
@@ -50,3 +51,9 @@ def support_contact():
 @router.get("/interests")
 def list_interests(db: Session = Depends(get_db)):
     return {"interests": [i.name for i in db.query(Interest).order_by(Interest.name).all()]}
+
+
+@router.get("/stats/members")
+def member_stats(db: Session = Depends(get_db)):
+    """첫 화면·머리말의 작은 숫자: 전체 가입자 수 + 활성 사용자 성비(%). 로그인 불필요, 5분마다 새로 센다."""
+    return stats_service.member_stats(db)
