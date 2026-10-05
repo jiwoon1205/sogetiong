@@ -23,7 +23,7 @@ from app.schemas.auth import (
     VerifyCodeRequest,
     VerifyCodeResponse,
 )
-from app.services import auth_service
+from app.services import auth_service, membership_service
 from app.services.email_service import EmailDeliveryError, EmailService
 from app.services.session_service import (
     auth_response_body,
@@ -122,7 +122,8 @@ def register(payload: RegisterRequest, request: Request, response: Response, db:
     reason = auth_service.rejoin_block_reason(db, ticket.email)
     if reason:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=reason)
-    previous_ids = [u.id for u in auth_service.previous_accounts(db, ticket.email)]
+    previous = auth_service.previous_accounts(db, ticket.email)
+    previous_ids = [u.id for u in previous]
 
     now = utcnow()
     user = User(
@@ -154,6 +155,10 @@ def register(payload: RegisterRequest, request: Request, response: Response, db:
     )
     db.add(PublicProfile(user_id=user.id, nickname=payload.nickname, gender=payload.gender, campus_id=campus.id))
     auth_service.carry_over_blocks(db, previous_ids, user.id)
+    # 탈퇴 후 재가입 (2026-10-05): 사진·외모 점수·재검토 대기·이용권·매칭 정지를 이어받는다
+    auth_service.carry_over_account(db, previous, user)
+    db.flush()
+    membership_service.start_banked(db, user)  # 이어받은 사진·등급으로 추천이 바로 열리면 쌓아 둔 일수 시작
     ticket.consumed_at = now
     issued = create_user_session(db, user.id, request)
     db.commit()

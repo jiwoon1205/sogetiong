@@ -2,7 +2,8 @@
 
 규칙
 - 탈퇴하면 이메일은 가짜 주소로 바뀌고 지문(email_hash)만 남는다 → 같은 메일로 다시 가입 가능
-- 탈퇴 후 7일(REJOIN_COOLDOWN_DAYS) 동안은 재가입 불가
+- 탈퇴 후 바로 다시 가입할 수 있다 (2026-10-05, 예전 7일 → 0. REJOIN_COOLDOWN_DAYS로 다시 켤 수 있음)
+- 다시 가입하면 사진·외모 점수·등급·재검토 대기·이용권·매칭 정지를 이어받는다
 - 영구 정지(BANNED)된 계정의 메일로는 다시 가입 불가
 - 예전 계정의 차단 관계는 새 계정으로 이어진다
 """
@@ -52,28 +53,25 @@ def test_delete_anonymizes_email(sent_codes, db):
     assert UserClient().post("/api/v1/auth/login", json={"email": EMAIL, "password": "goodpass123"}).status_code == 401
 
 
-def test_rejoin_blocked_during_cooldown_then_allowed(sent_codes, db):
+def test_rejoin_right_away(sent_codes, db):
     a = signup(sent_codes, db, EMAIL)
     _delete(a)
-
-    r = _verify_status(sent_codes)
-    assert r.status_code == 403
-    assert "7일" in r.json()["detail"]
-
-    _age_deletion(db, days=8)
-    new = signup(sent_codes, db, EMAIL)  # 이제 가입 가능
+    new = signup(sent_codes, db, EMAIL)  # 탈퇴 직후 바로 가입 가능
     assert new.get("/api/v1/me").json()["email"] == EMAIL
     db.expire_all()
     accounts = db.query(User).filter(User.email_hash == email_fingerprint(EMAIL)).all()
     assert sorted(u.status for u in accounts) == ["ACTIVE", "DELETED"]
 
 
-def test_cooldown_can_be_turned_off(sent_codes, db, monkeypatch):
+def test_cooldown_can_be_turned_on(sent_codes, db, monkeypatch):
     from app.core.config import get_settings
 
-    monkeypatch.setattr(get_settings(), "rejoin_cooldown_days", 0)
+    monkeypatch.setattr(get_settings(), "rejoin_cooldown_days", 7)
     _delete(signup(sent_codes, db, EMAIL))
-    signup(sent_codes, db, EMAIL)  # 바로 재가입 가능
+    r = _verify_status(sent_codes)
+    assert r.status_code == 403 and "7일" in r.json()["detail"]
+    _age_deletion(db, days=8)
+    signup(sent_codes, db, EMAIL)
 
 
 def test_blocks_carry_over_to_new_account(sent_codes, db):

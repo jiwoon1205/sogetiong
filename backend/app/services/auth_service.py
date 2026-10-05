@@ -9,6 +9,7 @@ from app.core.config import get_settings
 from app.core.security import hash_token, new_token, new_verification_code, tokens_match
 from app.core.time import as_utc, utcnow
 from app.models.matching import Block
+from app.models.photo import AppearanceEvaluation, UserPhoto
 from app.models.university import University
 from app.models.user import User, VerificationToken
 
@@ -76,6 +77,44 @@ def carry_over_blocks(db: Session, previous_ids: list[uuid.UUID], new_user_id: u
         if blocked not in previous_ids:
             pairs.add((new_user_id, blocked))
     db.add_all([Block(blocker_user_id=a, blocked_user_id=b) for a, b in pairs])
+
+
+def carry_over_account(db: Session, previous: list[User], new_user: User) -> None:
+    """탈퇴 후 다시 가입한 사람에게 예전 계정의 것을 이어준다 (2026-10-05).
+
+    탈퇴 → 재가입으로 외모 점수·재검토 대기·이용권·매칭 정지를 "초기화"하지 못하게 한다.
+    - 사진·외모 평가(점수·등급) 기록을 새 계정으로 옮긴다 → 사진 단계 없이 바로 이어서 이용,
+      재검토 대기(마지막 평가 후 7일/VIP 3일)와 "바로 재검토 평생 1번" 사용 여부도 그대로 이어진다.
+      (탈퇴 7일 뒤 사진 파일은 지워지지만, 평가 기록은 남아서 그대로 옮겨진다)
+    - 남은 이용권·VIP 기간, 쌓아 둔 이용권 일수를 이어준다 (탈퇴해 있던 동안에도 기간은 흘러간다).
+      옮긴 뒤 예전 계정의 값은 비운다 (여러 번 탈퇴·재가입해도 두 번 받지 않게).
+    - 매칭 정지 상태도 이어진다 (본인은 모름).
+    차단 관계는 carry_over_blocks가 따로 옮긴다.
+    """
+    old = [u for u in previous if u.status == "DELETED" and u.id != new_user.id]
+    if not old:
+        return
+    ids = [u.id for u in old]
+    db.query(UserPhoto).filter(UserPhoto.user_id.in_(ids)).update({"user_id": new_user.id}, synchronize_session=False)
+    db.query(AppearanceEvaluation).filter(AppearanceEvaluation.user_id.in_(ids)).update(
+        {"user_id": new_user.id}, synchronize_session=False
+    )
+
+    def latest(values):
+        values = [as_utc(v) for v in values if v is not None]
+        return max(values) if values else None
+
+    new_user.member_until = latest(u.member_until for u in old)
+    new_user.vip_until = latest(u.vip_until for u in old)
+    new_user.member_days_banked = sum(u.member_days_banked or 0 for u in old)
+    new_user.signup_paid_at = latest(u.signup_paid_at for u in old)
+    if any(u.match_suspended for u in old):
+        new_user.match_suspended = True
+        new_user.match_suspended_at = latest(u.match_suspended_at for u in old)
+    for u in old:
+        u.member_until = None
+        u.vip_until = None
+        u.member_days_banked = 0
 
 
 # ---------- 학교 이메일 인증 ----------
