@@ -72,9 +72,9 @@ export function PaymentStep({ onConfirmed }: { onConfirmed: () => void }) {
   );
 }
 
-/** 점검 기간에 결제하면 4주가 오픈 시각부터 시작된다는 안내 (2026-10-04) */
+/** 유료 시작 전에 결제하면 4주가 유료 시작 시각부터 시작된다는 안내 (2026-10-04, 2026-10-06 점검 기간 없앰) */
 function maintenanceNote(openAt: string | null | undefined): string {
-  return openAt ? ` 이용권 기간은 사진 평가가 끝난 뒤, 빨라도 정식 오픈(${openTime(openAt)})부터 시작돼요.` : "";
+  return openAt ? ` 이용권 기간은 사진 평가가 끝난 뒤, 빨라도 유료 시작(${openTime(openAt)})부터 시작돼요.` : "";
 }
 
 export const REFUND_NOTE =
@@ -149,7 +149,7 @@ export function MembershipRenew({ onActivated }: { onActivated: () => void }) {
       onRequest={request}
       waitingText={
         m?.before_open && m.open_at
-          ? `입금 후 15분 이내 확인돼요. 지금은 점검 기간이라 ${days}일은 정식 오픈(${openTime(m.open_at)})부터 시작돼요.`
+          ? `입금 후 15분 이내 확인돼요. 지금은 무료 베타 기간이라 ${days}일은 유료 시작(${openTime(m.open_at)})부터 시작돼요.`
           : m?.status === "active"
             ? `입금 후 15분 이내 확인돼요. 지금 남은 기간 뒤에 ${days}일이 더해져요.`
             : `입금 후 15분 이내 확인돼요. 확인되면 ${days}일 뒤 밤 12시까지 이용할 수 있어요.`

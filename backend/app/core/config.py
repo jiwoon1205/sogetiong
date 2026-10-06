@@ -126,7 +126,11 @@ class Settings(BaseSettings):
     # 베타가 끝나는 날 .env에 MEMBERSHIP_ENABLED=true, VIP_ENABLED=true 를 넣고 다시 시작한다.
     # (예전 이름 SIGNUP_FEE_ENABLED는 더 이상 읽지 않는다)
     membership_enabled: bool = False
-    membership_price: int = 3000  # 남녀 같음
+    # 기본 이용권 가격 (2026-10-06): 정가 4,000원, MEMBERSHIP_DISCOUNT_UNTIL 전까지는 할인가 3,000원. 남녀 같음
+    membership_price: int = 4000
+    membership_discount_price: int = 3000
+    # 할인이 끝나는 시각. 비워 두면 할인 없음. 예: MEMBERSHIP_DISCOUNT_UNTIL=2026-10-08T00:00:00+09:00
+    membership_discount_until: datetime | None = None
     membership_days: int = 28
     # 남은 기간이 이 일수 이하면 추천 화면 위에 "○일 남았어요" 띠를 보여준다 (알림은 보내지 않음)
     membership_warn_days: int = 3
@@ -139,12 +143,18 @@ class Settings(BaseSettings):
     payment_open_hour: int = 6
     payment_close_hour: int = 24
 
-    # --- 점검 기간 (2026-10-04, `점검 기간 설계`) ---
-    # 정식 오픈 시각. 이 시각 전에는 추천·LIKE·PASS·받은 LIKE·기존 회원 사진 재검토를 막고 "점검 중"으로 안내한다.
-    # 대화와 결제(이용권·VIP)는 된다. 점검 기간에 낸 이용권·VIP는 이 시각부터 4주를 센다.
-    # 시각이 지나면 자동으로 열린다 (서버를 다시 시작할 필요 없음). 비워 두면 점검 없음.
-    # 예: OPEN_AT=2026-10-10T18:00:00+09:00  (시간대를 빼고 쓰면 한국 시간으로 본다)
+    # --- 유료 시작 시각 (2026-10-06, 점검 기간 없앰) ---
+    # MEMBERSHIP_ENABLED=true여도 이 시각 전에는 베타처럼 모두 무료로 쓴다 (하루 LIKE 5개).
+    # 이 시각이 되면 서버를 다시 켜지 않아도 자동으로 유료가 시작된다:
+    #   이용권이 없는 사람(베타 회원 포함)은 모두 체험 이용자(LIKE 평생 FREE_TRIAL_LIKES개)가 된다.
+    # 이 시각 전에 미리 산 이용권·VIP는 이 시각부터 4주를 센다. 비워 두면 스위치를 켠 순간부터 유료.
+    # 예: OPEN_AT=2026-10-08T00:00:00+09:00  (시간대를 빼고 쓰면 한국 시간으로 본다)
     open_at: datetime | None = None
+
+    # --- 무료 체험 (2026-10-06, `무료 체험 플랜 설계`) ---
+    # 이용권이 없는 사람이 보낼 수 있는 LIKE 수 (평생, 다시 안 생김). 다 쓰면 추천·PASS·대화는 되고 LIKE만 막힌다.
+    # 이용권을 사면 체험은 끝난다. 탈퇴·재가입해도 이어진다. 0이면 체험 없음.
+    free_trial_likes: int = 3
 
     # --- 문의 ---
     # 학과 변경 요청·"내 학과가 목록에 없어요" 문의를 받는 메일 주소 (화면에 표시됨)
@@ -192,20 +202,29 @@ class Settings(BaseSettings):
     def cors_origin_list(self) -> list[str]:
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
 
-    @field_validator("open_at", mode="before")
+    @field_validator("open_at", "membership_discount_until", mode="before")
     @classmethod
-    def _blank_open_at(cls, v):
-        # .env에 OPEN_AT= (빈 값)으로 남아 있어도 서버가 안 켜지는 일이 없게 "점검 없음"으로 본다
+    def _blank_datetime(cls, v):
+        # .env에 OPEN_AT= (빈 값)으로 남아 있어도 서버가 안 켜지는 일이 없게 "없음"으로 본다
         return None if isinstance(v, str) and not v.strip() else v
+
+    @staticmethod
+    def _to_utc(value: datetime | None) -> datetime | None:
+        """시간대 없이 적었으면 한국 시간으로 본다."""
+        if value is None:
+            return None
+        if value.tzinfo is None:
+            return value.replace(tzinfo=KST).astimezone(timezone.utc)
+        return value.astimezone(timezone.utc)
 
     @property
     def open_at_utc(self) -> datetime | None:
-        """오픈 시각(UTC). 시간대 없이 적었으면 한국 시간으로 본다."""
-        if self.open_at is None:
-            return None
-        if self.open_at.tzinfo is None:
-            return self.open_at.replace(tzinfo=KST).astimezone(timezone.utc)
-        return self.open_at.astimezone(timezone.utc)
+        """유료 시작 시각(UTC)."""
+        return self._to_utc(self.open_at)
+
+    @property
+    def membership_discount_until_utc(self) -> datetime | None:
+        return self._to_utc(self.membership_discount_until)
 
     @property
     def push_enabled(self) -> bool:
@@ -224,6 +243,10 @@ class Settings(BaseSettings):
             raise ValueError("PAYMENT_OPEN_HOUR < PAYMENT_CLOSE_HOUR (0~24) 이어야 합니다")
         if self.membership_enabled and not (self.membership_price > 0 and self.membership_days > 0):
             raise ValueError("MEMBERSHIP_PRICE, MEMBERSHIP_DAYS는 0보다 커야 합니다")
+        if self.membership_discount_until is not None and not 0 < self.membership_discount_price <= self.membership_price:
+            raise ValueError("MEMBERSHIP_DISCOUNT_PRICE는 0보다 크고 MEMBERSHIP_PRICE 이하여야 합니다")
+        if self.free_trial_likes < 0:
+            raise ValueError("FREE_TRIAL_LIKES는 0 이상이어야 합니다")
         if self.vip_enabled and not (self.vip_price > 0 and self.vip_days > 0):
             raise ValueError("VIP_PRICE, VIP_DAYS는 0보다 커야 합니다")
         if self.vip_enabled and not self.membership_enabled:

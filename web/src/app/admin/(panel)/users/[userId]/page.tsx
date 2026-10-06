@@ -27,6 +27,9 @@ type Detail = {
   member_days_banked?: number;
   membership_status?: "none" | "banked" | "active" | "expired";
   membership_free?: boolean;
+  /** 무료 체험 좋아요 사용 개수 (2026-10-06) */
+  trial_likes_used?: number;
+  trial_like_limit?: number;
   /** 매칭 정지 (2026-10-05, 관리자만 봄) */
   match_suspended?: boolean;
   match_suspended_at?: string | null;
@@ -83,6 +86,7 @@ export default function UserDetail() {
           {d.is_beta_member ? "베타 가입" : "유료화 뒤 가입"}
           {" · "}
           {membershipLabel(d)}
+          {d.trial_like_limit ? <> · 체험 좋아요 {d.trial_likes_used ?? 0}/{d.trial_like_limit}</> : null}
           {d.vip_until && <> · VIP 끝 {dateTime(d.vip_until)}</>}
         </p>
       </div>

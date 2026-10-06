@@ -57,7 +57,9 @@ def get_or_create_payment(db: Session, user: User, kind: str = "SIGNUP", amount:
     → 가격을 바꾼 뒤 예전 가격 코드로 입금하는 일이 없다. 누른 뒤에는 가격이 바뀌지 않는다.
     """
     if amount is None:
-        amount = get_settings().membership_price
+        from app.services import membership_service  # 할인가 계산 (2026-10-06)
+
+        amount = membership_service.price()
     payment = open_payment(db, user.id, kind)
     if payment is None:
         payment = Payment(user_id=user.id, kind=kind, amount=amount, code=_new_code(db), status="CREATED")

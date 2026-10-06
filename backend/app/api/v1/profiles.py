@@ -89,7 +89,10 @@ def get_me(current: CurrentUser = Depends(get_current_user), db: Session = Depen
                 current.user, has_approved_photo=profile_service.has_approved_photo(db, current.id)
             ),
             # 가입 단계 표시에 "이용권" 단계를 넣을지 (유료화를 켰고, 테스트 계정이 아님)
-            "pays_signup_fee": membership_service.enabled() and not vip_service.is_vip_tester(current.user),
+            # (2026-10-06 무료 체험부터는 가입 때 내지 않으므로 체험을 끈 경우에만 true)
+            "pays_signup_fee": membership_service.enabled()
+            and not vip_service.is_vip_tester(current.user)
+            and get_settings().free_trial_likes == 0,
         },
         # 이용권 (2026-10-04 구독제): 남은 기간 표시·만료 화면용
         "membership": membership_service.view(current.user),
@@ -342,15 +345,17 @@ def put_my_preferences(
 
 # ---------- 사진 ----------
 
-def _resubmit_status(db: Session, user_id: uuid.UUID, *, vip: bool = False) -> dict:
-    """지금 새 사진을 낼 수 있는지 (2026-09-30 규칙, 2026-10-01 기간 30일 → 7일).
+def _resubmit_status(db: Session, user_id: uuid.UUID, *, vip: bool = False, granted_at=None) -> dict:
+    """지금 새 사진을 낼 수 있는지 (2026-09-30 규칙, 2026-10-01 기간 30일 → 7일, 2026-10-06 구매 혜택).
 
     - 아직 평가를 받은 적 없음(첫 제출, 반려 뒤 다시 내기 등) → 언제든 가능
-    - 마지막 평가 후 PHOTO_RESUBMIT_DAYS(7일)가 지남 → 가능
-    - 그 안 → "바로 재검토"를 계정당 평생 1번만 쓸 수 있다.
+    - 마지막 평가 후 PHOTO_RESUBMIT_DAYS(7일)가 지남 → 가능 (아래 혜택을 깎지 않는다)
+    - 그 안 → ① 이용권·VIP를 살 때 받은 "바로 재검토 1회"(granted_at = 산 시각)를 먼저 쓴다
+              ② 없으면 "바로 재검토"를 계정당 평생 1번만 쓸 수 있다.
     wait_days: 화면 안내 문구용 (기간을 .env로 바꿔도 문구가 따라 바뀌게)
       바로 재검토로 낸 사진이 승인까지 되면 "사용함"으로 친다.
-      (반려되거나, 검수 전에 다른 사진으로 바꾸면 쓴 것으로 치지 않는다)
+      (반려되거나, 검수 전에 다른 사진으로 바꾸면 쓴 것으로 치지 않는다) 구매 혜택도 같다.
+      구매 혜택은 다시 사면 1회로 채워진다 (산 시각 뒤에 승인된 혜택 사진만 셈 → 쌓이지 않음).
     vip=True: VIP는 기간이 VIP_PHOTO_RESUBMIT_DAYS(3일)다 (2026-10-02 테스트 계정, 2026-10-03 정식 VIP). 나머지 규칙은 같다.
     """
     settings = get_settings()
@@ -366,19 +371,33 @@ def _resubmit_status(db: Session, user_id: uuid.UUID, *, vip: bool = False) -> d
         .first()
         is not None
     )
+    purchase_left = granted_at is not None and (
+        db.query(UserPhoto.id)
+        .filter(
+            UserPhoto.user_id == user_id,
+            UserPhoto.purchase_rereview.is_(True),
+            UserPhoto.review_status == "APPROVED",
+            UserPhoto.uploaded_at >= granted_at,
+        )
+        .first()
+        is None
+    )
     days = settings.vip_photo_resubmit_days if vip else settings.photo_resubmit_days
+    base = {
+        "wait_days": days,
+        "free_rereview_left": not free_used,
+        "purchase_rereview_left": purchase_left,
+        "uses_free_rereview": False,
+        "uses_purchase_rereview": False,
+    }
     if last_eval is None:
-        return {"allowed": True, "uses_free_rereview": False, "free_rereview_left": not free_used, "next_available_at": None, "wait_days": days}
+        return {**base, "allowed": True, "next_available_at": None}
     next_at = as_utc(last_eval.created_at) + timedelta(days=days)
     if utcnow() >= next_at:
-        return {"allowed": True, "uses_free_rereview": False, "free_rereview_left": not free_used, "next_available_at": None, "wait_days": days}
-    return {
-        "wait_days": days,
-        "allowed": not free_used,
-        "uses_free_rereview": not free_used,
-        "free_rereview_left": not free_used,
-        "next_available_at": next_at.isoformat(),
-    }
+        return {**base, "allowed": True, "next_available_at": None}
+    if purchase_left:
+        return {**base, "allowed": True, "uses_purchase_rereview": True, "next_available_at": next_at.isoformat()}
+    return {**base, "allowed": not free_used, "uses_free_rereview": not free_used, "next_available_at": next_at.isoformat()}
 
 
 @router.post("/me/photos", status_code=status.HTTP_201_CREATED)
@@ -399,20 +418,20 @@ def upload_photo(
     if len(uploads) > settings.photo_max_count:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"사진은 한 번에 {settings.photo_max_count}장까지 올릴 수 있어요.")
 
-    # 첫 이용권 입금이 확인되기 전에는 사진을 받지 않는다 (화면만이 아니라 서버에서 막음, 2026-10-03)
+    # 첫 이용권 입금이 확인되기 전에는 사진을 받지 않는다 (2026-10-03). 무료 체험(2026-10-06)이 켜져 있으면 해당 없음.
     approved_before = profile_service.has_approved_photo(db, current.id)
     if membership_service.needs_first_payment(current.user, has_approved_photo=approved_before):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="PAYMENT_REQUIRED")
-    # 점검 기간에는 기존 회원의 사진 재검토를 받지 않는다 (관리자 일이 몰리지 않게). 새 가입자의 첫 사진은 받는다.
-    if approved_before and membership_service.before_open() and not vip_service.is_vip_tester(current.user):
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="MAINTENANCE")
-    # 이용권이 끝난 사람은 사진 재검토를 신청할 수 없다 (2026-10-04 D9). 첫 검수(반려 후 다시 내기 포함)는 된다.
+    # 이용권이 없는 사람(체험 중·체험 끝·이용권 끝)은 사진 재검토를 신청할 수 없다 (2026-10-04 D9, 2026-10-06 체험).
+    # 첫 검수(반려 후 다시 내기 포함)는 된다.
     if approved_before and not membership_service.has_membership(current.user):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="MEMBERSHIP_REQUIRED")
 
     enforce_rate_limit(f"photo:{current.id}", 5, 3600)
 
-    rule = _resubmit_status(db, current.id, vip=vip_service.is_vip(current.user))
+    rule = _resubmit_status(
+        db, current.id, vip=vip_service.is_vip(current.user), granted_at=current.user.rereview_granted_at
+    )
     if not rule["allowed"]:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
@@ -452,6 +471,7 @@ def upload_photo(
             submission_id=submission_id,
             position=position,
             free_rereview=rule["uses_free_rereview"],
+            purchase_rereview=rule["uses_purchase_rereview"],
         )
         for position, (key, item) in enumerate(zip(keys, processed))
     ]
@@ -468,6 +488,7 @@ def upload_photo(
         "photo_count": len(photos),
         "review_status": "PENDING",
         "used_free_rereview": rule["uses_free_rereview"],
+        "used_purchase_rereview": rule["uses_purchase_rereview"],
         "message": "관리자 검수 대기 중입니다.",
     }
 
@@ -501,7 +522,12 @@ def list_my_photos(current: CurrentUser = Depends(get_current_user), db: Session
             for p in leaders
         ],
         "max_count": get_settings().photo_max_count,
-        "resubmit": _resubmit_status(db, current.id, vip=vip_service.is_vip(current.user)),
+        "resubmit": _resubmit_status(
+            db, current.id, vip=vip_service.is_vip(current.user), granted_at=current.user.rereview_granted_at
+        ),
+        # 이용권이 없으면 재검토 불가 (체험 중 포함) → 화면에서 결제 안내
+        "rereview_needs_membership": profile_service.has_approved_photo(db, current.id)
+        and not membership_service.has_membership(current.user),
     }
 
 
@@ -570,7 +596,8 @@ def _payment_ready(db: Session, current: CurrentUser) -> None:
 
 def _pays_membership(current: CurrentUser) -> bool:
     """이용권을 살 수 있는(내야 하는) 사람인가. 유료화가 꺼져 있거나 테스트 계정이면 아니다."""
-    return membership_service.enabled() and not vip_service.is_vip_tester(current.user)
+    # 유료 시작 시각 전에도 미리 살 수 있다 (2026-10-06)
+    return membership_service.sales_open() and not vip_service.is_vip_tester(current.user)
 
 
 @router.get("/me/payment")
@@ -586,7 +613,7 @@ def get_my_payment(current: CurrentUser = Depends(get_current_user), db: Session
     required = membership_service.needs_first_payment(
         current.user, has_approved_photo=profile_service.has_approved_photo(db, current.id)
     )
-    payment = payment_service.get_or_create_payment(db, current.user)
+    payment = payment_service.get_or_create_payment(db, current.user, amount=membership_service.price())
     db.commit()
     return {
         **_payment_view(payment, open_now=payment_service.is_payment_open(), required=required),
@@ -604,7 +631,7 @@ def request_payment_check(
     if not _pays_membership(current):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="지금은 이용권을 판매하지 않아요.")
     _payment_ready(db, current)
-    payment = payment_service.get_or_create_payment(db, current.user)
+    payment = payment_service.get_or_create_payment(db, current.user, amount=membership_service.price())
     required = membership_service.needs_first_payment(
         current.user, has_approved_photo=profile_service.has_approved_photo(db, current.id)
     )
@@ -626,7 +653,7 @@ def _vip_info(db: Session, current: CurrentUser) -> dict:
         "days": settings.vip_days,
         "price": price,
         # 지금 남은 기본 이용권 일수 → "VIP를 사면 남은 ○일은 VIP가 끝난 뒤 이어서 써요" 안내
-        "member_days_left": membership_service.days_left(user) if membership_service.enabled() else None,
+        "member_days_left": membership_service.days_left(user) if membership_service.sales_open() else None,
         "daily_like_limit": settings.vip_daily_like_limit,
         "base_like_limit": settings.daily_like_limit,
         "pass_cooldown_hours": settings.vip_pass_cooldown_hours,

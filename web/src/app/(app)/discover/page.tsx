@@ -7,11 +7,10 @@ import { MembershipRenew } from "@/components/PaymentStep";
 import { ProfileCard } from "@/components/ProfileCard";
 import { Button, ButtonLink, Notice, Spinner } from "@/components/ui";
 import { ApiError, api, errorMessage } from "@/lib/api";
-import { openTime, untilDay } from "@/lib/format";
 import { markMatchSeen } from "@/lib/seenMatches";
 import { useSession } from "@/lib/session";
 import { useKstNewDay } from "@/lib/useKstNewDay";
-import type { Card } from "@/lib/types";
+import type { Card, LikeAccess } from "@/lib/types";
 
 type State =
   | { kind: "loading" }
@@ -64,17 +63,27 @@ export default function DiscoverPage() {
   // 방금 서로 좋아요가 된 상대 → 축하 화면
   const [matched, setMatched] = useState<{ card: Card; matchId: string } | null>(null);
   const [error, setError] = useState("");
-  // 오늘 남은 좋아요 (한국 시간 자정에 다시 충전)
-  // VIP는 하루 10개를 "5+5"로 보여준다 (base = 무료 몫, 2026-10-03)
-  const [likes, setLikes] = useState<{ left: number; limit: number; base: number; vip: boolean } | null>(null);
+  // 남은 좋아요
+  // - paid: 오늘 남은 좋아요 (한국 시간 자정에 다시 충전). VIP는 하루 10개를 "5+5"로 보여준다 (base = 무료 몫, 2026-10-03)
+  // - trial: 무료 체험 좋아요 (평생 3개, 다시 안 생김, 2026-10-06)
+  // - none: 체험을 다 썼거나 이용권이 끝남 → 좋아요만 못 하고 추천·넘기기는 된다
+  const [likes, setLikes] = useState<Likes | null>(null);
+  // 좋아요를 못 할 때 누르면 여는 이용권 안내
+  const [showBuy, setShowBuy] = useState(false);
 
   const load = useCallback(async () => {
     setState({ kind: "loading" });
     try {
-      const res = await api<{ profiles: Card[]; likes_left_today: number; daily_like_limit: number; vip?: boolean; base_like_limit?: number }>(
-        "/discover",
-      );
+      const res = await api<{
+        profiles: Card[];
+        likes_left_today: number;
+        daily_like_limit: number;
+        vip?: boolean;
+        base_like_limit?: number;
+        like_access?: LikeAccess;
+      }>("/discover");
       setLikes({
+        mode: res.like_access ?? "paid",
         left: res.likes_left_today,
         limit: res.daily_like_limit,
         base: res.base_like_limit ?? res.daily_like_limit,
@@ -100,6 +109,10 @@ export default function DiscoverPage() {
   const act = useCallback(
     async (action: "like" | "pass") => {
       if (state.kind !== "cards" || !state.cards[0] || busy) return;
+      if (action === "like" && likes && likes.mode !== "paid" && likes.left <= 0) {
+        setShowBuy(true);
+        return;
+      }
       if (action === "like" && likes && likes.left <= 0) {
         setError("오늘 좋아요를 모두 사용했어요. 자정(한국 시간)에 다시 충전돼요.");
         return;
@@ -109,11 +122,16 @@ export default function DiscoverPage() {
       setError("");
       try {
         if (action === "like") {
-          const res = await api<{ matched: boolean; match_id: string | null; likes_left_today: number }>("/likes", {
-            method: "POST",
-            body: { profile_id: card.profile_id },
+          const res = await api<{ matched: boolean; match_id: string | null; likes_left_today: number; like_access?: LikeAccess }>(
+            "/likes",
+            { method: "POST", body: { profile_id: card.profile_id } },
+          );
+          setLikes((prev) => {
+            if (!prev) return prev;
+            // 마지막 체험 좋아요를 쓰면 "none"으로 바뀐다 (보낸 좋아요는 그대로 유효)
+            const mode = prev.mode === "trial" && res.likes_left_today <= 0 ? "none" : prev.mode;
+            return { ...prev, mode, left: res.likes_left_today };
           });
-          setLikes((prev) => (prev ? { ...prev, left: res.likes_left_today } : prev));
           if (res.matched && res.match_id) {
             // 이 기기에서 축하 화면을 이미 봤다고 기록 → 대화 목록에서 한 번 더 뜨지 않게
             markMatchSeen(res.match_id);
@@ -128,9 +146,11 @@ export default function DiscoverPage() {
       } catch (err) {
         // 하루 한도를 다 쓴 경우 (다른 기기에서 쓴 경우 등)
         if (action === "like" && err instanceof ApiError && err.status === 429) setLikes((prev) => (prev ? { ...prev, left: 0 } : prev));
-        // 보는 사이에 이용권이 끝난 경우 → 이용권 화면으로 (점검이 시작된 경우도 점검 화면으로)
-        if (err instanceof ApiError && (err.code === "MEMBERSHIP_REQUIRED" || err.code === "MAINTENANCE")) {
-          setState({ kind: "blocked", code: err.code });
+        // 체험 좋아요를 다 썼거나(다른 기기에서 쓴 경우 등) 보는 사이에 이용권이 끝난 경우
+        // → 좋아요만 막고, 카드는 그대로 두고 이용권 안내를 연다 (넘기기는 계속 가능)
+        if (err instanceof ApiError && (err.code === "TRIAL_ENDED" || err.code === "MEMBERSHIP_REQUIRED")) {
+          setLikes((prev) => (prev ? { ...prev, mode: "none", left: 0 } : prev));
+          setShowBuy(true);
           void refresh();
           return;
         }
@@ -176,30 +196,6 @@ export default function DiscoverPage() {
   function renderBody() {
     if (state.kind === "loading") return <Spinner label="오늘의 추천을 고르는 중" />;
     if (state.kind === "error") return <Notice tone="error">{state.message}</Notice>;
-    if (state.kind === "blocked" && state.code === "MAINTENANCE") {
-      return (
-        <Maintenance
-          showVip={Boolean(me.vip?.visible)}
-          onRetry={load}
-          onActivated={() => {
-            void refresh();
-          }}
-        />
-      );
-    }
-    if (state.kind === "blocked" && state.code === "MEMBERSHIP_REQUIRED") {
-      const m = me.membership;
-      return (
-        <MembershipEnded
-          ended={m?.status === "expired"}
-          showVip={Boolean(me.vip?.visible)}
-          onActivated={() => {
-            void refresh();
-            void load();
-          }}
-        />
-      );
-    }
     if (state.kind === "blocked") {
       const copy = BLOCKED_COPY[state.code] ?? BLOCKED_COPY.PROFILE_REQUIRED;
       return (
@@ -232,8 +228,21 @@ export default function DiscoverPage() {
         </div>
 
         <MembershipWarning />
-        {likes && <LikeMeter left={likes.left} limit={likes.limit} base={likes.base} vip={likes.vip} />}
-        {likes && <LikeIntro label={limitLabel(likes)} />}
+        {likes && likes.mode === "paid" && <LikeMeter left={likes.left} limit={likes.limit} base={likes.base} vip={likes.vip} />}
+        {likes && likes.mode === "trial" && <TrialMeter left={likes.left} limit={likes.limit} />}
+        {likes && likes.mode === "none" && (
+          <LikesLocked
+            open={showBuy}
+            onOpen={() => setShowBuy(true)}
+            showVip={Boolean(me.vip?.visible)}
+            onActivated={() => {
+              setShowBuy(false);
+              void refresh();
+              void load();
+            }}
+          />
+        )}
+        {likes && likes.mode !== "none" && <LikeIntro label={limitLabel(likes)} trial={likes.mode === "trial"} />}
 
         <SwipeCard key={current.profile_id} onSwipe={act} disabled={busy}>
           <ProfileCard card={current} />
@@ -246,7 +255,12 @@ export default function DiscoverPage() {
           <Button variant="secondary" size="lg" onClick={() => act("pass")} disabled={busy}>
             넘기기
           </Button>
-          <Button size="lg" onClick={() => act("like")} disabled={busy || (likes !== null && likes.left <= 0)}>
+          <Button
+            size="lg"
+            onClick={() => act("like")}
+            // 좋아요를 못 하는 사람(체험 끝·이용권 끝)도 누를 수 있게 둔다 → 누르면 이용권 안내가 열린다
+            disabled={busy || (likes !== null && likes.mode === "paid" && likes.left <= 0)}
+          >
             좋아요
             {likes && likes.left > 0 && (
               <span className="ml-1.5 text-[13px] font-normal opacity-80">
@@ -256,9 +270,11 @@ export default function DiscoverPage() {
           </Button>
         </div>
         {likes && likes.left === 1 && (
-          <p className="mt-3 text-center text-[13px] font-medium text-brick">오늘 마지막 좋아요예요. 신중하게 골라주세요.</p>
+          <p className="mt-3 text-center text-[13px] font-medium text-brick">
+            {likes.mode === "trial" ? "마지막 무료 체험 좋아요예요. 쓰고 나면 다시 생기지 않아요." : "오늘 마지막 좋아요예요. 신중하게 골라주세요."}
+          </p>
         )}
-        {likes && likes.left <= 0 && (
+        {likes && likes.mode === "paid" && likes.left <= 0 && (
           <p className="mt-3 text-center text-[13px] text-ink-soft">오늘 좋아요를 모두 사용했어요. 자정(한국 시간)에 다시 충전돼요. 넘기기는 계속할 수 있어요.</p>
         )}
         <p className="mt-4 hidden text-center text-[12px] text-ink-faint sm:block">키보드 ← 넘기기 · → 좋아요</p>
@@ -267,6 +283,8 @@ export default function DiscoverPage() {
     );
   }
 }
+
+type Likes = { mode: LikeAccess; left: number; limit: number; base: number; vip: boolean };
 
 /** "5개" 또는 VIP는 "5+5개" */
 function limitLabel({ limit, base, vip }: { limit: number; base: number; vip: boolean }) {
@@ -307,6 +325,88 @@ function LikeMeter({ left, limit, base, vip }: { left: number; limit: number; ba
   );
 }
 
+/** 무료 체험 좋아요 (2026-10-06): 평생 3개, 다 쓰면 다시 안 생긴다 */
+function TrialMeter({ left, limit }: { left: number; limit: number }) {
+  return (
+    <div
+      className="mb-4 flex items-center justify-between gap-3 rounded-card border border-brick/30 bg-brick-wash px-4 py-3"
+      aria-label={`무료 체험 좋아요 ${left}개 남음, 모두 ${limit}개`}
+    >
+      <div>
+        <p className="text-[14px] font-semibold text-ink">
+          무료 체험 좋아요 <span className="num text-brick">{left}</span>
+          <span className="text-ink-faint">/{limit}</span>
+        </p>
+        <p className="mt-0.5 text-[12px] text-ink-soft">다 쓰면 다시 생기지 않아요 · 넘기기는 제한 없어요</p>
+      </div>
+      <div className="flex gap-1" aria-hidden>
+        {Array.from({ length: limit }, (_, i) => (
+          <Heart key={i} filled={i < left} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** 좋아요를 못 할 때 (체험 좋아요를 다 썼거나 이용권이 끝남). 추천 보기·넘기기·대화는 그대로 된다. */
+function LikesLocked({
+  open,
+  onOpen,
+  showVip,
+  onActivated,
+}: {
+  open: boolean;
+  onOpen: () => void;
+  showVip: boolean;
+  onActivated: () => void;
+}) {
+  const { me } = useSession();
+  const m = me.membership;
+  const ended = m?.status === "expired";
+  const regular = m?.regular_price;
+  const discounted = m && regular && m.price < regular;
+  return (
+    <div className="mb-4 rounded-card border border-line bg-paper-card px-4 py-4">
+      <p className="text-[14px] font-semibold text-ink">{ended ? "이용권이 끝났어요" : "무료 체험 좋아요를 모두 사용했어요"}</p>
+      <p className="mt-1 text-[13px] leading-relaxed text-ink-soft">
+        추천 보기와 넘기기, 대화는 계속할 수 있어요. 좋아요를 보내려면 이용권이 필요해요.
+        {m && (
+          <>
+            {" "}
+            기본 이용권은 {m.days}일{" "}
+            {discounted ? (
+              <>
+                <s className="text-ink-faint">{regular!.toLocaleString()}원</s> <b className="text-ink">{m.price.toLocaleString()}원</b>
+              </>
+            ) : (
+              <b className="text-ink">{m.price.toLocaleString()}원</b>
+            )}
+            이고, 사면 사진 바로 재검토도 1번 받을 수 있어요.
+          </>
+        )}
+      </p>
+      {open ? (
+        <div className="mt-4 space-y-3">
+          <MembershipRenew onActivated={onActivated} />
+          {showVip && (
+            <Link
+              href="/liked"
+              className="block rounded-card border border-line bg-paper-card px-5 py-3 text-center text-[13.5px] hover:bg-paper-deep/60"
+            >
+              <span className="font-semibold">VIP 4주</span> <span className="text-ink-soft">· 기본 이용권 포함 · 받은 LIKE 보기</span>
+            </Link>
+          )}
+          <p className="text-center text-[12px] text-ink-faint">자동 결제는 없어요.</p>
+        </div>
+      ) : (
+        <Button size="sm" className="mt-3" onClick={onOpen}>
+          이용권 보기
+        </Button>
+      )}
+    </div>
+  );
+}
+
 function Heart({ filled }: { filled: boolean }) {
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" className={filled ? "text-brick" : "text-line-strong"}>
@@ -324,21 +424,27 @@ function Heart({ filled }: { filled: boolean }) {
 /** 처음 추천을 볼 때 한 번 "좋아요는 하루 N개"를 안내한다 (기기마다 한 번) */
 const LIKE_INTRO_KEY = "likeIntroSeen";
 
-function LikeIntro({ label }: { label: string }) {
+function LikeIntro({ label, trial }: { label: string; trial?: boolean }) {
+  // 체험 안내는 따로 한 번 더 보여준다 (베타 때 하루 5개 안내를 본 사람도 "체험 3개"는 처음이니까)
+  const key = trial ? `${LIKE_INTRO_KEY}:trial` : LIKE_INTRO_KEY;
   const [show, setShow] = useState(false);
   useEffect(() => {
     try {
-      if (!localStorage.getItem(LIKE_INTRO_KEY)) setShow(true);
+      if (!localStorage.getItem(key)) setShow(true);
     } catch {
       // 저장소를 못 쓰는 브라우저(사생활 보호 모드 등)에서는 안내를 띄우지 않는다
     }
-  }, []);
+  }, [key]);
   if (!show) return null;
   return (
     <div className="mb-4 rounded-card border border-line bg-paper-card px-4 py-4">
-      <p className="text-[14.5px] font-semibold">좋아요는 하루 {label}만 보낼 수 있어요</p>
+      <p className="text-[14.5px] font-semibold">
+        {trial ? `무료 체험 좋아요는 ${label}뿐이에요` : `좋아요는 하루 ${label}만 보낼 수 있어요`}
+      </p>
       <p className="mt-1.5 text-[13.5px] leading-relaxed text-ink-soft">
-        마음에 드는 사람에게만 신중하게 눌러주세요. 서로 좋아요를 누르면 매칭돼요. 넘기기는 개수 제한이 없어요.
+        {trial
+          ? "다 쓰면 다시 생기지 않아요. 마음에 드는 사람에게만 신중하게 눌러주세요. 서로 좋아요를 누르면 매칭돼요. 넘기기는 개수 제한이 없어요."
+          : "마음에 드는 사람에게만 신중하게 눌러주세요. 서로 좋아요를 누르면 매칭돼요. 넘기기는 개수 제한이 없어요."}
       </p>
       <Button
         size="sm"
@@ -346,96 +452,13 @@ function LikeIntro({ label }: { label: string }) {
         className="mt-3"
         onClick={() => {
           try {
-            localStorage.setItem(LIKE_INTRO_KEY, "1");
+            localStorage.setItem(key, "1");
           } catch {}
           setShow(false);
         }}
       >
         알겠어요
       </Button>
-    </div>
-  );
-}
-
-/** 이용권이 없거나 끝났을 때 (2026-10-04 구독제). 대화는 계속할 수 있다. */
-function MembershipEnded({ ended, showVip, onActivated }: { ended: boolean; showVip: boolean; onActivated: () => void }) {
-  return (
-    <div className="mx-auto max-w-app py-10">
-      <div className="text-center">
-        <div className="mx-auto mb-8 h-px w-12 bg-ink" />
-        <h1 className="font-serif text-[23px] font-semibold">{ended ? "이용권이 끝났어요" : "이용권이 필요해요"}</h1>
-        <p className="mx-auto mt-3 max-w-xs text-[14.5px] leading-relaxed text-ink-soft">
-          이용권이 있어야 추천을 보고 좋아요를 보낼 수 있어요. 이미 매칭된 사람과 대화는 계속할 수 있어요.
-        </p>
-      </div>
-      <div className="mt-8 space-y-4">
-        <MembershipRenew onActivated={onActivated} />
-        {showVip && (
-          <Link
-            href="/liked"
-            className="block rounded-card border border-line bg-paper-card px-5 py-4 text-center text-[14px] hover:bg-paper-deep/60"
-          >
-            <span className="font-semibold">VIP 4주</span> <span className="text-ink-soft">· 기본 이용권 포함 · 받은 LIKE 보기</span>
-          </Link>
-        )}
-        <p className="text-center text-[12.5px] text-ink-faint">자동 결제는 없어요. 기간이 끝나면 다시 사면 돼요.</p>
-      </div>
-    </div>
-  );
-}
-
-/** 점검 기간 (2026-10-04, `점검 기간 설계`). 정식 오픈 전에는 추천·좋아요가 막히고 대화·결제만 된다.
- *  미리 결제하면 이용권 기간은 오픈 시각부터 센다. 오픈 시각이 지나면 서버가 자동으로 연다. */
-function Maintenance({ showVip, onRetry, onActivated }: { showVip: boolean; onRetry: () => void; onActivated: () => void }) {
-  const { me } = useSession();
-  const m = me.membership;
-  const when = m?.open_at ? openTime(m.open_at) : null;
-  const ready = Boolean(m && (m.free || m.status === "active" || m.status === "banked"));
-  return (
-    <div className="mx-auto max-w-app py-10">
-      <div className="text-center">
-        <div className="mx-auto mb-8 h-px w-12 bg-ink" />
-        <p className="eyebrow">정식 오픈 준비 중</p>
-        <h1 className="mt-2 font-serif text-[23px] font-semibold">점검 중이에요</h1>
-        <p className="mx-auto mt-3 max-w-xs text-[14.5px] leading-relaxed text-ink-soft">
-          {when ? (
-            <>
-              <b className="text-ink">{when}</b>에 정식 오픈해요.
-            </>
-          ) : (
-            "곧 정식 오픈해요."
-          )}{" "}
-          그때까지 추천과 좋아요는 쉬어요. 이미 매칭된 사람과 대화는 계속할 수 있어요.
-        </p>
-      </div>
-      <div className="mt-8 space-y-4">
-        {ready ? (
-          <Notice tone="ok">
-            이용권 준비가 끝났어요.
-            {m?.until ? ` 오픈부터 ${untilDay(m.until)} 이용할 수 있어요.` : " 사진 평가가 끝나면 오픈부터 이용할 수 있어요."}
-          </Notice>
-        ) : (
-          <>
-            <p className="text-center text-[13.5px] text-ink-soft">
-              지금 미리 결제해도 이용권 기간은 <b className="text-ink">오픈 시각부터</b> 시작돼요.
-            </p>
-            <MembershipRenew onActivated={onActivated} />
-          </>
-        )}
-        {showVip && (
-          <Link
-            href="/liked"
-            className="block rounded-card border border-line bg-paper-card px-5 py-4 text-center text-[14px] hover:bg-paper-deep/60"
-          >
-            <span className="font-semibold">VIP 4주</span> <span className="text-ink-soft">· 기본 이용권 포함 · 오픈부터 시작</span>
-          </Link>
-        )}
-        <div className="text-center">
-          <Button variant="ghost" onClick={onRetry}>
-            다시 불러오기
-          </Button>
-        </div>
-      </div>
     </div>
   );
 }

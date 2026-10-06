@@ -85,6 +85,9 @@ class Like(Base):
     from_user_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("users.id"), nullable=False, index=True)
     to_user_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("users.id"), nullable=False, index=True)
     action: Mapped[str] = mapped_column(String(10), nullable=False)
+    # 무료 체험으로 보낸 LIKE (2026-10-06, 마이그레이션 0021). 하루 LIKE 한도를 셀 때 빼고 센다
+    # (체험 LIKE를 쓴 날 이용권을 사도 그날 LIKE를 바로 5개 쓸 수 있게)
+    is_trial: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false(), nullable=False)
     created_at: Mapped[datetime] = created_at()
     updated_at: Mapped[datetime] = updated_at()
 

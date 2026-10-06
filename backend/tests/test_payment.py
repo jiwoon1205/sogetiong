@@ -1,5 +1,8 @@
 """이용권 직접 입금 (2026-10-03 가입비, 2026-10-04 구독제로 변경).
 
+※ 2026-10-06 무료 체험부터는 가입 때 내지 않는다. 이 파일은 체험을 끈(FREE_TRIAL_LIKES=0) 예전 흐름과
+  입금·확인·환불 자체를 확인한다. 체험 흐름은 test_free_trial.py.
+
 흐름: 매칭 조건 → 결제 코드(CREATED) → "입금했어요"(REQUESTED) → 관리자 확인(CONFIRMED) → 사진 제출
 첫 이용권 4주는 사진 검수 후 추천이 열리는 날부터 센다 (기간 계산은 test_membership.py).
 """
@@ -42,6 +45,8 @@ def fee_on(monkeypatch, clock):
     monkeypatch.setattr(s, "payment_bank_name", "테스트은행")
     monkeypatch.setattr(s, "payment_account_number", "123-456-7890")
     monkeypatch.setattr(s, "payment_account_holder", "정지운")
+    monkeypatch.setattr(s, "free_trial_likes", 0)
+    monkeypatch.setattr(s, "membership_discount_until", datetime(2030, 1, 1, tzinfo=timezone.utc))
     return s
 
 

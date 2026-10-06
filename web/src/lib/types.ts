@@ -89,14 +89,26 @@ export type Membership = {
   /** 아직 시작하지 않은 일수 (사진 검수 후 시작) */
   banked_days: number;
   days: number;
+  /** 지금 가격 (할인 중이면 할인가) */
   price: number;
+  /** 정가 (2026-10-06: 4,000원) */
+  regular_price?: number;
+  /** 할인이 끝나는 시각. 없으면 할인 없음 */
+  discount_until?: string | null;
+  /** 이용권을 살 수 있나 (유료 시작 전에도 미리 살 수 있다) */
+  sales_open?: boolean;
   /** 남은 날짜가 이 이하면 "○일 남았어요" 띠 */
   warn_days: number;
-  /** 정식 오픈 시각 (점검 기간, 2026-10-04). 없으면 점검 없음 */
+  /** 유료 시작 시각 (2026-10-06, 점검 기간 없앰). 그 전에는 베타처럼 모두 무료 */
   open_at?: string | null;
-  /** 지금 점검 기간인가 (추천·좋아요가 막히고 대화·결제만 됨) */
+  /** 지금 유료 시작 전(베타)인가 */
   before_open?: boolean;
+  /** 무료 체험 (2026-10-06). paid = 이용권(또는 베타) / trial = 체험 좋아요 남음 / none = 좋아요 불가 (추천·넘기기·대화는 됨) */
+  like_access?: LikeAccess;
+  trial?: { limit: number; used: number; left: number };
 };
+
+export type LikeAccess = "paid" | "trial" | "none";
 
 /** GET /me/vip — VIP 안내·상태 (2026-10-03) */
 export type VipInfo = {

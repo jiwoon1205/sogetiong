@@ -86,7 +86,13 @@ def test_full_flow_signup_to_chat(sent_codes, db):
 
     # LIKE → 아직 매칭 아님 → 상대도 LIKE → 매칭
     r = a.post("/api/v1/likes", json={"profile_id": b.profile_id})
-    assert r.json() == {"matched": False, "match_id": None, "likes_left_today": 4}
+    assert r.json() == {
+        "matched": False,
+        "match_id": None,
+        "likes_left_today": 4,
+        "like_access": "paid",  # 유료화가 꺼져 있으면(베타) 모두 paid
+        "trial_likes_left": 3,
+    }
     r = b.post("/api/v1/likes", json={"profile_id": a.profile_id})
     assert r.json()["matched"] is True
     match_id = r.json()["match_id"]

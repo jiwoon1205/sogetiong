@@ -108,6 +108,10 @@ def carry_over_account(db: Session, previous: list[User], new_user: User) -> Non
     new_user.vip_until = latest(u.vip_until for u in old)
     new_user.member_days_banked = sum(u.member_days_banked or 0 for u in old)
     new_user.signup_paid_at = latest(u.signup_paid_at for u in old)
+    # 무료 체험 LIKE 사용 개수와 "사진 바로 재검토 1회" 구매 혜택도 이어진다 (2026-10-06).
+    # 체험 개수는 예전 계정에서 비우지 않는다 (줄어드는 값이 아니라서 여러 번 재가입해도 늘지 않음)
+    new_user.trial_likes_used = max([new_user.trial_likes_used or 0] + [u.trial_likes_used or 0 for u in old])
+    new_user.rereview_granted_at = latest([new_user.rereview_granted_at] + [u.rereview_granted_at for u in old])
     if any(u.match_suspended for u in old):
         new_user.match_suspended = True
         new_user.match_suspended_at = latest(u.match_suspended_at for u in old)

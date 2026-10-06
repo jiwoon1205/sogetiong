@@ -157,6 +157,7 @@ def order(
     weights: Weights,
     rng: random.Random | None = None,
     seen_before: set[uuid.UUID] | dict[uuid.UUID, float] | None = None,
+    cannot_like: set[uuid.UUID] | None = None,
 ) -> list[Person]:
     """조건을 통과한 후보를 처음 보는 사람 먼저 → 등급 차이 → 세부 점수 순으로 정렬. 점수가 같으면 랜덤.
 
@@ -165,6 +166,10 @@ def order(
       - dict(user_id → PASS한 시각 숫자)로 주면: 다시 나온 사람끼리는 **PASS한 지 오래된 사람부터**
         (VIP 테스트 계정, 2026-10-02 — 새로고침할 때마다 같은 10명만 나오지 않고 돌아가며 나오게)
 
+    cannot_like: 지금 LIKE를 보낼 수 없는 사람 (무료 체험 LIKE를 다 썼거나 이용권이 끝남, 2026-10-06).
+      같은 등급 차이 안에서 뒤로 보낸다 (빼지는 않음) → 돈 낸 사람의 LIKE가 답을 못 받는 일을 줄인다.
+      등급보다 앞에 두지 않는 이유: 유료 시작 뒤에는 이런 사람이 많을 수 있어서, 등급이 안 맞는 사람만 잔뜩 뜰 수 있다.
+
     먼저 섞은 뒤 정렬한다. 파이썬 정렬은 "같은 값이면 원래 순서 유지"라서,
     섞어 두면 점수가 같은 사람끼리는 랜덤 순서가 된다 (가입 순서가 결과에 영향을 주지 않음).
     """
@@ -172,11 +177,13 @@ def order(
     (rng or random.Random()).shuffle(eligible)
     seen = seen_before or set()
     pass_order = seen if isinstance(seen, dict) else {}
+    blocked_likes = cannot_like or set()
     eligible.sort(
         key=lambda c: (
             c.user_id in seen,
             pass_order.get(c.user_id, 0.0),  # dict일 때만 의미 있음: 오래 전에 PASS한 사람이 앞
             tier_gap(viewer.tier, c.tier),
+            c.user_id in blocked_likes,
             -score(viewer, c, weights),
         )
     )
@@ -235,9 +242,10 @@ def rank(
     liked_me_probability: float = 0.0,
     rng: random.Random | None = None,
     seen_before: set[uuid.UUID] | dict[uuid.UUID, float] | None = None,
+    cannot_like: set[uuid.UUID] | None = None,
 ) -> list[Person]:
     rng = rng or random.Random()
-    ordered = order(viewer, candidates, weights, rng, seen_before)
+    ordered = order(viewer, candidates, weights, rng, seen_before, cannot_like)
     return _boost_liked_me(
         viewer,
         ordered,

@@ -20,10 +20,13 @@ type Photo = {
   reviewed_at: string | null;
 };
 // 새 사진을 지금 낼 수 있는지 (서버가 알려줌). 평가 후 wait_days(7일) 안에는 "바로 재검토"를 계정당 1번만 쓸 수 있다
+// 2026-10-06: 이용권·VIP를 살 때마다 "바로 재검토 1회"(purchase)를 받는다 → 평생 1번보다 먼저 쓴다
 type Resubmit = {
   allowed: boolean;
   uses_free_rereview: boolean;
   free_rereview_left: boolean;
+  uses_purchase_rereview?: boolean;
+  purchase_rereview_left?: boolean;
   next_available_at: string | null;
   wait_days?: number;
 };
@@ -43,6 +46,8 @@ export default function ProfilePage() {
   const [evaluation, setEvaluation] = useState<{ evaluated: boolean; scores?: Scores; evaluated_at?: string } | null>(null);
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [resubmit, setResubmit] = useState<Resubmit | null>(null);
+  // 이용권이 없으면(무료 체험 중 포함) 사진 재검토를 신청할 수 없다
+  const [needsMembership, setNeedsMembership] = useState(false);
   const [tab, setTab] = useState<"preview" | "edit">("preview");
   const [uploading, setUploading] = useState(false);
 
@@ -50,7 +55,7 @@ export default function ProfilePage() {
     const [p, e, ph] = await Promise.all([
       api<MyProfile>("/me/profile"),
       api<{ evaluated: boolean; scores?: Scores; evaluated_at?: string }>("/me/evaluation"),
-      api<{ photos: Photo[]; resubmit?: Resubmit }>("/me/photos"),
+      api<{ photos: Photo[]; resubmit?: Resubmit; rereview_needs_membership?: boolean }>("/me/photos"),
     ]);
     setProfile(p);
     // 학과를 아직 고르지 않았으면 바로 수정 화면을 연다
@@ -58,6 +63,7 @@ export default function ProfilePage() {
     setEvaluation(e);
     setPhotos(ph.photos);
     setResubmit(ph.resubmit ?? null);
+    setNeedsMembership(Boolean(ph.rereview_needs_membership));
   }, []);
 
   useEffect(() => {
@@ -115,20 +121,36 @@ export default function ProfilePage() {
               </p>
               {latest?.review_status === "REJECTED" && latest.reject_reason && <p className="mt-1 text-[13px] text-brick">사유: {latest.reject_reason}</p>}
             </div>
-            {!uploading && (resubmit?.allowed ?? true) && (
+            {!uploading && !needsMembership && (resubmit?.allowed ?? true) && (
               <Button variant="secondary" size="sm" onClick={() => setUploading(true)}>
-                {latest ? (resubmit?.uses_free_rereview ? "바로 재검토 요청" : "새 사진 제출") : "사진 제출"}
+                {latest
+                  ? resubmit?.uses_free_rereview || resubmit?.uses_purchase_rereview
+                    ? "바로 재검토 요청"
+                    : "새 사진 제출"
+                  : "사진 제출"}
               </Button>
             )}
           </div>
-          {resubmit && !resubmit.allowed && resubmit.next_available_at && (
+          {needsMembership && (
+            <p className="mt-3 text-[12.5px] leading-relaxed text-ink-faint">
+              사진 재검토는 이용권이 있을 때 신청할 수 있어요. 이용권을 사면 바로 재검토도 1번 받을 수 있어요.{" "}
+              <a href="/settings#membership" className="underline underline-offset-4">
+                이용권 보기
+              </a>
+            </p>
+          )}
+          {!needsMembership && resubmit && !resubmit.allowed && resubmit.next_available_at && (
             <p className="mt-3 text-[12.5px] leading-relaxed text-ink-faint">
               바로 재검토는 이미 사용했어요. {dateTime(resubmit.next_available_at)}부터 새 사진을 제출할 수 있어요.
             </p>
           )}
           {uploading && (
             <div className="mt-6">
-              {resubmit?.uses_free_rereview ? (
+              {resubmit?.uses_purchase_rereview ? (
+                <Notice>
+                  이용권을 사서 받은 <b>바로 재검토 1번</b>을 써요. 새 사진이 승인되면 쓴 것으로 처리돼요 (반려되면 다시 쓸 수 있어요). 다음에 이용권을 사면 다시 1번 생겨요.
+                </Notice>
+              ) : resubmit?.uses_free_rereview ? (
                 <Notice>
                   평가 후 {resubmit.wait_days ?? 7}일 안에 바로 재검토를 요청할 수 있는 기회는 <b>계정당 한 번</b>이에요. 새 사진이 승인되면 기회를 쓴 것으로 처리돼요 (반려되면 다시 쓸 수 있어요).
                 </Notice>

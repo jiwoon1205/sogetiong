@@ -8,7 +8,7 @@ import uuid
 from collections import defaultdict
 from datetime import datetime, timedelta
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
@@ -248,15 +248,9 @@ def discoverable_profiles_query(db: Session, university_id: uuid.UUID, *, member
             PublicProfile.user_id.in_(with_prefs),
         )
     )
-    # 이용권이 끝난 사람은 남의 추천에 나오지 않는다 (2026-10-04 구독제 D5).
-    # LIKE를 받아도 답할 수 없기 때문. 이미 보낸 LIKE는 남는다 (VIP "받은 LIKE" 목록에는 나옴).
-    if members_only and get_settings().membership_enabled:
-        now = utcnow()
-        conditions = [User.member_until > now, User.vip_until > now]
-        emails = get_settings().vip_test_email_set
-        if emails:
-            conditions.append(func.lower(User.email).in_(emails))
-        query = query.filter(or_(*conditions))
+    # 2026-10-06 무료 체험: 이용권이 없거나 끝난 사람도 남의 추천에 나온다 ("체험 이용권도 이용권").
+    # (예전 2026-10-04 D5 "이용권이 끝난 사람은 숨김"은 없앴다.) LIKE를 못 하는 사람은 같은 등급 안에서 뒤로 보낸다
+    # → api/v1/matching.discover, membership_service.cannot_like_ids. members_only는 예전 호출 호환용(무시).
     return query
 
 
@@ -425,7 +419,12 @@ def likes_sent_today(db: Session, user_id: uuid.UUID) -> int:
     """
     return (
         db.query(func.count(Like.id))
-        .filter(Like.from_user_id == user_id, Like.action == "LIKE", Like.created_at >= kst_day_start())
+        .filter(
+            Like.from_user_id == user_id,
+            Like.action == "LIKE",
+            Like.is_trial.is_(False),  # 체험 LIKE는 하루 한도에서 뺀다 (2026-10-06)
+            Like.created_at >= kst_day_start(),
+        )
         .scalar()
         or 0
     )

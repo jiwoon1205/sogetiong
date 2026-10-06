@@ -3,7 +3,8 @@
 - 기본 4주(28일) 3,000원, VIP 4주 6,000원 = 기본 포함. 끝나는 시각은 그날 밤 12시(한국 시간)로 올림
 - 첫 이용권은 추천이 열리는 날(승인 사진 + 등급)부터 (D1). 언제든 연장 (D2)
 - VIP를 사면 남은 기본 기간은 VIP 뒤로 밀린다
-- 이용권이 없으면 추천·LIKE·PASS·받은 LIKE·사진 재검토만 막고 대화는 된다. 끝난 사람은 남의 추천에 안 나온다 (D5)
+- 2026-10-06 무료 체험: 이용권이 없으면 LIKE는 체험 3개만, 다 쓰면 LIKE만 막힌다. 추천·PASS·대화는 된다.
+  끝난 사람도 남의 추천에 나온다 (D5 없앰). 사진 재검토는 이용권이 있어야 한다 (D9). 자세한 건 test_free_trial.py
 - 베타 회원도 유료 (D7), 관리자 기간 조정 (D8), 테스트 계정은 항상 이용 (D10)
 """
 
@@ -190,6 +191,8 @@ def paid_world(monkeypatch):
     monkeypatch.setattr(s, "payment_account_number", "123-456-7890")
     monkeypatch.setattr(s, "payment_account_holder", "운영자")
     monkeypatch.setattr("app.services.payment_service.utcnow", lambda: kst(2026, 11, 2))
+    # 할인가 3,000원이 적용되는 기간으로 둔다 (정가 4,000원은 test_free_trial.py에서 확인)
+    monkeypatch.setattr(s, "membership_discount_until", utcnow() + timedelta(days=365))
     monkeypatch.setattr(
         "app.services.email_service.EmailService.send_admin_payment_request",
         staticmethod(lambda email, code, amount: None),
@@ -235,14 +238,12 @@ def test_beta_member_must_buy_after_switch(sent_codes, db, paid_world, monkeypat
     switch_on(monkeypatch, paid_world)
 
     body = me.get("/api/v1/me").json()
-    assert body["onboarding"]["payment_required"] is False  # 가입 단계가 아니라 "이용권이 끝났어요" 화면
+    assert body["onboarding"]["payment_required"] is False  # 가입 단계에서 내지 않는다 (체험부터)
     assert body["membership"]["active"] is False and body["membership"]["status"] == "none"
-    for r in (
-        me.get("/api/v1/discover"),
-        me.post("/api/v1/passes", json={"profile_id": her.profile_id}),
-        me.post("/api/v1/likes", json={"profile_id": her.profile_id}),
-    ):
-        assert r.status_code == 409 and r.json()["detail"] == "MEMBERSHIP_REQUIRED", r.text
+    # 베타 회원은 모두 체험 이용자가 된다: 추천·PASS는 되고, LIKE는 체험 3개
+    assert body["membership"]["like_access"] == "trial" and body["membership"]["trial"]["left"] == 3
+    r = me.get("/api/v1/discover")
+    assert r.status_code == 200 and r.json()["like_access"] == "trial" and r.json()["likes_left_today"] == 3
     # 대화는 이용권 없이도 된다
     assert me.get("/api/v1/matches").status_code == 200
     r = me.post(f"/api/v1/matches/{match_id}/messages", json={"body": "안녕하세요"})
@@ -273,8 +274,8 @@ def test_expired_people_are_hidden_but_kept_in_liked_list(sent_codes, db, paid_w
     pay(admin, paid)
     pay(admin, me, "vip")
 
-    # 이용권 없는 사람(gone)은 추천에 안 나온다
-    assert discover_ids(me) == [paid.profile_id]
+    # 이용권 없는 사람(gone)도 추천에 나온다 (2026-10-06 체험: D5 없앰)
+    assert set(discover_ids(me)) == {paid.profile_id, gone.profile_id}
     # 하지만 나를 LIKE한 사람 목록에는 나오고, LIKE하면 바로 매칭 → 대화
     rows = me.get("/api/v1/liked-me").json()["profiles"]
     assert [p["profile_id"] for p in rows] == [gone.profile_id]
@@ -303,7 +304,7 @@ def test_vip_can_be_bought_without_basic(sent_codes, db, paid_world, monkeypatch
     admin = admin_login(db)
     me = ready_user(sent_codes, db, admin, "me@hufs.ac.kr", gender="MALE", want="FEMALE")
     switch_on(monkeypatch, paid_world, vip=True)
-    assert me.get("/api/v1/discover").status_code == 409
+    assert me.get("/api/v1/discover").json()["like_access"] == "trial"
     pay(admin, me, "vip")
     user = user_of(db, me)
     assert as_utc(user.vip_until) == as_utc(user.member_until)
@@ -324,6 +325,7 @@ def test_new_user_full_flow_and_start_notice(sent_codes, db, paid_world, monkeyp
     from tests.conftest import approve, choose_department, set_preferences, signup, upload_photo
 
     switch_on(monkeypatch, paid_world)
+    monkeypatch.setattr(paid_world, "free_trial_likes", 0)  # 체험을 끄면 예전처럼 사진 전에 낸다
     admin = admin_login(db)
     a = signup(sent_codes, db, "new@hufs.ac.kr")
     choose_department(a, db, "경영학부")
@@ -405,6 +407,7 @@ def test_expiry_is_checked_live(sent_codes, db, paid_world, monkeypatch):
     user = user_of(db, me)
     user.member_until = utcnow() - timedelta(seconds=1)
     db.commit()
+    # 끝나도 추천은 보이지만 LIKE는 못 한다 (이용권을 산 적이 있으니 체험도 다시 안 생김)
     r = me.get("/api/v1/discover")
-    assert r.status_code == 409 and r.json()["detail"] == "MEMBERSHIP_REQUIRED"
+    assert r.status_code == 200 and r.json()["like_access"] == "none"
     assert me.get("/api/v1/me").json()["membership"]["status"] == "expired"

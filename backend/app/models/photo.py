@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Integer, String, Text, Uuid
+from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Integer, String, Text, Uuid, false
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -36,6 +36,8 @@ class UserPhoto(Base):
     position: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     # 평가 후 7일(PHOTO_RESUBMIT_DAYS)이 안 지났는데 "바로 재검토"(계정당 평생 1번)를 써서 낸 사진인지
     free_rereview: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # 이용권·VIP를 사서 받은 "바로 재검토 1회"로 낸 사진인지 (2026-10-06, 마이그레이션 0021)
+    purchase_rereview: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false(), nullable=False)
     uploaded_at: Mapped[datetime] = created_at()
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     reviewed_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("admin_users.id"), nullable=True)

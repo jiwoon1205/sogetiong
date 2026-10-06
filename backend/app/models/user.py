@@ -59,6 +59,13 @@ class User(Base):
     # 한 번만 보여주는 공지 팝업에서 마지막으로 "확인"을 누른 공지 이름 (2026-10-05, 마이그레이션 0020)
     # → services/announcement_service.py
     announcement_seen: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    # 무료 체험 (2026-10-06, 마이그레이션 0021). 계산은 services/membership_service.py에 있다.
+    # trial_likes_used: 체험으로 보낸 LIKE 수 (평생, 다시 줄지 않음). 이용권을 사면 체험 끝 → FREE_TRIAL_LIKES 이상으로 채운다.
+    #   탈퇴해도 이 줄은 남고, 재가입하면 이어받는다 (auth_service.carry_over_account).
+    # rereview_granted_at: 이용권·VIP를 산 시각 = "사진 바로 재검토 1회" 혜택을 받은 시각.
+    #   이 시각 뒤에 그 혜택으로 낸 사진이 승인되면 사용한 것 (사면 다시 1회로 채워짐, 쌓이지 않음)
+    trial_likes_used: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
+    rereview_granted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     public_profile = relationship("PublicProfile", back_populates="user", uselist=False)
     private_profile = relationship("PrivateProfile", back_populates="user", uselist=False)

@@ -62,17 +62,24 @@ def _viewer(db: Session, current: CurrentUser) -> matching_service.Person:
 
 
 def _require_membership(db: Session, current: CurrentUser) -> None:
-    """이용권이 없거나 끝났으면 추천·LIKE·PASS·받은 LIKE를 막는다 (2026-10-04 구독제). 대화는 막지 않는다."""
+    """추천·PASS 전에 부르는 공통 처리.
+
+    2026-10-06 무료 체험: 이용권이 없어도(체험 중·체험 끝·이용권 끝) 추천 보기·PASS는 된다. LIKE만 막는다 (like()).
+    점검 기간은 없앴다 (유료 시작 시각 전에는 베타처럼 모두 무료).
+    """
     user = current.user
-    # 점검 기간(OPEN_AT 전)에는 모두 막는다. 대화·결제는 된다 (2026-10-04 `점검 기간 설계`).
-    # 운영자 테스트 계정은 오픈 전에 추천이 잘 되는지 확인할 수 있게 열어 둔다.
-    if membership_service.before_open() and not vip_service.is_vip_tester(user):
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="MAINTENANCE")
     # 쌓아 둔 일수가 있는데 이미 추천이 열린 상태면 지금 시작한다 (등급을 정할 때 시작하지만, 혹시 빠졌을 때를 대비)
     if membership_service.enabled() and (user.member_days_banked or 0) > 0 and membership_service.start_banked(db, user):
         db.commit()
-    if not membership_service.has_membership(user):
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="MEMBERSHIP_REQUIRED")
+
+
+def _never_paid(user: User) -> bool:
+    return user.member_until is None and user.vip_until is None and not (user.member_days_banked or 0)
+
+
+def _like_blocked_detail(user: User) -> str:
+    """LIKE를 못 할 때 이유. 상대가 나를 LIKE했든 안 했든 똑같이 응답한다 (누가 나를 좋아하는지 드러나지 않게)."""
+    return "TRIAL_ENDED" if _never_paid(user) else "MEMBERSHIP_REQUIRED"
 
 
 # ---------- 추천 ----------
@@ -99,7 +106,12 @@ def discover(
 
     settings = get_settings()
     like_limit = vip_service.daily_like_limit(current.user)
+    access = membership_service.like_access(current.user)
     by_user = {p.user_id: p for p in profiles}
+    # LIKE를 못 하는 사람(체험 다 씀·이용권 끝)은 같은 등급 안에서 뒤로. 단, 이미 나를 LIKE한 사람은 그대로 둔다
+    # (내가 LIKE하면 상대가 아무것도 안 해도 바로 매칭이 되니까)
+    likers = {uid for uid, _ in profile_service.likers_of(db, current.id)}
+    cannot_like = membership_service.cannot_like_ids(db, list(by_user)) - likers
     ranked = matching_service.rank(
         viewer,
         profile_service.people_from_profiles(db, profiles),
@@ -109,15 +121,23 @@ def discover(
         liked_me_slots=settings.liked_me_slots,
         liked_me_probability=settings.liked_me_probability,
         seen_before=profile_service.passed_before_ids(db, current.id, pass_cooldown_hours=cooldown),
+        cannot_like=cannot_like,
     )
     # 카드에는 외모 등급도, "나를 LIKE했는지"도 들어가지 않는다 (build_cards가 보내는 항목만 나감)
     cards = profile_service.build_cards(db, [by_user[p.user_id] for p in ranked])
     # 후보가 없을 때 조건을 자동으로 넓히지 않는다 (설계도 §56, §57)
+    trial = access != "paid"
     return {
         "profiles": cards,
         "empty": not cards,
-        "likes_left_today": profile_service.likes_left_today(db, current.id, like_limit),
-        "daily_like_limit": like_limit,
+        # 무료 체험 (2026-10-06): paid / trial / none. 체험이면 남은 LIKE는 "평생 남은 체험 LIKE"
+        "like_access": access,
+        "trial_likes_left": membership_service.trial_left(current.user),
+        "trial_like_limit": membership_service.trial_limit(),
+        "likes_left_today": membership_service.trial_left(current.user)
+        if trial
+        else profile_service.likes_left_today(db, current.id, like_limit),
+        "daily_like_limit": membership_service.trial_limit() if trial else like_limit,
         # VIP는 하트를 "5+5"로 보여준다 (무료 몫 5개 + VIP 몫 5개)
         "vip": vip_service.is_vip(current.user),
         "base_like_limit": settings.daily_like_limit,
@@ -176,16 +196,16 @@ def _target(db: Session, current: CurrentUser, profile_id: uuid.UUID) -> PublicP
     return target
 
 
-def _upsert_action(db: Session, from_id: uuid.UUID, to_id: uuid.UUID, action: str) -> None:
+def _upsert_action(db: Session, from_id: uuid.UUID, to_id: uuid.UUID, action: str, *, is_trial: bool = False) -> None:
     row = db.query(Like).filter(Like.from_user_id == from_id, Like.to_user_id == to_id).first()
     if row is None:
-        db.add(Like(from_user_id=from_id, to_user_id=to_id, action=action))
+        db.add(Like(from_user_id=from_id, to_user_id=to_id, action=action, is_trial=is_trial))
     elif action == "LIKE":
         # PASS 48시간이 지나 다시 나온 사람에게 LIKE하는 경우: PASS 행을 지우고 새로 만든다.
         # 하루 LIKE 개수는 created_at으로 세기 때문 (행을 고쳐 쓰면 예전 PASS 날짜가 남아서 개수에 안 잡힌다 → 하루 5개 제한을 피할 수 있음)
         db.delete(row)
         db.flush()
-        db.add(Like(from_user_id=from_id, to_user_id=to_id, action=action))
+        db.add(Like(from_user_id=from_id, to_user_id=to_id, action=action, is_trial=is_trial))
     else:
         # 다시 PASS: 값이 같으면 SQLAlchemy가 updated_at을 안 바꾸므로 직접 바꾼다 (48시간을 이때부터 다시 셈)
         row.action = action
@@ -198,6 +218,10 @@ def like(payload: TargetRequest, current: CurrentUser = Depends(get_current_user
     target = _target(db, current, payload.profile_id)
     viewer = _viewer(db, current)
     vip = vip_service.is_vip(current.user)
+    # 무료 체험 (2026-10-06): 이용권이 없으면 체험 LIKE(평생 3개)로만. 다 쓰면 상대가 누구든 똑같이 막는다.
+    access = membership_service.like_access(current.user)
+    if access == "none":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=_like_blocked_detail(current.user))
 
     # ID를 직접 넣어도, 추천 조건에 맞지 않는 사람에게는 LIKE할 수 없다 (설계도 금지사항 #18)
     excluded = profile_service.excluded_user_ids(
@@ -217,26 +241,34 @@ def like(payload: TargetRequest, current: CurrentUser = Depends(get_current_user
     if not candidates or not matching_service.mutually_compatible(viewer, candidates[0]):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="프로필을 찾을 수 없습니다.")
 
-    # 하루 LIKE 한도 (한국 시간 자정에 다시 채워짐). DB로 세므로 서버를 재시작해도 초기화되지 않는다.
-    # 무료 5개, VIP 10개 (2026-10-03). "받은 LIKE" 목록에서 누른 LIKE도 여기에 포함된다.
-    limit = vip_service.daily_like_limit(current.user)
-    if profile_service.likes_sent_today(db, current.id) >= limit:
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail=f"오늘 LIKE {limit}개를 모두 사용했어요. 자정(한국 시간)에 다시 충전돼요.",
-        )
+    if access == "trial":
+        # 체험 LIKE: 하루 한도가 아니라 평생 개수. 동시에 눌러도 넘지 않게 DB에서 조건부로 1 늘린다.
+        if not membership_service.use_trial_like(db, current.user):
+            db.rollback()
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=_like_blocked_detail(current.user))
+        _upsert_action(db, current.id, target.user_id, "LIKE", is_trial=True)
+        db.flush()
+    else:
+        # 하루 LIKE 한도 (한국 시간 자정에 다시 채워짐). DB로 세므로 서버를 재시작해도 초기화되지 않는다.
+        # 무료 5개, VIP 10개 (2026-10-03). "받은 LIKE" 목록에서 누른 LIKE도 여기에 포함된다.
+        limit = vip_service.daily_like_limit(current.user)
+        if profile_service.likes_sent_today(db, current.id) >= limit:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail=f"오늘 LIKE {limit}개를 모두 사용했어요. 자정(한국 시간)에 다시 충전돼요.",
+            )
 
-    _upsert_action(db, current.id, target.user_id, "LIKE")
-    db.flush()
-    # 한 번 더 확인: LIKE를 여러 개 "동시에" 보내면 위의 확인을 모두 통과할 수 있다.
-    # 방금 기록한 LIKE를 포함해 세고, 한도를 넘으면 취소한다.
-    # (SQLite는 쓰기를 한 번에 하나씩만 하므로, 여기서 세는 숫자에는 먼저 끝난 요청이 모두 들어 있다)
-    if profile_service.likes_sent_today(db, current.id) > limit:
-        db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail=f"오늘 LIKE {limit}개를 모두 사용했어요. 자정(한국 시간)에 다시 충전돼요.",
-        )
+        _upsert_action(db, current.id, target.user_id, "LIKE")
+        db.flush()
+        # 한 번 더 확인: LIKE를 여러 개 "동시에" 보내면 위의 확인을 모두 통과할 수 있다.
+        # 방금 기록한 LIKE를 포함해 세고, 한도를 넘으면 취소한다.
+        # (SQLite는 쓰기를 한 번에 하나씩만 하므로, 여기서 세는 숫자에는 먼저 끝난 요청이 모두 들어 있다)
+        if profile_service.likes_sent_today(db, current.id) > limit:
+            db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail=f"오늘 LIKE {limit}개를 모두 사용했어요. 자정(한국 시간)에 다시 충전돼요.",
+            )
 
     reverse = (
         db.query(Like)
@@ -272,10 +304,15 @@ def like(payload: TargetRequest, current: CurrentUser = Depends(get_current_user
     # 매칭되기 전에는 상대가 나를 LIKE했는지 알려주지 않는다 (설계도 §23)
     # 숨김 매칭은 "매칭 안 됨"과 똑같이 응답한다 (매칭 정지 사실을 알 수 없게)
     visible = match is not None and match.status == "ACTIVE"
+    trial = access == "trial"
     return {
         "matched": visible,
         "match_id": str(match.id) if visible else None,
-        "likes_left_today": profile_service.likes_left_today(db, current.id, limit),
+        "like_access": membership_service.like_access(current.user),
+        "trial_likes_left": membership_service.trial_left(current.user),
+        "likes_left_today": membership_service.trial_left(current.user)
+        if trial
+        else profile_service.likes_left_today(db, current.id, vip_service.daily_like_limit(current.user)),
     }
 
 

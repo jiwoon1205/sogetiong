@@ -1,9 +1,9 @@
-"""점검 기간 (2026-10-04, `점검 기간 설계`).
+"""유료 시작 시각 OPEN_AT (2026-10-04 점검 기간 → 2026-10-06 점검 기간 없앰).
 
-- OPEN_AT 전에는 추천·LIKE·PASS·받은 LIKE·기존 회원 사진 재검토를 막는다 (409 MAINTENANCE)
-- 대화와 결제(이용권·VIP)는 된다. 새 가입자는 결제·첫 사진 제출까지 된다
-- 점검 기간에 낸 이용권·VIP·쌓아 둔 일수는 오픈 시각부터 28일
-- OPEN_AT이 지나면 자동으로 열린다. OPEN_AT이 없으면 원래 동작
+- OPEN_AT 전에는 스위치가 켜져 있어도 베타처럼 모두 무료 (아무것도 막지 않음, 하루 LIKE 5개)
+- 그 전에도 이용권·VIP를 미리 살 수 있다 → 오픈 시각부터 28일. 미리 산 VIP 혜택도 오픈 시각부터
+- OPEN_AT이 지나면 자동으로 유료: 이용권 없는 사람(베타 회원 포함)은 체험 이용자
+- OPEN_AT이 없으면 스위치를 켠 순간부터 유료
 """
 
 from datetime import timedelta
@@ -105,52 +105,41 @@ def open_in(monkeypatch, s, delta: timedelta):
     monkeypatch.setattr(s, "open_at", utcnow() + delta)
 
 
-def test_maintenance_blocks_matching_but_not_chat_or_payment(sent_codes, db, paid_world, monkeypatch):
+def test_before_open_everything_is_free_and_presale_starts_at_open(sent_codes, db, paid_world, monkeypatch):
     admin = admin_login(db)
     me = ready_user(sent_codes, db, admin, "me@hufs.ac.kr", gender="MALE", want="FEMALE")
     her = ready_user(sent_codes, db, admin, "her@hufs.ac.kr", gender="FEMALE", want="MALE")
-    match_id = make_match(me, her)
+    other = ready_user(sent_codes, db, admin, "other@hufs.ac.kr", gender="FEMALE", want="MALE")
     switch_on(monkeypatch, paid_world, vip=True)
     open_in(monkeypatch, paid_world, timedelta(days=2))
 
-    # 이용권이 없어도 있어도 점검 중에는 MAINTENANCE
-    for r in (
-        me.get("/api/v1/discover"),
-        me.get("/api/v1/liked-me"),
-        me.post("/api/v1/likes", json={"profile_id": her.profile_id}),
-        me.post("/api/v1/passes", json={"profile_id": her.profile_id}),
-        me.delete(f"/api/v1/passes/{her.profile_id}"),
-    ):
-        assert r.status_code == 409 and r.json()["detail"] == "MAINTENANCE", r.text
+    # 오픈 전: 베타처럼 무료 (점검 없음)
+    r = me.get("/api/v1/discover")
+    assert r.status_code == 200 and r.json()["like_access"] == "paid" and r.json()["daily_like_limit"] == 5
+    assert me.post("/api/v1/passes", json={"profile_id": other.profile_id}).status_code == 200
+    match_id = make_match(me, her)
 
-    # 결제는 된다 → 오픈 시각부터 28일
+    # 미리 살 수 있다 → 오픈 시각부터 28일
     pay(admin, me)
-    user = user_of(db, me)
     open_at = as_utc(paid_world.open_at)
-    assert as_utc(user.member_until) == membership_service.end_of_kst_day(open_at + timedelta(days=28))
+    assert as_utc(user_of(db, me).member_until) == membership_service.end_of_kst_day(open_at + timedelta(days=28))
     m = me.get("/api/v1/me").json()["membership"]
-    assert m["before_open"] is True and m["open_at"] is not None and m["status"] == "active"
-    assert me.get("/api/v1/discover").json()["detail"] == "MAINTENANCE"
-
-    # VIP도 살 수 있다
+    assert m["before_open"] is True and m["open_at"] is not None
+    # 미리 산 VIP는 오픈 전에는 혜택이 없다 (기간이 오픈부터라서)
     pay(admin, her, "vip")
-    assert as_utc(user_of(db, her).vip_until) == membership_service.end_of_kst_day(open_at + timedelta(days=28))
+    assert her.get("/api/v1/me").json()["vip"]["active"] is False
+    assert me.post(f"/api/v1/matches/{match_id}/messages", json={"body": "안녕"}).status_code == 201
 
-    # 대화는 된다
-    assert me.get("/api/v1/matches").status_code == 200
-    assert me.post(f"/api/v1/matches/{match_id}/messages", json={"body": "점검 중에도 대화"}).status_code == 201
-
-    # 기존 회원 사진 재검토는 막힌다
-    r = me.post("/api/v1/me/photos", files={"file": ("me.jpg", b"x", "image/jpeg")})
-    assert r.status_code == 409 and r.json()["detail"] == "MAINTENANCE"
-
-    # 오픈 시각이 지나면 자동으로 열린다
+    # 오픈 시각이 지나면 자동으로 유료: 산 사람은 이용권, 안 산 사람(other)은 체험
     open_in(monkeypatch, paid_world, timedelta(seconds=-1))
-    assert me.get("/api/v1/discover").status_code == 200
+    assert me.get("/api/v1/discover").json()["like_access"] == "paid"
+    assert her.get("/api/v1/me").json()["vip"]["active"] is True
+    r = other.get("/api/v1/discover")
+    assert r.status_code == 200 and r.json()["like_access"] == "trial" and r.json()["likes_left_today"] == 3
     assert me.get("/api/v1/me").json()["membership"]["before_open"] is False
 
 
-def test_new_user_can_pay_and_submit_photo_during_maintenance(sent_codes, db, paid_world, monkeypatch):
+def test_no_payment_step_for_new_user_before_open(sent_codes, db, paid_world, monkeypatch):
     from tests.conftest import approve, choose_department, set_preferences, signup, upload_photo
 
     switch_on(monkeypatch, paid_world)
@@ -159,21 +148,15 @@ def test_new_user_can_pay_and_submit_photo_during_maintenance(sent_codes, db, pa
     a = signup(sent_codes, db, "new@hufs.ac.kr")
     choose_department(a, db, "경영학부")
     set_preferences(a)
-    # 첫 결제 안내가 점검 안내보다 먼저 (가입 단계를 먼저 끝내게)
-    assert a.get("/api/v1/discover").json()["detail"] == "PAYMENT_REQUIRED"
-    pay(admin, a)
-    photo = upload_photo(a)  # 첫 사진은 점검 중에도 낼 수 있다
-    approve(admin, photo)
-    user = user_of(db, a)
-    open_at = as_utc(paid_world.open_at)
-    assert as_utc(user.member_until) == membership_service.end_of_kst_day(open_at + timedelta(days=28))
-    assert a.get("/api/v1/discover").json()["detail"] == "MAINTENANCE"
+    assert a.get("/api/v1/discover").json()["detail"] == "PHOTO_REQUIRED"  # 결제 없이 바로 사진
+    approve(admin, upload_photo(a))
+    assert a.get("/api/v1/discover").status_code == 200
 
 
-def test_tester_can_use_matching_during_maintenance(sent_codes, db, paid_world, monkeypatch):
+def test_tester_is_always_paid(sent_codes, db, paid_world, monkeypatch):
     admin = admin_login(db)
     monkeypatch.setattr(paid_world, "vip_test_emails", "wldns051205@hufs.ac.kr")
     switch_on(monkeypatch, paid_world)
-    open_in(monkeypatch, paid_world, timedelta(days=2))
+    open_in(monkeypatch, paid_world, timedelta(seconds=-1))
     vip = ready_user(sent_codes, db, admin, "wldns051205@hufs.ac.kr", gender="MALE", want="FEMALE")
-    assert vip.get("/api/v1/discover").status_code == 200
+    assert vip.get("/api/v1/discover").json()["like_access"] == "paid"

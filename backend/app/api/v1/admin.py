@@ -562,6 +562,9 @@ def get_user(
         "member_days_banked": user.member_days_banked or 0,
         "membership_status": membership_service.status(user),
         "membership_free": vip_service.is_vip_tester(user),
+        # 무료 체험 좋아요 사용 개수 (2026-10-06)
+        "trial_likes_used": min(user.trial_likes_used or 0, membership_service.trial_limit()),
+        "trial_like_limit": membership_service.trial_limit(),
         # 매칭 정지 (2026-10-05, 관리자만 봄): 켜져 있으면 서로 LIKE해도 매칭이 숨겨진다
         "match_suspended": user.match_suspended,
         "match_suspended_at": user.match_suspended_at.isoformat() if user.match_suspended_at else None,
@@ -1342,6 +1345,9 @@ def confirm_payment(
     payment.processed_at = now
     payment.processed_by_admin_id = admin.id
     user = db.get(User, payment.user_id)
+    if user is not None:
+        # 이용권·VIP를 살 때마다 "사진 바로 재검토 1회" (2026-10-06). 체험 종료는 add_membership/add_vip가 한다
+        membership_service.grant_rereview(user, now)
     if user is not None and payment.kind == "VIP":
         # 확인한 순간부터 VIP 4주. 남아 있던 기본 이용권은 VIP 뒤로 밀린다 (2026-10-04 구독제)
         membership_service.add_vip(db, user, now)
