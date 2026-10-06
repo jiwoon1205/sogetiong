@@ -1,6 +1,6 @@
 """VIP 이용권 (2026-10-03, 2026-10-04 구독제: 4주 6,000원, 기본 포함, 할인 없음).
 
-- 결제는 기본 이용권과 같은 직접 입금 (결제 코드 → "입금했어요" → 관리자 확인), 확인한 날부터 28일 뒤 밤 12시까지
+- 결제는 기본 이용권과 같은 직접 입금 (결제 코드 → "입금했어요" → 관리자 확인), 확인한 날부터 14일 뒤 밤 12시까지 (베타 기간 구매는 28일)
 - 기본 이용권과의 기간 계산(남은 기본 기간 뒤로 미루기)은 test_membership.py
 - VIP 중에는 다시 살 수 없고, 입금 확인 후에는 환불하지 않는다
 - 혜택: LIKE 10개 / PASS 24시간 / 받은 LIKE 목록 / 사진 재검토 3일 / 남이 PASS하면 그날만 숨김
@@ -71,14 +71,14 @@ def buy_vip(admin, client):
 # ---------- 구매 ----------
 
 
-def test_buy_vip_for_four_weeks(sent_codes, db, vip_on, mails):
+def test_buy_vip_for_two_weeks(sent_codes, db, vip_on, mails):
     admin = admin_login(db)
     me = ready_user(sent_codes, db, admin, "me@hufs.ac.kr", gender="MALE", want="FEMALE")
 
     info = me.get("/api/v1/me/vip").json()
     assert info["visible"] is True and info["active"] is False and info["can_buy"] is True
     assert info["price"] == 6000 and "discount_until" not in info
-    assert info["days"] == 28
+    assert info["days"] == 14
     pay = info["payment"]
     assert pay["amount"] == 6000 and len(pay["code"]) == 6 and pay["account_number"] == "123-456-7890"
 
@@ -91,7 +91,7 @@ def test_buy_vip_for_four_weeks(sent_codes, db, vip_on, mails):
 
     until = user_of(db, me).vip_until
     db.refresh(user_of(db, me))
-    assert timedelta(days=28) < until.replace(tzinfo=timezone.utc) - utcnow() <= timedelta(days=29)
+    assert timedelta(days=14) < until.replace(tzinfo=timezone.utc) - utcnow() <= timedelta(days=15)
     assert until.replace(tzinfo=timezone.utc).astimezone(KST).hour == 0  # 밤 12시(한국 시간)에 끝남
     assert me.get("/api/v1/me").json()["vip"]["active"] is True
 
@@ -118,7 +118,7 @@ def test_vip_preview_shows_tab_without_sale(sent_codes, db, monkeypatch):
     assert info["visible"] is True and info["active"] is False
     assert info["can_buy"] is False and info["payment"] is None
     assert info["blocked_reason"] == get_settings().vip_preview_notice
-    assert info["days"] == 28 and info["price"] == 6000
+    assert info["days"] == 14 and info["price"] == 6000
     # 결제 요청도, 받은 LIKE 목록도 안 된다
     assert me.post("/api/v1/me/vip/request").status_code == 409
     assert me.get("/api/v1/liked-me").status_code == 403

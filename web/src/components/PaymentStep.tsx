@@ -8,7 +8,7 @@ import { usePolling } from "@/lib/polling";
 import { hasPayment, type PaymentDetail, type PaymentInfo } from "@/lib/types";
 
 /** 첫 이용권 입금 단계 (2026-10-03 가입비, 2026-10-04 구독제). 운영자 통장으로 직접 입금 → 관리자가 확인하면 사진 제출이 열린다.
- *  4주는 사진 검수가 끝나 추천이 열리는 날부터 센다.
+ *  이용권 기간(정식 2주, 베타 기간 구매 4주)은 사진 검수가 끝나 추천이 열리는 날부터 센다.
  *
  *  - 입금자명에는 실명 대신 결제 코드를 적게 한다 (익명성).
  *  - 오전 6시 ~ 밤 12시만 결제할 수 있다. 밤에는 계좌번호를 숨긴다.
@@ -72,7 +72,7 @@ export function PaymentStep({ onConfirmed }: { onConfirmed: () => void }) {
   );
 }
 
-/** 유료 시작 전에 결제하면 4주가 유료 시작 시각부터 시작된다는 안내 (2026-10-04, 2026-10-06 점검 기간 없앰) */
+/** 유료 시작 전에 결제하면 이용권 기간이 유료 시작 시각부터 시작된다는 안내 (2026-10-04, 2026-10-06 점검 기간 없앰) */
 function maintenanceNote(openAt: string | null | undefined): string {
   return openAt ? ` 이용권 기간은 사진 평가가 끝난 뒤, 빨라도 유료 시작(${openTime(openAt)})부터 시작돼요.` : "";
 }
@@ -81,7 +81,7 @@ export const REFUND_NOTE =
   "환불은 첫 이용권을 사진 검수 전에 취소할 때만 돼요. 사진이 반려돼도 검수를 받은 것이라 환불되지 않고, 연장 결제는 입금 확인 후 환불되지 않아요.";
 
 /** 기본 이용권 연장·다시 사기 (2026-10-04 구독제). 이용권이 끝났을 때 화면, 설정 화면에서 쓴다.
- *  언제든 살 수 있고, 남아 있으면 끝나는 날 뒤에 28일이 붙는다. 확인되면 onActivated를 부른다. */
+ *  언제든 살 수 있고, 남아 있으면 끝나는 날 뒤에 기간(m.days)이 붙는다. 확인되면 onActivated를 부른다. */
 export function MembershipRenew({ onActivated }: { onActivated: () => void }) {
   const [info, setInfo] = useState<PaymentDetail | null>(null);
   const [error, setError] = useState("");
@@ -134,7 +134,7 @@ export function MembershipRenew({ onActivated }: { onActivated: () => void }) {
 
   if (!info) return error ? <Notice tone="error">{error}</Notice> : <Spinner />;
   const m = info.membership;
-  const days = m?.days ?? 28;
+  const days = m?.days ?? 14;
   if (!paying)
     return (
       <Button size="lg" className="w-full" onClick={() => setPaying(true)}>

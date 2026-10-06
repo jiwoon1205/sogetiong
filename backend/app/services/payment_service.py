@@ -2,7 +2,7 @@
 
 흐름: 결제 코드 받기(CREATED) → "입금했어요"(REQUESTED)
      → 관리자가 통장 확인 → CONFIRMED(이용권 기간 추가, membership_service) 또는 REJECTED(다시 요청 가능)
-kind: SIGNUP = 기본 이용권 4주 (이름은 예전 그대로 둔다), VIP = VIP 4주 (기본 포함)
+kind: SIGNUP = 기본 이용권 (이름은 예전 그대로 둔다), VIP = VIP (기본 포함). 기간: 정식 2주 / 베타 기간에 산 것 4주 (2026-10-06)
 환불(REFUNDED)은 기본 이용권이 아직 시작되지 않았고 사진 검수도 받지 않았을 때만 된다.
 누가 언제 내야 하는지는 membership_service에 있다.
 """

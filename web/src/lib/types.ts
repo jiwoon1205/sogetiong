@@ -73,7 +73,7 @@ export type Me = {
   announcement?: string | null;
 };
 
-/** 이용권 상태 (2026-10-04 구독제). 기본 4주 / VIP 4주(기본 포함) */
+/** 이용권 상태 (2026-10-04 구독제). 기본 / VIP(기본 포함). 2026-10-06: 정식 배포 뒤 2주, 베타 기간 구매 4주 */
 export type Membership = {
   /** 유료화를 켰는가. false면 모두 무료로 쓴다 */
   enabled: boolean;
@@ -88,7 +88,10 @@ export type Membership = {
   days_left: number | null;
   /** 아직 시작하지 않은 일수 (사진 검수 후 시작) */
   banked_days: number;
+  /** 지금 사면 받는 일수 (베타 기간 28 / 정식 배포 뒤 14) */
   days: number;
+  /** 정식 배포 뒤에 사면 받는 일수 (공지용, 2026-10-06) */
+  days_after_open?: number;
   /** 지금 가격 (할인 중이면 할인가) */
   price: number;
   /** 정가 (2026-10-06: 4,000원) */

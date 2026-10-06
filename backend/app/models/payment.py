@@ -14,7 +14,7 @@ from app.models._common import created_at, pk
 #   REJECTED  : 관리자가 "입금 없음"으로 처리 → 사용자가 다시 "입금했어요"를 누를 수 있다
 #   REFUNDED  : 환불함 (사진 검수 전에만 가능) → 다시 입금 전 상태가 된다
 PAYMENT_STATUSES = ("CREATED", "REQUESTED", "CONFIRMED", "REJECTED", "REFUNDED")
-PAYMENT_KINDS = ("SIGNUP", "VIP")  # SIGNUP = 기본 이용권 4주, VIP = VIP 4주 (기본 포함) — 2026-10-04 구독제
+PAYMENT_KINDS = ("SIGNUP", "VIP")  # SIGNUP = 기본 이용권, VIP = VIP (기본 포함) — 2026-10-04 구독제. 기간은 membership_service.period_days
 
 
 class Payment(Base):

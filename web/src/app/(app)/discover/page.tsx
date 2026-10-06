@@ -393,7 +393,7 @@ function LikesLocked({
               href="/liked"
               className="block rounded-card border border-line bg-paper-card px-5 py-3 text-center text-[13.5px] hover:bg-paper-deep/60"
             >
-              <span className="font-semibold">VIP 4주</span> <span className="text-ink-soft">· 기본 이용권 포함 · 받은 LIKE 보기</span>
+              <span className="font-semibold">VIP{m ? ` ${m.days}일` : ""}</span> <span className="text-ink-soft">· 기본 이용권 포함 · 받은 LIKE 보기</span>
             </Link>
           )}
           <p className="text-center text-[12px] text-ink-faint">자동 결제는 없어요.</p>

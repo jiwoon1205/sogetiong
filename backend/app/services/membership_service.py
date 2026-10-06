@@ -1,11 +1,12 @@
 """이용권 (2026-10-04 구독제). 날짜 계산은 이 파일에만 둔다.
 
 규칙 (`구독제 전환 설계`, `유료화(구독제) 코드 구현 가이드라인` 0장 D1~D10)
-- 기본 이용권 4주(28일) 3,000원, VIP 4주(28일) 6,000원 = 기본 포함. 자동결제 없음.
-- 끝나는 시각은 "그날 밤 12시(한국 시간)"로 올린다 (D4). 이미 밤 12시에 끝나는 기간에 붙이면 정확히 28일이 더해진다.
+- 기본 이용권 2주(14일), VIP 2주(14일) = 기본 포함. 자동결제 없음.
+  2026-10-06: 4주 → 2주 (가격 그대로). 단 베타 기간(OPEN_AT 전)에 "입금했어요"를 누른 결제는 4주(BETA_PERIOD_DAYS) → period_days()
+- 끝나는 시각은 "그날 밤 12시(한국 시간)"로 올린다 (D4). 이미 밤 12시에 끝나는 기간에 붙이면 정확히 그 일수가 더해진다.
 - 첫 이용권은 추천이 열리는 순간(승인 사진 + 등급)부터 센다 (D1). 그 전에 낸 일수는 member_days_banked에 쌓아 둔다.
 - 언제든 미리 연장할 수 있다. 끝나는 날 뒤에 붙는다 (D2).
-- VIP를 사면 그날부터 VIP 28일, 남아 있던 기본 기간은 VIP 뒤로 밀린다 → member_until = max(member_until, 지금) + 28일.
+- VIP를 사면 그날부터 VIP 기간, 남아 있던 기본 기간은 VIP 뒤로 밀린다 → member_until = max(member_until, 지금) + VIP 일수.
 - 이용권이 없으면 추천·LIKE·PASS·받은 LIKE·사진 재검토만 막는다. 대화는 막지 않는다.
 - 스위치(MEMBERSHIP_ENABLED)가 꺼져 있으면 모두 이용권이 있는 것으로 본다 (베타 동작 그대로).
 - VIP 테스트 계정(VIP_TEST_EMAILS)은 항상 이용권 + VIP (D10).
@@ -58,6 +59,19 @@ def price(now: datetime | None = None) -> int:
     if until is not None and (now or utcnow()) < until:
         return s.membership_discount_price
     return s.membership_price
+
+
+def period_days(kind: str = "SIGNUP", bought_at: datetime | None = None) -> int:
+    """이 결제로 받는 일수 (2026-10-06).
+
+    베타 기간(OPEN_AT 전)에 "입금했어요"를 누른 결제 = BETA_PERIOD_DAYS(4주).
+    그 뒤 = 기본 MEMBERSHIP_DAYS(2주) / VIP VIP_DAYS(2주). 가격은 같다.
+    bought_at: "입금했어요"를 누른 시각 (payments.requested_at). 관리자가 정식 배포 뒤에 확인해도 4주가 그대로다.
+    """
+    s = get_settings()
+    if before_open(as_utc(bought_at) if bought_at is not None else None):
+        return s.beta_period_days
+    return s.vip_days if kind == "VIP" else s.membership_days
 
 
 def _start(now: datetime) -> datetime:
@@ -182,7 +196,7 @@ def grant_rereview(user: User, now: datetime | None = None) -> None:
 def add_membership(db: Session, user: User, now: datetime | None = None, days: int | None = None) -> None:
     """기본 이용권 입금 확인. 추천이 열리기 전이면 일수를 쌓아 두고, 아니면 끝나는 날 뒤에 붙인다."""
     now = now or utcnow()
-    days = days or get_settings().membership_days
+    days = days or period_days("SIGNUP", now)
     until = _until(user)
     active = until is not None and until > now
     if not active and not can_start(db, user):
@@ -192,14 +206,15 @@ def add_membership(db: Session, user: User, now: datetime | None = None, days: i
     end_trial(user)
 
 
-def add_vip(db: Session, user: User, now: datetime | None = None) -> None:
+def add_vip(db: Session, user: User, now: datetime | None = None, days: int | None = None) -> None:
     """VIP 입금 확인. VIP는 지금부터, 남아 있던 기본 기간은 VIP 뒤로 밀린다 (구독제 설계 2장).
 
-    2026-10-06: VIP는 유료 시작(OPEN_AT) 전에 사도 **산 순간부터 바로** 쓴다 (VIP 28일도 지금부터 센다).
+    2026-10-06: VIP는 유료 시작(OPEN_AT) 전에 사도 **산 순간부터 바로** 쓴다 (VIP 기간도 지금부터 센다).
+    days: 이 결제로 받는 일수 (period_days("VIP", 입금했어요 시각)). 없으면 지금 기준.
     VIP에 포함된 기본 이용권 몫(member_until)은 그대로 유료 시작부터 센다 → VIP가 끝나도 기본 이용권이 며칠 남는다.
     """
     now = now or utcnow()
-    days = get_settings().vip_days
+    days = days or period_days("VIP", now)
     vip_until = as_utc(user.vip_until)
     vip_base = vip_until if vip_until is not None and vip_until > now else now
     user.vip_until = end_of_kst_day(vip_base + timedelta(days=days))
@@ -260,7 +275,8 @@ def view(user: User, now: datetime | None = None) -> dict:
         "until": until.isoformat() if until else None,
         "days_left": days_left(user, now),
         "banked_days": user.member_days_banked or 0,
-        "days": s.membership_days,
+        "days": period_days("SIGNUP", now),  # 지금 사면 받는 일수 (베타 4주 / 정식 2주)
+        "days_after_open": s.membership_days,  # 정식 배포 뒤에 사면 받는 일수 (공지용)
         "price": price(now),
         "regular_price": s.membership_price,
         "discount_until": s.membership_discount_until_utc.isoformat() if s.membership_discount_until_utc else None,

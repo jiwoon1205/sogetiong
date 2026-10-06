@@ -1,4 +1,4 @@
-"""VIP 이용권 (2026-10-03 정식 규칙, 2026-10-04 구독제: 4주 6,000원, 기본 이용권 포함).
+"""VIP 이용권 (2026-10-03 정식 규칙, 2026-10-04 구독제: 6,000원, 기본 이용권 포함. 2026-10-06: 정식 2주, 베타 기간 구매 4주).
 
 기간 계산(vip_until·member_until)은 membership_service.add_vip에 있다.
 
@@ -77,5 +77,5 @@ def photo_resubmit_days(user: User) -> int:
 
 
 def price() -> int:
-    """VIP 가격 (4주, 기본 포함). 할인 없음 (2026-10-04)."""
+    """VIP 가격 (기본 포함). 할인 없음 (2026-10-04)."""
     return get_settings().vip_price

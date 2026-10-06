@@ -602,7 +602,7 @@ def _pays_membership(current: CurrentUser) -> bool:
 
 @router.get("/me/payment")
 def get_my_payment(current: CurrentUser = Depends(get_current_user), db: Session = Depends(get_db)):
-    """기본 이용권(4주) 입금 안내 — 가입 단계의 첫 입금과 연장(언제든, D2)에 같이 쓴다.
+    """기본 이용권 입금 안내 — 가입 단계의 첫 입금과 연장(언제든, D2)에 같이 쓴다.
 
     처음 열면 결제 코드가 만들어지고, 다시 열어도 같은 코드가 나온다.
     required: 가입 단계에서 아직 첫 입금을 해야 하는가 (연장일 때는 false).
@@ -638,7 +638,7 @@ def request_payment_check(
     return {**_request_check(db, background, payment), "required": required, "membership": membership_service.view(current.user)}
 
 
-# ---------- VIP 4주 이용권 (2026-10-03, 2026-10-04 구독제: 기본 포함) ----------
+# ---------- VIP 이용권 (2026-10-03, 2026-10-04 구독제: 기본 포함, 2026-10-06 정식 2주·베타 4주) ----------
 
 
 def _vip_info(db: Session, current: CurrentUser) -> dict:
@@ -650,7 +650,7 @@ def _vip_info(db: Session, current: CurrentUser) -> dict:
         "active": vip_service.is_vip(user),
         "tester": vip_service.is_vip_tester(user),
         "until": user.vip_until.isoformat() if vip_service.has_paid_vip(user) else None,
-        "days": settings.vip_days,
+        "days": membership_service.period_days("VIP"),  # 지금 사면 받는 일수 (베타 4주 / 정식 2주, 2026-10-06)
         "price": price,
         # 지금 남은 기본 이용권 일수 → "VIP를 사면 남은 ○일은 VIP가 끝난 뒤 이어서 써요" 안내
         "member_days_left": membership_service.days_left(user) if membership_service.sales_open() else None,
@@ -693,7 +693,7 @@ def request_vip_check(
     current: CurrentUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """VIP "입금했어요". 관리자가 확인하는 순간부터 4주 (기본 포함). 확인 후에는 환불하지 않는다."""
+    """VIP "입금했어요". 관리자가 확인하는 순간부터 VIP 기간 (기본 포함). 확인 후에는 환불하지 않는다."""
     info = _vip_info(db, current)
     if not info["can_buy"]:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=info["blocked_reason"])

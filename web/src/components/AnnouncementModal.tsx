@@ -26,23 +26,34 @@ const PAYMENT_OPEN: Notice = {
     const regular = m?.regular_price ?? 4000;
     const until = m?.discount_until ? untilDay(m.discount_until) : "정식 배포 전까지";
     const vipPrice = 6000;
+    const days = m?.days ?? 28; // 지금(베타) 사면 받는 일수
+    const after = m?.days_after_open ?? 14; // 정식 배포 뒤에 사면 받는 일수
+    const weeks = (d: number) => (d % 7 === 0 ? `${d / 7}주` : `${d}일`);
     return (
       <>
         <div className="rounded-card border border-brick/30 bg-brick-wash px-4 py-4 text-center">
           <p className="text-[13px] font-semibold text-brick">정식 배포 전에만 할인해요</p>
           <p className="mt-1.5 text-[15px] text-ink">
-            기본 이용권 4주 <s className="text-ink-faint">{regular.toLocaleString()}원</s>{" "}
+            기본 이용권 {weeks(days)} <s className="text-ink-faint">{regular.toLocaleString()}원</s>{" "}
             <b className="num text-[22px] font-semibold text-brick">{price.toLocaleString()}원</b>
           </p>
           <p className="mt-1 text-[12.5px] text-ink-soft">{until} · 정식 배포 후에는 {regular.toLocaleString()}원</p>
+        </div>
+        <div className="mt-3 rounded-card border border-line bg-paper-card px-4 py-3 text-center">
+          <p className="text-[13.5px] leading-relaxed text-ink">
+            ⏳ <b className="font-semibold">정식 배포 후에 사면 기간이 {weeks(after)}로 줄어요.</b>
+          </p>
+          <p className="mt-1 text-[12.5px] text-ink-soft">
+            가격은 그대로, 기본 이용권·VIP 모두 {weeks(after)}예요. 지금(베타 기간) 사면 {weeks(days)}!
+          </p>
         </div>
         <ul className="mt-4 space-y-2 text-[14px] leading-relaxed text-ink-soft">
           <li>
             📅 <b className="font-semibold text-ink">10월 8일 0시 정식 배포</b>부터 이용권이 없으면 <b className="font-semibold text-ink">무료 체험</b>으로 바뀌어요.
             무료 체험 좋아요는 <b className="font-semibold text-brick">평생 3개</b>뿐이에요. 다 쓰면 다음 날에도 <b className="font-semibold text-ink">다시 생기지 않아요.</b>
           </li>
-          <li>💸 지금 미리 사도 손해 없어요. 4주는 정식 배포 시각부터 세요. 그 전까지는 지금처럼 무료로 써요.</li>
-          <li>👑 VIP 4주 {vipPrice.toLocaleString()}원(기본 포함)은 사는 즉시 바로 시작돼요.</li>
+          <li>💸 지금 미리 사도 손해 없어요. {weeks(days)}는 정식 배포 시각부터 세요. 그 전까지는 지금처럼 무료로 써요.</li>
+          <li>👑 VIP {weeks(days)} {vipPrice.toLocaleString()}원(기본 포함)은 사는 즉시 바로 시작돼요.</li>
           <li>📸 살 때마다 사진 바로 재검토를 1번 받을 수 있어요.</li>
           <li>💬 이용권이 없어도 추천 보기·넘기기·대화는 계속할 수 있어요.</li>
         </ul>

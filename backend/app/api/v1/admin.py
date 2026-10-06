@@ -1348,21 +1348,23 @@ def confirm_payment(
     if user is not None:
         # 이용권·VIP를 살 때마다 "사진 바로 재검토 1회" (2026-10-06). 체험 종료는 add_membership/add_vip가 한다
         membership_service.grant_rereview(user, now)
+    # 받는 일수: "입금했어요"를 누른 시각 기준. 베타 기간(OPEN_AT 전)이면 4주, 정식 배포 뒤면 2주 (2026-10-06)
+    days = membership_service.period_days(payment.kind, payment.requested_at or now)
     if user is not None and payment.kind == "VIP":
-        # 확인한 순간부터 VIP 4주. 남아 있던 기본 이용권은 VIP 뒤로 밀린다 (2026-10-04 구독제)
-        membership_service.add_vip(db, user, now)
+        # 확인한 순간부터 VIP 기간. 남아 있던 기본 이용권은 VIP 뒤로 밀린다 (2026-10-04 구독제)
+        membership_service.add_vip(db, user, now, days)
         notify(
             db,
             user.id,
             "VIP_STARTED",
             "VIP가 시작되었어요",
-            f"{get_settings().vip_days}일 동안 VIP 혜택을 받을 수 있어요. '받은 LIKE'에서 나를 LIKE한 사람을 확인해 보세요.",
+            f"{days}일 동안 VIP 혜택을 받을 수 있어요. '받은 LIKE'에서 나를 LIKE한 사람을 확인해 보세요.",
             payment.id,
         )
     elif user is not None:
         if user.signup_paid_at is None:
             user.signup_paid_at = now  # 첫 결제 시각 (기록용)
-        membership_service.add_membership(db, user, now)
+        membership_service.add_membership(db, user, now, days)
         if user.member_until is None:
             body = "사진을 제출해 주세요. 사진 검수가 끝나 추천이 열리는 날부터 이용권 기간이 시작돼요."
         else:
@@ -1430,7 +1432,8 @@ def refund_payment(
     user = owner
     if user is not None:
         # 쌓아 둔 일수에서 이 결제만큼 뺀다. 남은 게 없으면 다시 "첫 입금 전" 상태 → 사진을 낼 수 없다.
-        user.member_days_banked = max(0, (user.member_days_banked or 0) - get_settings().membership_days)
+        days = membership_service.period_days("SIGNUP", payment.requested_at or payment.processed_at)
+        user.member_days_banked = max(0, (user.member_days_banked or 0) - days)
         if user.member_days_banked == 0:
             user.signup_paid_at = None
     db.query(UserPhoto).filter(

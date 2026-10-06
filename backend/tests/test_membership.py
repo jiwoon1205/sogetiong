@@ -1,6 +1,6 @@
 """이용권 구독제 (2026-10-04, `유료화(구독제) 코드 구현 가이드라인` 0장 D1~D10).
 
-- 기본 4주(28일) 3,000원, VIP 4주 6,000원 = 기본 포함. 끝나는 시각은 그날 밤 12시(한국 시간)로 올림
+- 기본 2주(14일), VIP 2주 6,000원 = 기본 포함 (2026-10-06: 4주 → 2주, 베타 기간 구매는 4주). 끝나는 시각은 그날 밤 12시(한국 시간)로 올림
 - 첫 이용권은 추천이 열리는 날(승인 사진 + 등급)부터 (D1). 언제든 연장 (D2)
 - VIP를 사면 남은 기본 기간은 VIP 뒤로 밀린다
 - 2026-10-06 무료 체험: 이용권이 없으면 LIKE는 체험 3개만, 다 쓰면 LIKE만 막힌다. 추천·PASS·대화는 된다.
@@ -64,8 +64,8 @@ def test_end_of_kst_day():
 def test_first_purchase_after_review_starts_now(on, can_start):
     u = blank_user()
     membership_service.add_membership(None, u, kst(2026, 10, 1))
-    # 10/1 낮 + 28일 = 10/29 낮 → 10/29 밤 12시
-    assert as_utc(u.member_until) == kst_midnight_after(2026, 10, 29)
+    # 10/1 낮 + 14일 = 10/15 낮 → 10/15 밤 12시
+    assert as_utc(u.member_until) == kst_midnight_after(2026, 10, 15)
     assert u.member_days_banked == 0
 
 
@@ -73,12 +73,12 @@ def test_first_purchase_before_review_is_banked(on, can_start):
     can_start["value"] = False
     u = blank_user()
     membership_service.add_membership(None, u, kst(2026, 10, 1))
-    assert u.member_until is None and u.member_days_banked == 28
+    assert u.member_until is None and u.member_days_banked == 14
     assert membership_service.status(u, kst(2026, 10, 1)) == "banked"
-    # 사진이 승인돼 등급이 정해진 날(10/5)부터 28일
+    # 사진이 승인돼 등급이 정해진 날(10/5)부터 14일
     can_start["value"] = True
     assert membership_service.start_banked(None, u, kst(2026, 10, 5)) is True
-    assert as_utc(u.member_until) == kst_midnight_after(2026, 11, 2)
+    assert as_utc(u.member_until) == kst_midnight_after(2026, 10, 19)
     assert u.member_days_banked == 0
     assert membership_service.start_banked(None, u, kst(2026, 10, 6)) is False  # 두 번 시작하지 않음
 
@@ -88,42 +88,42 @@ def test_two_purchases_before_review_add_up(on, can_start):
     u = blank_user()
     membership_service.add_membership(None, u, kst(2026, 10, 1))
     membership_service.add_membership(None, u, kst(2026, 10, 2))
-    assert u.member_days_banked == 56
+    assert u.member_days_banked == 28
 
 
 def test_renew_early_adds_after_end(on, can_start):
     u = blank_user(member_until=kst_midnight_after(2026, 10, 29))
     membership_service.add_membership(None, u, kst(2026, 10, 20))
-    # 남은 기간 뒤에 정확히 28일 (밤 12시 + 28일 = 밤 12시)
-    assert as_utc(u.member_until) == kst_midnight_after(2026, 11, 26)
+    # 남은 기간 뒤에 정확히 14일 (밤 12시 + 14일 = 밤 12시)
+    assert as_utc(u.member_until) == kst_midnight_after(2026, 11, 12)
 
 
 def test_renew_after_expiry_starts_today(on, can_start):
     u = blank_user(member_until=kst_midnight_after(2026, 10, 29))
     membership_service.add_membership(None, u, kst(2026, 11, 3))
-    assert as_utc(u.member_until) == kst_midnight_after(2026, 12, 1)
+    assert as_utc(u.member_until) == kst_midnight_after(2026, 11, 17)
 
 
 def test_vip_pushes_remaining_basic_back(on):
-    """구독제 설계 예시: 10/1 기본 → 10/19 VIP (기본 10일 남음) → VIP ~11/16, 기본 ~11/26"""
+    """10/19 VIP (기본 10일 남음, 10/29까지) → VIP ~11/2, 기본 ~11/12 (2주 기준)"""
     u = blank_user(member_until=kst_midnight_after(2026, 10, 29))
     membership_service.add_vip(None, u, kst(2026, 10, 19))
-    assert as_utc(u.vip_until) == kst_midnight_after(2026, 11, 16)
-    assert as_utc(u.member_until) == kst_midnight_after(2026, 11, 26)
+    assert as_utc(u.vip_until) == kst_midnight_after(2026, 11, 2)
+    assert as_utc(u.member_until) == kst_midnight_after(2026, 11, 12)
 
 
 def test_vip_without_basic_ends_same_day(on):
     u = blank_user()
     membership_service.add_vip(None, u, kst(2026, 10, 19))
-    assert as_utc(u.vip_until) == as_utc(u.member_until) == kst_midnight_after(2026, 11, 16)
+    assert as_utc(u.vip_until) == as_utc(u.member_until) == kst_midnight_after(2026, 11, 2)
 
 
 def test_basic_during_vip_adds_to_basic_only(on, can_start):
     u = blank_user()
     membership_service.add_vip(None, u, kst(2026, 10, 19))
     membership_service.add_membership(None, u, kst(2026, 10, 25))
-    assert as_utc(u.vip_until) == kst_midnight_after(2026, 11, 16)
-    assert as_utc(u.member_until) == kst_midnight_after(2026, 12, 14)
+    assert as_utc(u.vip_until) == kst_midnight_after(2026, 11, 2)
+    assert as_utc(u.member_until) == kst_midnight_after(2026, 11, 16)
 
 
 def test_has_membership_and_days_left(on):
@@ -259,7 +259,7 @@ def test_beta_member_must_buy_after_switch(sent_codes, db, paid_world, monkeypat
     assert info["required"] is False and info["amount"] == 3000
     pay(admin, me)
     m = me.get("/api/v1/me").json()["membership"]
-    assert m["status"] == "active" and 28 <= m["days_left"] <= 29
+    assert m["status"] == "active" and 14 <= m["days_left"] <= 15 and m["days"] == 14
     assert as_utc(user_of(db, me).member_until).astimezone(KST).hour == 0
     assert me.get("/api/v1/discover").status_code == 200
 
@@ -292,11 +292,11 @@ def test_vip_purchase_pushes_basic_back(sent_codes, db, paid_world, monkeypatch)
     pay(admin, me)
     basic_end = as_utc(user_of(db, me).member_until)
     info = me.get("/api/v1/me/vip").json()
-    assert info["can_buy"] is True and info["price"] == 6000 and 28 <= info["member_days_left"] <= 29
+    assert info["can_buy"] is True and info["price"] == 6000 and 14 <= info["member_days_left"] <= 15
     pay(admin, me, "vip")
     user = user_of(db, me)
-    assert as_utc(user.member_until) == basic_end + timedelta(days=28)
-    assert as_utc(user.vip_until) <= basic_end + timedelta(days=1)  # VIP는 오늘부터 28일
+    assert as_utc(user.member_until) == basic_end + timedelta(days=14)
+    assert as_utc(user.vip_until) <= basic_end + timedelta(days=1)  # VIP는 오늘부터 14일
     assert me.get("/api/v1/discover").json()["daily_like_limit"] == 10
 
 
@@ -334,13 +334,13 @@ def test_new_user_full_flow_and_start_notice(sent_codes, db, paid_world, monkeyp
     assert a.get("/api/v1/me/payment").json()["required"] is True
     pay(admin, a)
     user = user_of(db, a)
-    assert user.member_until is None and user.member_days_banked == 28
+    assert user.member_until is None and user.member_days_banked == 14
     photo = upload_photo(a)
     assert a.get("/api/v1/discover").json()["detail"] == "PHOTO_APPROVAL_REQUIRED"  # 검수 중에는 "평가 중"이 먼저
     approve(admin, photo)
     user = user_of(db, a)
     assert user.member_days_banked == 0
-    assert 28 <= membership_service.days_left(user) <= 29
+    assert 14 <= membership_service.days_left(user) <= 15
     assert db.query(Notification).filter(Notification.user_id == user.id, Notification.type == "MEMBERSHIP_STARTED").count() == 1
     assert a.get("/api/v1/discover").status_code == 200
 
@@ -411,3 +411,39 @@ def test_expiry_is_checked_live(sent_codes, db, paid_world, monkeypatch):
     r = me.get("/api/v1/discover")
     assert r.status_code == 200 and r.json()["like_access"] == "none"
     assert me.get("/api/v1/me").json()["membership"]["status"] == "expired"
+
+
+# ---------- 2026-10-06: 정식 배포 뒤 2주, 베타 기간 구매는 4주 ----------
+
+
+def test_period_days_beta_vs_after_open(on, monkeypatch):
+    monkeypatch.setattr(on, "open_at", kst(2026, 10, 8))
+    assert membership_service.period_days("SIGNUP", kst(2026, 10, 7, 23)) == 28
+    assert membership_service.period_days("VIP", kst(2026, 10, 7, 23)) == 28
+    assert membership_service.period_days("SIGNUP", kst(2026, 10, 8)) == 14
+    assert membership_service.period_days("VIP", kst(2026, 10, 9)) == 14
+    # 유료 시작 시각이 없으면 언제나 정식 기간
+    monkeypatch.setattr(on, "open_at", None)
+    assert membership_service.period_days("SIGNUP", kst(2026, 10, 1)) == 14
+
+
+def test_requested_in_beta_confirmed_after_open_keeps_four_weeks(sent_codes, db, paid_world, monkeypatch):
+    """베타 기간에 "입금했어요"를 누르면, 관리자가 정식 배포 뒤에 확인해도 4주다."""
+    admin = admin_login(db)
+    me = ready_user(sent_codes, db, admin, "me@hufs.ac.kr", gender="MALE", want="FEMALE")
+    switch_on(monkeypatch, paid_world)
+    open_at = utcnow() + timedelta(hours=1)
+    monkeypatch.setattr(paid_world, "open_at", open_at)
+    assert me.get("/api/v1/me").json()["membership"]["days"] == 28  # 지금(베타) 사면 4주
+    assert me.get("/api/v1/me").json()["membership"]["days_after_open"] == 14
+    assert me.post("/api/v1/me/payment/request").status_code == 200
+    # 정식 배포 시각이 지난 뒤 확인
+    monkeypatch.setattr(paid_world, "open_at", utcnow())  # "입금했어요" 바로 뒤가 정식 배포 시각
+    pid = next(p for p in admin.get("/api/v1/admin/payments").json()["payments"] if p["kind"] == "SIGNUP")["payment_id"]
+    assert admin.post(f"/api/v1/admin/payments/{pid}/confirm").status_code == 200
+    assert 28 <= membership_service.days_left(user_of(db, me)) <= 29
+    # 정식 배포 뒤에 다시 사면 2주가 붙는다
+    assert me.get("/api/v1/me").json()["membership"]["days"] == 14
+    before = as_utc(user_of(db, me).member_until)
+    pay(admin, me)
+    assert as_utc(user_of(db, me).member_until) == before + timedelta(days=14)

@@ -103,7 +103,7 @@ class Settings(BaseSettings):
     # 탭을 다시 숨기려면 .env에 VIP_PREVIEW=false
     vip_preview: bool = True
     vip_preview_notice: str = "VIP는 무료 베타가 끝나는 날(10월 8일)부터 살 수 있어요."
-    vip_days: int = 28  # 한 번 사면 4주, 기본 이용권 포함 (2026-10-04 구독제)
+    vip_days: int = 14  # 한 번 사면 2주, 기본 이용권 포함 (2026-10-06: 4주 → 2주, 가격 그대로). 베타 기간 구매는 BETA_PERIOD_DAYS
     vip_price: int = 6000  # 할인 없음 (2026-10-04, 오픈 할인 4,000원 취소)
     # VIP 혜택 숫자 (유료화 계획 1장)
     vip_daily_like_limit: int = 10  # 무료 5개 + 5개
@@ -121,7 +121,7 @@ class Settings(BaseSettings):
 
     # --- 이용권 (2026-10-04 구독제, 운영자 통장 직접 입금) ---
     # 꺼져 있으면 지금처럼 모두 무료로 쓴다 (결제 단계 없음, 추천 제한 없음).
-    # 켜면 모든 회원(베타 회원 포함)이 기본 이용권(4주) 또는 VIP(4주, 기본 포함)가 있어야 추천을 본다.
+    # 켜면 모든 회원(베타 회원 포함)이 기본 이용권(2주) 또는 VIP(2주, 기본 포함)가 있어야 추천을 본다.
     # 이용권이 없어도 이미 매칭된 사람과 대화는 된다.
     # 베타가 끝나는 날 .env에 MEMBERSHIP_ENABLED=true, VIP_ENABLED=true 를 넣고 다시 시작한다.
     # (예전 이름 SIGNUP_FEE_ENABLED는 더 이상 읽지 않는다)
@@ -131,7 +131,10 @@ class Settings(BaseSettings):
     membership_discount_price: int = 3000
     # 할인이 끝나는 시각. 비워 두면 할인 없음. 예: MEMBERSHIP_DISCOUNT_UNTIL=2026-10-08T00:00:00+09:00
     membership_discount_until: datetime | None = None
-    membership_days: int = 28
+    # 기본 이용권 기간 (2026-10-06: 4주 → 2주, 가격 그대로)
+    membership_days: int = 14
+    # 베타 기간(OPEN_AT 전)에 "입금했어요"를 누른 이용권·VIP는 이 일수 (2026-10-06: 베타 구매는 4주 유지)
+    beta_period_days: int = 28
     # 남은 기간이 이 일수 이하면 추천 화면 위에 "○일 남았어요" 띠를 보여준다 (알림은 보내지 않음)
     membership_warn_days: int = 3
     # 입금받을 계좌. 코드·GitHub에 넣지 않고 서버 .env에만 적는다.
@@ -147,7 +150,7 @@ class Settings(BaseSettings):
     # MEMBERSHIP_ENABLED=true여도 이 시각 전에는 베타처럼 모두 무료로 쓴다 (하루 LIKE 5개).
     # 이 시각이 되면 서버를 다시 켜지 않아도 자동으로 유료가 시작된다:
     #   이용권이 없는 사람(베타 회원 포함)은 모두 체험 이용자(LIKE 평생 FREE_TRIAL_LIKES개)가 된다.
-    # 이 시각 전에 미리 산 이용권·VIP는 이 시각부터 4주를 센다. 비워 두면 스위치를 켠 순간부터 유료.
+    # 이 시각 전에 미리 산(입금했어요를 누른) 이용권은 이 시각부터 4주(BETA_PERIOD_DAYS)를 센다. 그 뒤에 사면 2주. 비워 두면 스위치를 켠 순간부터 유료.
     # 예: OPEN_AT=2026-10-08T00:00:00+09:00  (시간대를 빼고 쓰면 한국 시간으로 본다)
     open_at: datetime | None = None
 
@@ -243,6 +246,8 @@ class Settings(BaseSettings):
             raise ValueError("PAYMENT_OPEN_HOUR < PAYMENT_CLOSE_HOUR (0~24) 이어야 합니다")
         if self.membership_enabled and not (self.membership_price > 0 and self.membership_days > 0):
             raise ValueError("MEMBERSHIP_PRICE, MEMBERSHIP_DAYS는 0보다 커야 합니다")
+        if self.beta_period_days <= 0:
+            raise ValueError("BETA_PERIOD_DAYS는 0보다 커야 합니다")
         if self.membership_discount_until is not None and not 0 < self.membership_discount_price <= self.membership_price:
             raise ValueError("MEMBERSHIP_DISCOUNT_PRICE는 0보다 크고 MEMBERSHIP_PRICE 이하여야 합니다")
         if self.free_trial_likes < 0:

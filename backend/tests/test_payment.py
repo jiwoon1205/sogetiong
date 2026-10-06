@@ -141,8 +141,8 @@ def test_photo_blocked_until_confirmed(sent_codes, db, fee_on, mails):
     body = a.get("/api/v1/me").json()
     me = body["onboarding"]
     assert me["payment_required"] is False and me["pays_signup_fee"] is True
-    # 아직 시작 전: 사진 검수가 끝나 추천이 열리는 날부터 28일 (D1)
-    assert body["membership"]["status"] == "banked" and body["membership"]["banked_days"] == 28
+    # 아직 시작 전: 사진 검수가 끝나 추천이 열리는 날부터 14일 (D1)
+    assert body["membership"]["status"] == "banked" and body["membership"]["banked_days"] == 14
     assert body["membership"]["until"] is None
     # 연장용으로 다시 열면 새 코드 (가입 단계는 끝남)
     again = a.get("/api/v1/me/payment").json()
@@ -268,7 +268,7 @@ def test_approved_user_can_discover_after_payment(sent_codes, db, fee_on):
     approve(admin, upload_photo(a))
     assert a.get("/api/v1/discover").status_code == 200
     m = a.get("/api/v1/me").json()["membership"]
-    assert m["status"] == "active" and m["banked_days"] == 0 and 28 <= m["days_left"] <= 29
+    assert m["status"] == "active" and m["banked_days"] == 0 and 14 <= m["days_left"] <= 15
     # 이용권이 시작되면 환불할 수 없다
     assert history(admin)[0]["refundable"] is False
 
