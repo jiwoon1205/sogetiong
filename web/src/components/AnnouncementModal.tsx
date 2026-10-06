@@ -4,14 +4,67 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Button, Modal } from "@/components/ui";
 import { api } from "@/lib/api";
+import { untilDay } from "@/lib/format";
+import { useSession } from "@/lib/session";
+import type { Membership } from "@/lib/types";
+
+type Notice = {
+  title: string;
+  body: React.ReactNode | ((m: Membership | undefined) => React.ReactNode);
+  action?: { label: string; href: string };
+  /** 두 번째 버튼 (선택) */
+  second?: { label: string; href: string };
+  /** 닫기 버튼 문구 */
+  close?: string;
+};
+
+/** 결제 시스템 오픈 공지 (2026-10-06): 하루 한 번, 정식 배포 전까지. 이름 = "payment-open:YYYY-MM-DD" */
+const PAYMENT_OPEN: Notice = {
+  title: "이용권 결제가 열렸어요",
+  body: (m) => {
+    const price = m?.price ?? 3000;
+    const regular = m?.regular_price ?? 4000;
+    const until = m?.discount_until ? untilDay(m.discount_until) : "정식 배포 전까지";
+    const vipPrice = 6000;
+    return (
+      <>
+        <div className="rounded-card border border-brick/30 bg-brick-wash px-4 py-4 text-center">
+          <p className="text-[13px] font-semibold text-brick">정식 배포 전에만 할인해요</p>
+          <p className="mt-1.5 text-[15px] text-ink">
+            기본 이용권 4주 <s className="text-ink-faint">{regular.toLocaleString()}원</s>{" "}
+            <b className="num text-[22px] font-semibold text-brick">{price.toLocaleString()}원</b>
+          </p>
+          <p className="mt-1 text-[12.5px] text-ink-soft">{until} · 정식 배포 후에는 {regular.toLocaleString()}원</p>
+        </div>
+        <ul className="mt-4 space-y-2 text-[14px] leading-relaxed text-ink-soft">
+          <li>
+            📅 <b className="font-semibold text-ink">10월 8일 0시 정식 배포</b>부터 이용권이 없으면 <b className="font-semibold text-ink">무료 체험(좋아요 3개)</b>으로 바뀌어요.
+          </li>
+          <li>💸 지금 미리 사도 손해 없어요. 4주는 정식 배포 시각부터 세요. 그 전까지는 지금처럼 무료로 써요.</li>
+          <li>👑 VIP 4주 {vipPrice.toLocaleString()}원(기본 포함)은 사는 즉시 바로 시작돼요.</li>
+          <li>📸 살 때마다 사진 바로 재검토를 1번 받을 수 있어요.</li>
+          <li>💬 이용권이 없어도 추천 보기·넘기기·대화는 계속할 수 있어요.</li>
+        </ul>
+      </>
+    );
+  },
+  action: { label: "할인가로 미리 사기", href: "/settings#membership" },
+  second: { label: "VIP 보기", href: "/liked" },
+  close: "오늘은 그만 보기",
+};
+
+function findNotice(key: string): Notice | undefined {
+  if (key.startsWith("payment-open:")) return PAYMENT_OPEN;
+  return NOTICES[key];
+}
 
 /**
- * 한 번만 보여주는 공지 팝업 (2026-10-05).
+ * 공지 팝업 (2026-10-05 한 번만, 2026-10-06 하루 한 번 결제 오픈 공지 추가).
  * 서버 /me 의 announcement(아직 안 본 공지 이름)와 아래 NOTICES의 이름이 같을 때만 뜬다.
  * 닫기·확인·"알림 켜러 가기" 어느 것을 눌러도 "봤음"으로 기록 → 이 계정에는 다시 안 뜬다.
  * 새 공지: 서버 services/announcement_service.py 의 CURRENT와 여기 NOTICES에 같은 이름으로 추가.
  */
-const NOTICES: Record<string, { title: string; body: React.ReactNode; action?: { label: string; href: string } }> = {
+const NOTICES: Record<string, Notice> = {
   "push-alerts-2026-10": {
     title: "휴대폰 알림이 생겼어요 🔔",
     body: (
@@ -66,8 +119,9 @@ async function saveSeen(key: string) {
 
 export function AnnouncementModal({ announcement }: { announcement?: string | null }) {
   const router = useRouter();
+  const { me } = useSession();
   const [closed, setClosed] = useState(() => (announcement ? alreadySeen(announcement) : true));
-  const notice = announcement ? NOTICES[announcement] : undefined;
+  const notice = announcement ? findNotice(announcement) : undefined;
   if (!announcement || !notice || closed) return null;
 
   function markSeen() {
@@ -77,7 +131,7 @@ export function AnnouncementModal({ announcement }: { announcement?: string | nu
 
   return (
     <Modal open onClose={markSeen} title={notice.title}>
-      {notice.body}
+      {typeof notice.body === "function" ? notice.body(me.membership) : notice.body}
       <div className="mt-6 space-y-2">
         {notice.action && (
           <Button
@@ -90,8 +144,20 @@ export function AnnouncementModal({ announcement }: { announcement?: string | nu
             {notice.action.label}
           </Button>
         )}
+        {notice.second && (
+          <Button
+            variant="secondary"
+            className="w-full"
+            onClick={() => {
+              markSeen();
+              router.push(notice.second!.href);
+            }}
+          >
+            {notice.second.label}
+          </Button>
+        )}
         <Button variant="ghost" className="w-full" onClick={markSeen}>
-          {notice.action ? "다음에 할게요" : "확인"}
+          {notice.close ?? (notice.action ? "다음에 할게요" : "확인")}
         </Button>
       </div>
     </Modal>

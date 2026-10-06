@@ -129,8 +129,8 @@ def mark_away(current: CurrentUser = Depends(get_current_user)):
 def mark_announcement_seen(
     payload: AnnouncementSeenRequest, current: CurrentUser = Depends(get_current_user), db: Session = Depends(get_db)
 ):
-    """공지 팝업에서 "확인"(또는 "알림 켜러 가기")을 누름 → 이 계정에는 다시 안 뜬다."""
-    if payload.key != announcement_service.CURRENT:
+    """공지 팝업에서 "확인"(또는 버튼)을 누름 → 이 계정에는 다시 안 뜬다 (하루 공지는 오늘만 안 뜸)."""
+    if not announcement_service.is_showable(current.user, payload.key):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="지금 보여주는 공지가 아니에요.")
     current.user.announcement_seen = payload.key
     db.commit()

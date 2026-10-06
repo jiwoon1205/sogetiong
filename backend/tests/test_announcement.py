@@ -33,3 +33,52 @@ def test_new_announcement_shows_again_and_can_be_off(sent_codes, db, monkeypatch
     assert a.get("/api/v1/me").json()["announcement"] == "next-notice"
     monkeypatch.setattr(announcement_service, "CURRENT", None)
     assert a.get("/api/v1/me").json()["announcement"] is None
+
+
+# ---------- 결제 오픈 공지: 하루 한 번, 정식 배포 전까지 (2026-10-06) ----------
+
+from datetime import timedelta  # noqa: E402
+
+from app.core.time import utcnow  # noqa: E402
+from tests.conftest import admin_login, ready_user  # noqa: E402
+from tests.test_membership import paid_world, pay, switch_on  # noqa: E402,F401  (fixture)
+
+
+def _daily(monkeypatch, s, *, opens_in=timedelta(days=1)):
+    switch_on(monkeypatch, s, vip=True)
+    monkeypatch.setattr(s, "open_at", utcnow() + opens_in)
+
+
+def test_payment_notice_once_a_day_before_open(sent_codes, db, paid_world, monkeypatch):
+    from app.core import time as time_mod
+
+    admin = admin_login(db)
+    a = ready_user(sent_codes, db, admin, "a@hufs.ac.kr", gender="MALE", want="FEMALE")
+    _daily(monkeypatch, paid_world)
+    key = a.get("/api/v1/me").json()["announcement"]
+    assert key and key.startswith(announcement_service.PAYMENT_DAILY_PREFIX)
+    assert a.post("/api/v1/me/announcement/seen", json={"key": key}).status_code == 200
+    assert a.get("/api/v1/me").json()["announcement"] is None  # 오늘은 끝 (예전 한 번 공지도 다시 안 뜸)
+
+    # 다음 날이 되면 다시 뜬다
+    tomorrow = time_mod.kst_today() + timedelta(days=1)
+    monkeypatch.setattr("app.services.announcement_service.kst_today", lambda now=None: tomorrow)
+    nxt = a.get("/api/v1/me").json()["announcement"]
+    assert nxt == f"{announcement_service.PAYMENT_DAILY_PREFIX}{tomorrow.isoformat()}" and nxt != key
+
+
+def test_payment_notice_hidden_after_open_or_purchase(sent_codes, db, paid_world, monkeypatch):
+    admin = admin_login(db)
+    a = ready_user(sent_codes, db, admin, "a@hufs.ac.kr", gender="MALE", want="FEMALE")
+    b = ready_user(sent_codes, db, admin, "b@hufs.ac.kr", gender="FEMALE", want="MALE")
+    _daily(monkeypatch, paid_world)
+    pay(admin, b)  # 산 사람에게는 안 뜬다
+    assert not (b.get("/api/v1/me").json()["announcement"] or "").startswith(announcement_service.PAYMENT_DAILY_PREFIX)
+    # 정식 배포가 지나면 안 뜬다
+    monkeypatch.setattr(paid_world, "open_at", utcnow() - timedelta(seconds=1))
+    assert not (a.get("/api/v1/me").json()["announcement"] or "").startswith(announcement_service.PAYMENT_DAILY_PREFIX)
+    # 판매를 안 하면 안 뜬다
+    monkeypatch.setattr(paid_world, "open_at", utcnow() + timedelta(days=1))
+    monkeypatch.setattr(paid_world, "membership_enabled", False)
+    monkeypatch.setattr(paid_world, "vip_enabled", False)
+    assert not (a.get("/api/v1/me").json()["announcement"] or "").startswith(announcement_service.PAYMENT_DAILY_PREFIX)
