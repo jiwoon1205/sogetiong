@@ -193,11 +193,16 @@ def add_membership(db: Session, user: User, now: datetime | None = None, days: i
 
 
 def add_vip(db: Session, user: User, now: datetime | None = None) -> None:
-    """VIP 입금 확인. VIP는 지금부터, 남아 있던 기본 기간은 VIP 뒤로 밀린다 (구독제 설계 2장)."""
+    """VIP 입금 확인. VIP는 지금부터, 남아 있던 기본 기간은 VIP 뒤로 밀린다 (구독제 설계 2장).
+
+    2026-10-06: VIP는 유료 시작(OPEN_AT) 전에 사도 **산 순간부터 바로** 쓴다 (VIP 28일도 지금부터 센다).
+    VIP에 포함된 기본 이용권 몫(member_until)은 그대로 유료 시작부터 센다 → VIP가 끝나도 기본 이용권이 며칠 남는다.
+    """
     now = now or utcnow()
     days = get_settings().vip_days
     vip_until = as_utc(user.vip_until)
-    user.vip_until = end_of_kst_day(_base(vip_until, now) + timedelta(days=days))
+    vip_base = vip_until if vip_until is not None and vip_until > now else now
+    user.vip_until = end_of_kst_day(vip_base + timedelta(days=days))
     user.member_until = end_of_kst_day(_base(_until(user), now) + timedelta(days=days))
     end_trial(user)
 

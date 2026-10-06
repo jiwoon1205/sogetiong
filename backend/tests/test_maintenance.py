@@ -1,7 +1,7 @@
 """유료 시작 시각 OPEN_AT (2026-10-04 점검 기간 → 2026-10-06 점검 기간 없앰).
 
 - OPEN_AT 전에는 스위치가 켜져 있어도 베타처럼 모두 무료 (아무것도 막지 않음, 하루 LIKE 5개)
-- 그 전에도 이용권·VIP를 미리 살 수 있다 → 오픈 시각부터 28일. 미리 산 VIP 혜택도 오픈 시각부터
+- 그 전에도 이용권·VIP를 미리 살 수 있다 → 기본 이용권은 오픈 시각부터 28일, VIP는 산 순간부터 바로 28일 (2026-10-06)
 - OPEN_AT이 지나면 자동으로 유료: 이용권 없는 사람(베타 회원 포함)은 체험 이용자
 - OPEN_AT이 없으면 스위치를 켠 순간부터 유료
 """
@@ -64,12 +64,14 @@ def test_payment_during_maintenance_starts_at_open(maint, can_start):
     assert as_utc(u.member_until) == kst_midnight_after(2026, 11, 7)
 
 
-def test_vip_during_maintenance_starts_at_open(maint, can_start):
+def test_vip_before_open_starts_now_but_basic_part_from_open(maint, can_start):
     u = blank_user()
     membership_service.add_vip(None, u, kst(2026, 10, 8, 20))
-    assert as_utc(u.vip_until) == kst_midnight_after(2026, 11, 7)
+    # VIP는 산 순간부터 28일 (2026-10-06: 바로 사용)
+    assert as_utc(u.vip_until) == kst_midnight_after(2026, 11, 5)
+    # 포함된 기본 이용권 몫은 유료 시작(10/10 18시)부터 28일 → VIP가 끝나도 이틀 남는다
     assert as_utc(u.member_until) == kst_midnight_after(2026, 11, 7)
-    # 점검 기간에 기본을 하나 더 사면 VIP 뒤로 이어진다
+    # 유료 시작 전에 기본을 하나 더 사면 뒤로 이어진다
     membership_service.add_membership(None, u, kst(2026, 10, 9))
     assert as_utc(u.member_until) == kst_midnight_after(2026, 12, 5)
 
@@ -125,9 +127,11 @@ def test_before_open_everything_is_free_and_presale_starts_at_open(sent_codes, d
     assert as_utc(user_of(db, me).member_until) == membership_service.end_of_kst_day(open_at + timedelta(days=28))
     m = me.get("/api/v1/me").json()["membership"]
     assert m["before_open"] is True and m["open_at"] is not None
-    # 미리 산 VIP는 오픈 전에는 혜택이 없다 (기간이 오픈부터라서)
+    # VIP는 유료 시작 전에 사도 바로 쓴다 (2026-10-06)
     pay(admin, her, "vip")
-    assert her.get("/api/v1/me").json()["vip"]["active"] is False
+    assert her.get("/api/v1/me").json()["vip"]["active"] is True
+    assert her.get("/api/v1/discover").json()["daily_like_limit"] == 10
+    assert her.get("/api/v1/liked-me").status_code == 200
     assert me.post(f"/api/v1/matches/{match_id}/messages", json={"body": "안녕"}).status_code == 201
 
     # 오픈 시각이 지나면 자동으로 유료: 산 사람은 이용권, 안 산 사람(other)은 체험

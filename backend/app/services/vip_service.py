@@ -31,14 +31,10 @@ def is_vip_tester(user: User) -> bool:
 def has_paid_vip(user: User, now: datetime | None = None) -> bool:
     """돈을 내고 산 VIP 기간이 남아 있나 (테스트 계정 제외).
 
-    유료 시작 시각(OPEN_AT) 전에 미리 산 VIP는 그 시각부터 시작한다 (그 전에는 혜택 없음, 2026-10-06).
+    유료 시작(OPEN_AT) 전에 산 VIP도 산 순간부터 바로 쓴다 (2026-10-06, membership_service.add_vip).
     """
-    now = now or utcnow()
     until = as_utc(user.vip_until)
-    if until is None or until <= now:
-        return False
-    open_at = get_settings().open_at_utc
-    return open_at is None or now >= open_at
+    return until is not None and until > (now or utcnow())
 
 
 def is_vip(user: User) -> bool:
@@ -48,16 +44,9 @@ def is_vip(user: User) -> bool:
 def vip_user_ids(db: Session) -> set[uuid.UUID]:
     """지금 VIP인 사람 전부 (혜택 5: 이 사람들을 PASS하면 그날만 숨겨진다)."""
     emails = get_settings().vip_test_email_set
-    now = utcnow()
-    open_at = get_settings().open_at_utc
-    if open_at is not None and now < open_at:
-        conditions = []
-    else:
-        conditions = [User.vip_until > now]
+    conditions = [User.vip_until > utcnow()]
     if emails:
         conditions.append(func.lower(User.email).in_(emails))
-    if not conditions:
-        return set()
     return {r[0] for r in db.query(User.id).filter(or_(*conditions))}
 
 
