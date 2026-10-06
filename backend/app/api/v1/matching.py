@@ -96,6 +96,13 @@ def discover(
     cooldown = vip_service.pass_cooldown_hours(current.user)
     excluded = profile_service.excluded_user_ids(db, current.id, pass_cooldown_hours=cooldown)
 
+    # 하루 매칭 한도 (2026-10-06): 오늘 매칭이 3번 생겼으면, 오늘은 "나를 이미 LIKE한 사람"을 추천에서 뺀다.
+    # 본인은 모르게 한다 (응답에 아무 표시도 없음). 한국 시간 밤 12시에 자동으로 풀린다.
+    # VIP "받은 LIKE" 목록은 그대로다.
+    limit_reached = match_limit_service.reached_daily_limit(db, current.user)
+    if limit_reached:
+        excluded = set(excluded) | match_limit_service.all_liker_ids(db, current.id)
+
     query = profile_service.discoverable_profiles_query(db, current.user.university_id).filter(
         PublicProfile.user_id.notin_(excluded)
     )
@@ -117,7 +124,7 @@ def discover(
         profile_service.people_from_profiles(db, profiles),
         profile_service.matching_weights(),
         limit or settings.discover_page_size,
-        liked_me=profile_service.liked_me_ids(db, current.id),
+        liked_me=set() if limit_reached else profile_service.liked_me_ids(db, current.id),
         liked_me_slots=settings.liked_me_slots,
         liked_me_probability=settings.liked_me_probability,
         seen_before=profile_service.passed_before_ids(db, current.id, pass_cooldown_hours=cooldown),
@@ -290,9 +297,6 @@ def like(payload: TargetRequest, current: CurrentUser = Depends(get_current_user
             for uid in (a, b):
                 # 방금 LIKE를 누른 본인은 화면에서 바로 보므로 휴대폰 알림은 상대에게만
                 notify_match_created(db, uid, match.id, push=uid != current.id)
-            # 하루 매칭 3번 (2026-10-06): 이번 매칭으로 오늘 한도에 닿은 사람은 자동 매칭 정지.
-            # 이번 매칭은 그대로 보이고, 다음 매칭부터 숨김이 된다.
-            match_limit_service.check_and_suspend(db, [a, b])
     try:
         db.commit()
     except IntegrityError:

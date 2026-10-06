@@ -1,55 +1,44 @@
-"""하루 매칭 횟수 제한 → 자동 매칭 정지 (2026-10-06).
+"""하루 매칭 한도 (2026-10-06 변경).
 
 규칙 (사용자와 확정)
-- 한국 시간 0시부터 매칭이 N번(기본 3번, 설정 MATCH_AUTO_SUSPEND_DAILY) 생기면 그 사람을 매칭 정지한다.
-  N번째 매칭은 보통대로 보이고, 그 다음 매칭부터 숨김(HIDDEN)이 된다.
-- 기존 "매칭 정지"와 완전히 같은 상태다: 본인은 절대 모르고, 관리자가 풀 때까지 계속된다.
-- 정지 중 생긴 숨김 매칭은 관리자가 하나씩 골라서 다시 보이게 한다.
-- 추천 목록에는 그대로 나온다.
+- 한국 시간 0시부터 매칭이 N번(기본 3번, 설정 DAILY_MATCH_LIMIT) 생기면, 그날 남은 시간 동안
+  그 사람의 **추천 탭에 "나를 이미 LIKE한 사람"이 나오지 않는다**.
+  → 추천에서 LIKE를 눌러 바로 매칭되는 일이 없어진다.
+- 한국 시간 밤 12시가 지나면 자동으로 풀린다. 다음 날 또 N번 매칭되면 또 걸린다.
+- 본인은 절대 알 수 없다: 화면 문구·알림·API 응답 어디에도 표시하지 않는다.
+  추천 카드가 몇 장 덜 나올 뿐이다.
+- VIP "받은 LIKE" 목록은 기존과 똑같이 보이고, 거기서 LIKE하면 보통대로 매칭된다.
+- 숨김 매칭(HIDDEN)을 만들지 않는다. 관리자가 거는 "매칭 정지"와는 별개다 (그건 그대로).
+- 상대가 나를 추천에서 보고 LIKE해서 생기는 매칭은 막지 않는다.
+- VIP 테스트 계정(운영자)은 제외한다.
+
+이전 방식 (2026-10-06 오전): 3번째 매칭 직후 "매칭 정지"를 자동으로 켜고 관리자가 풀 때까지 유지 → 폐기.
 
 세는 방법
 - 오늘 생긴 매칭 중 숨김(HIDDEN)이 아닌 것. 나중에 대화를 끝냈거나 차단한 매칭도 "매칭된 것"이라 센다.
-- 관리자가 오늘 정지를 풀었다면 푼 뒤에 생긴 매칭만 센다 (풀자마자 다시 걸리지 않게).
 - 관리자가 "다시 보이게"로 공개한 매칭은 세지 않는다 (공개하면 매칭 시각이 지금으로 바뀌기 때문).
-- VIP는 제외한다 (2026-10-06): 돈을 내고 산 VIP와 VIP 테스트 계정(운영자) 모두.
-  VIP는 하루 좋아요 10개 + "받은 LIKE"로 바로 매칭돼 한도에 쉽게 닿고, 돈을 냈는데 매칭이 안 보이면 불만이 크다.
-  관리자가 직접 거는 매칭 정지는 VIP에게도 된다. VIP가 끝나면 다시 센다.
 """
 
 import uuid
 from datetime import datetime
 
-from sqlalchemy import func, or_
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
-from app.core.time import as_utc, kst_day_start, utcnow
+from app.core.time import kst_day_start
 from app.models.admin import AuditLog
-from app.models.matching import Match
+from app.models.matching import Like, Match
 from app.models.user import User
-from app.services import audit_service, vip_service
+from app.services import vip_service
 
+# 이전 방식(자동 매칭 정지)의 감사 로그 이름. 이제 새로 쓰지 않지만, 관리자 화면이 옛 기록을 "자동"으로 표시할 때 쓴다.
 AUTO_ACTION = "MATCH_AUTO_SUSPEND"
 
 
-def _count_since(db: Session, user_id: uuid.UUID, now: datetime | None = None) -> datetime:
-    """언제부터 셀지: 오늘 0시(한국 시간)와 오늘 관리자가 정지를 푼 시각 중 늦은 쪽."""
-    start = kst_day_start(now)
-    last_unsuspend = (
-        db.query(func.max(AuditLog.created_at))
-        .filter(
-            AuditLog.action == "MATCH_UNSUSPEND",
-            AuditLog.target_id == str(user_id),
-            AuditLog.created_at >= start,
-        )
-        .scalar()
-    )
-    return max(start, as_utc(last_unsuspend)) if last_unsuspend else start
-
-
 def matches_today(db: Session, user_id: uuid.UUID, now: datetime | None = None) -> int:
-    """오늘 생긴 (숨김이 아닌) 매칭 수. 관리자가 공개한 숨김 매칭은 빼고 센다."""
-    since = _count_since(db, user_id, now)
+    """오늘(한국 시간 0시부터) 생긴 (숨김이 아닌) 매칭 수. 관리자가 공개한 숨김 매칭은 빼고 센다."""
+    since = kst_day_start(now)
     ids = [
         str(mid)
         for (mid,) in db.query(Match.id)
@@ -71,31 +60,17 @@ def matches_today(db: Session, user_id: uuid.UUID, now: datetime | None = None) 
     return len([i for i in ids if i not in revealed])
 
 
-def check_and_suspend(db: Session, user_ids: list[uuid.UUID], now: datetime | None = None) -> list[uuid.UUID]:
-    """매칭이 새로 생긴 뒤 부른다. 오늘 매칭이 한도에 닿은 사람을 매칭 정지한다.
-    정지된 사람의 ID 목록을 돌려준다. commit은 호출한 쪽에서 한다.
-    사용자에게는 알림을 보내지 않는다 (정지 사실을 알 수 없게)."""
-    limit = get_settings().match_auto_suspend_daily
-    if limit <= 0:
-        return []
-    db.flush()  # 방금 만든 매칭도 세도록
-    suspended: list[uuid.UUID] = []
-    for uid in user_ids:
-        user = db.get(User, uid)
-        if user is None or user.match_suspended or vip_service.is_vip(user):
-            continue
-        count = matches_today(db, uid, now)
-        if count < limit:
-            continue
-        user.match_suspended = True
-        user.match_suspended_at = now or utcnow()
-        audit_service.record(
-            db,
-            admin_id=None,  # 관리자가 아니라 서버가 자동으로 함
-            action=AUTO_ACTION,
-            target_type="USER",
-            target_id=user.id,
-            metadata={"reason": f"하루 매칭 {limit}번 달성", "matches_today": count},
-        )
-        suspended.append(uid)
-    return suspended
+def reached_daily_limit(db: Session, user: User, now: datetime | None = None) -> bool:
+    """오늘 매칭 한도에 닿았는지. True면 추천에서 "나를 LIKE한 사람"을 뺀다. 내부 전용 (응답에 넣지 말 것)."""
+    limit = get_settings().daily_match_limit
+    if limit <= 0 or vip_service.is_vip_tester(user):
+        return False
+    return matches_today(db, user.id, now) >= limit
+
+
+def all_liker_ids(db: Session, user_id: uuid.UUID) -> set[uuid.UUID]:
+    """나에게 LIKE를 보낸 모든 사람 (매칭 정지된 사람 포함). 추천에서 뺄 때 쓴다."""
+    return {
+        uid
+        for (uid,) in db.query(Like.from_user_id).filter(Like.to_user_id == user_id, Like.action == "LIKE")
+    }
