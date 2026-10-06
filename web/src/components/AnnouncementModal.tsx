@@ -38,7 +38,8 @@ const PAYMENT_OPEN: Notice = {
         </div>
         <ul className="mt-4 space-y-2 text-[14px] leading-relaxed text-ink-soft">
           <li>
-            📅 <b className="font-semibold text-ink">10월 8일 0시 정식 배포</b>부터 이용권이 없으면 <b className="font-semibold text-ink">무료 체험(좋아요 3개)</b>으로 바뀌어요.
+            📅 <b className="font-semibold text-ink">10월 8일 0시 정식 배포</b>부터 이용권이 없으면 <b className="font-semibold text-ink">무료 체험</b>으로 바뀌어요.
+            무료 체험 좋아요는 <b className="font-semibold text-brick">평생 3개</b>뿐이에요. 다 쓰면 다음 날에도 <b className="font-semibold text-ink">다시 생기지 않아요.</b>
           </li>
           <li>💸 지금 미리 사도 손해 없어요. 4주는 정식 배포 시각부터 세요. 그 전까지는 지금처럼 무료로 써요.</li>
           <li>👑 VIP 4주 {vipPrice.toLocaleString()}원(기본 포함)은 사는 즉시 바로 시작돼요.</li>
