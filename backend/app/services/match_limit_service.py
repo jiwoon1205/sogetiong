@@ -11,7 +11,9 @@
 - 오늘 생긴 매칭 중 숨김(HIDDEN)이 아닌 것. 나중에 대화를 끝냈거나 차단한 매칭도 "매칭된 것"이라 센다.
 - 관리자가 오늘 정지를 풀었다면 푼 뒤에 생긴 매칭만 센다 (풀자마자 다시 걸리지 않게).
 - 관리자가 "다시 보이게"로 공개한 매칭은 세지 않는다 (공개하면 매칭 시각이 지금으로 바뀌기 때문).
-- VIP 테스트 계정(운영자)은 제외한다.
+- VIP는 제외한다 (2026-10-06): 돈을 내고 산 VIP와 VIP 테스트 계정(운영자) 모두.
+  VIP는 하루 좋아요 10개 + "받은 LIKE"로 바로 매칭돼 한도에 쉽게 닿고, 돈을 냈는데 매칭이 안 보이면 불만이 크다.
+  관리자가 직접 거는 매칭 정지는 VIP에게도 된다. VIP가 끝나면 다시 센다.
 """
 
 import uuid
@@ -80,7 +82,7 @@ def check_and_suspend(db: Session, user_ids: list[uuid.UUID], now: datetime | No
     suspended: list[uuid.UUID] = []
     for uid in user_ids:
         user = db.get(User, uid)
-        if user is None or user.match_suspended or vip_service.is_vip_tester(user):
+        if user is None or user.match_suspended or vip_service.is_vip(user):
             continue
         count = matches_today(db, uid, now)
         if count < limit:

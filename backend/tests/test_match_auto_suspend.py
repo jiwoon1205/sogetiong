@@ -8,6 +8,7 @@
 import uuid
 from datetime import timedelta
 
+from app.core.time import utcnow
 from app.models import Match, PublicProfile, User
 from app.models.admin import AuditLog
 from app.services import match_limit_service
@@ -139,3 +140,22 @@ def test_vip_tester_is_exempt(sent_codes, db, monkeypatch):
     for m in men:
         assert mutual(w, m)["matched"] is True
     assert user_of(db, w).match_suspended is False
+
+
+def test_paid_vip_is_never_auto_suspended(sent_codes, db):
+    """돈을 내고 산 VIP는 자동 매칭 정지에서 빠진다 (2026-10-06). 상대(일반)는 그대로 센다."""
+    admin, w, men = setup(sent_codes, db)
+    user = user_of(db, w)
+    user.vip_until = utcnow() + timedelta(days=10)
+    db.commit()
+    for m in men:
+        assert mutual(w, m)["matched"] is True
+    assert user_of(db, w).match_suspended is False
+    assert db.query(AuditLog).filter(AuditLog.action == "MATCH_AUTO_SUSPEND").count() == 0
+    assert len(w.get("/api/v1/matches").json()["matches"]) == 4
+
+    # VIP가 끝나면 다시 센다
+    user = user_of(db, w)
+    user.vip_until = utcnow() - timedelta(seconds=1)
+    db.commit()
+    assert match_limit_service.check_and_suspend(db, [user.id]) == [user.id]
