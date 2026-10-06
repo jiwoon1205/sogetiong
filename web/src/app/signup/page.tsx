@@ -232,6 +232,10 @@ export default function SignupPage() {
             </Checkbox>
             <p className="mt-2 text-[12.5px] leading-relaxed text-ink-faint">
               사진은 다른 학생에게 보이지 않아요. AI가 분석한 점수는 검수를 거쳐 프로필에 반영돼요.{" "}
+              <a href="/terms" target="_blank" rel="noopener noreferrer" className="underline underline-offset-4">
+                이용약관 보기
+              </a>{" "}
+              ·{" "}
               <a href="/privacy" target="_blank" rel="noopener noreferrer" className="underline underline-offset-4">
                 개인정보처리방침 보기
               </a>

@@ -32,6 +32,12 @@ private-matching.com {
 		rewrite * /privacy.html
 		file_server
 	}
+	# 이용약관 (2026-10-06): 개인정보처리방침과 같은 방식 (deploy/static/terms.html)
+	handle /terms {
+		root * /srv/static
+		rewrite * /terms.html
+		file_server
+	}
 	handle {
 		reverse_proxy web:3000
 	}

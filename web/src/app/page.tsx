@@ -1,5 +1,6 @@
 import { Brand } from "@/components/Brand";
 import { MemberStat } from "@/components/MemberStat";
+import { BusinessInfo } from "@/components/BusinessInfo";
 import { SupportContact } from "@/components/SupportContact";
 import { ButtonLink } from "@/components/ui";
 
@@ -105,18 +106,15 @@ export default function Landing() {
           ))}
         </section>
 
-        <footer className="flex flex-col gap-2 py-12 text-[12.5px] text-ink-faint sm:flex-row sm:justify-between">
+        <footer className="space-y-5 py-12 text-[12.5px] text-ink-faint">
           <div className="space-y-1">
             <p>만 18세 이상 재학생만 이용할 수 있습니다.</p>
             <p>
               <SupportContact />
             </p>
           </div>
-          <p>
-            <a href="/privacy" className="underline underline-offset-4">
-              개인정보처리방침
-            </a>
-          </p>
+          {/* 사업자 정보 (전자상거래법 제10조, 2026-10-06) */}
+          <BusinessInfo />
         </footer>
       </main>
     </div>
