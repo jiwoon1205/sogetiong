@@ -39,6 +39,7 @@ const TILES: Tile[] = [
     key: "members_active",
     label: "이용권 이용 중",
     hint: (s) => `VIP ${(s.members_vip ?? 0).toLocaleString()}명 · 7일 안에 끝남 ${(s.members_expiring_week ?? 0).toLocaleString()}명`,
+    href: "/admin/users?membership=active",
     perm: "payments:confirm",
   },
   { key: "users_active", label: "활성 사용자", hint: "사진 검수 완료 + 최근 7일 접속" },

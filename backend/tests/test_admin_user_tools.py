@@ -90,3 +90,31 @@ def test_vip_adjust_needs_payment_permission(sent_codes, db):
     reviewer = admin_login(db, role="MODERATOR")
     r = reviewer.post(f"/api/v1/admin/users/{uid}/vip-adjust", json={"days": 3, "reason": "보상"})
     assert r.status_code == 403
+
+
+def test_membership_filter_matches_dashboard_counts(sent_codes, db):
+    """현황의 '이용권 이용 중' 칸을 누르면 나오는 목록 = 그 칸의 숫자 (2026-10-06)."""
+    for e in ["a@hufs.ac.kr", "b@hufs.ac.kr", "c@hufs.ac.kr", "d@hufs.ac.kr"]:
+        signup(sent_codes, db, e)
+    admin = admin_login(db)
+    ids = {u["nickname"]: u["user_id"] for u in _users(admin)}
+    a, b, c, d = (uuid.UUID(i) for i in ids.values())
+    now = utcnow()
+    db.get(User, a).member_until = now + timedelta(days=20)  # 이용 중
+    db.get(User, b).member_until = now + timedelta(days=3)  # 7일 안에 끝남
+    db.get(User, b).vip_until = now + timedelta(days=3)  # VIP
+    db.get(User, c).member_until = now - timedelta(days=1)  # 끝남
+    db.commit()
+
+    def got(m):
+        return [uuid.UUID(u["user_id"]) for u in _users(admin, f"?membership={m}")]
+
+    assert got("active") == [b, a]  # 곧 끝나는 사람부터
+    assert got("vip") == [b]
+    assert got("expiring") == [b]
+    stats = admin.get("/api/v1/admin/dashboard").json()
+    assert stats["members_active"] == 2 and stats["members_vip"] == 1 and stats["members_expiring_week"] == 1
+
+    row = next(u for u in _users(admin, "?membership=active") if uuid.UUID(u["user_id"]) == a)
+    assert row["member_until"] is not None and row["vip_until"] is None
+    assert admin.get("/api/v1/admin/users?membership=nope").status_code == 422

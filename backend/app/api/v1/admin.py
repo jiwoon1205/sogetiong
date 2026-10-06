@@ -435,6 +435,7 @@ def list_users(
     nickname: str | None = Query(default=None, max_length=20),
     q: str | None = Query(default=None, max_length=20),
     gender: str | None = Query(default=None, pattern="^(MALE|FEMALE)$"),
+    membership: str | None = Query(default=None, pattern="^(active|vip|expiring)$"),
     admin: CurrentAdmin = Depends(require_permission("users:read")),
     db: Session = Depends(get_db),
 ):
@@ -463,10 +464,24 @@ def list_users(
         query = query.filter(or_(nick_col.contains(term), User.id.in_(code_ids)))
     if gender:
         query = query.filter(gender_col == gender)
+    if membership:
+        # 현황의 "이용권 이용 중" 칸을 누르면 들어온다 (2026-10-06). 숫자와 똑같은 기준(_membership_counts)으로 거른다.
+        now = utcnow()
+        query = query.filter(User.status == "ACTIVE")
+        if membership == "vip":
+            query = query.filter(User.vip_until > now)
+        else:
+            query = query.filter(User.member_until > now)
+            if membership == "expiring":
+                query = query.filter(User.member_until <= now + timedelta(days=7))
     # 예전에는 최근 100명만 보여서, 가입자가 100명을 넘으면 오래된 사람(탈퇴자 포함)이 목록에서 사라졌다.
     # 베타 예상 최대 인원(~500명)을 넉넉히 넘게 보여주고, 전체 수(total)를 함께 알려준다.
     total = query.count()
-    if status_filter == "DELETED":
+    if membership == "vip":
+        query = query.order_by(User.vip_until.asc())  # 곧 끝나는 사람부터
+    elif membership:
+        query = query.order_by(User.member_until.asc())
+    elif status_filter == "DELETED":
         # 탈퇴한 사용자: 마지막 접속이 최근인 사람부터 (접속 기록이 없으면 맨 아래)
         query = query.order_by(User.last_active_at.is_(None), User.last_active_at.desc(), User.created_at.desc())
     else:
@@ -486,6 +501,8 @@ def list_users(
                 "reports_received": reports or 0,
                 "last_active_at": u.last_active_at.isoformat() if u.last_active_at else None,
                 "created_at": u.created_at.isoformat(),
+                "member_until": u.member_until.isoformat() if u.member_until else None,
+                "vip_until": u.vip_until.isoformat() if u.vip_until else None,
             }
             for u, nick, user_gender, reports in rows
         ]
