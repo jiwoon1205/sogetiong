@@ -62,7 +62,7 @@ function UsersList() {
       const params = new URLSearchParams();
       if (status) params.set("status", status);
       if (gender) params.set("gender", gender);
-      if (q.trim()) params.set("nickname", q.trim());
+      if (q.trim()) params.set("q", q.trim());
       adminApi<{ users: UserRow[]; total?: number }>(`/users?${params}`).then((r) => {
         setItems(r.users);
         setTotal(r.total ?? r.users.length);
@@ -75,7 +75,7 @@ function UsersList() {
     <>
       <PageTitle eyebrow="사용자" title="사용자 관리" desc="실명·이메일 등 개인정보는 목록에 나오지 않아요." />
       <div className="mb-5 grid gap-3 sm:grid-cols-[1fr_8rem_11rem]">
-        <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="닉네임으로 찾기" />
+        <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="닉네임 또는 코드로 찾기" />
         <Select value={gender} onChange={(e) => setGender(e.target.value)}>
           <option value="">모든 성별</option>
           <option value="MALE">남자</option>

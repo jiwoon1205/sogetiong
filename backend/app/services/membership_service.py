@@ -243,6 +243,20 @@ def adjust(user: User, days: int, now: datetime | None = None) -> None:
         user.member_until = end_of_kst_day(_start(now) + timedelta(days=days))
 
 
+
+def adjust_vip(user: User, days: int, now: datetime | None = None) -> None:
+    """관리자 VIP 기간 조정 (2026-10-06). 남아 있으면 끝나는 날에서 더하거나 빼고, 끝났으면 지금부터 더한다.
+
+    VIP는 산 순간부터 바로 쓰므로(add_vip) 새로 줄 때도 오픈 시각이 아니라 지금부터 센다.
+    """
+    now = now or utcnow()
+    until = as_utc(user.vip_until)
+    if until is not None and until > now:
+        user.vip_until = until + timedelta(days=days)
+    elif days > 0:
+        user.vip_until = end_of_kst_day(now + timedelta(days=days))
+
+
 def status(user: User, now: datetime | None = None) -> str:
     """화면용: none(산 적 없음) / banked(사진 검수 후 시작) / active / expired."""
     now = now or utcnow()

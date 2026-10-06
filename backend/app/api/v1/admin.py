@@ -8,7 +8,7 @@ from io import BytesIO
 import pyotp
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, Response, status
 from PIL import Image, ImageDraw, ImageFont
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
@@ -433,6 +433,7 @@ USER_LIST_LIMIT = 1000
 def list_users(
     status_filter: str | None = Query(default=None, alias="status"),
     nickname: str | None = Query(default=None, max_length=20),
+    q: str | None = Query(default=None, max_length=20),
     gender: str | None = Query(default=None, pattern="^(MALE|FEMALE)$"),
     admin: CurrentAdmin = Depends(require_permission("users:read")),
     db: Session = Depends(get_db),
@@ -453,6 +454,13 @@ def list_users(
         query = query.filter(User.status == status_filter)
     if nickname:
         query = query.filter(nick_col.contains(nickname))
+    if q and q.strip():
+        # 검색칸 하나로 닉네임 또는 사용자 코드(예: UA38192)를 찾는다 (2026-10-06).
+        # 코드는 ID를 비밀 키로 섞어 만든 값이라 DB에 없다 → 사용자마다 계산해서 비교한다 (수백 명이라 금방 끝남).
+        term = q.strip()
+        code_term = term.upper()
+        code_ids = [uid for (uid,) in db.query(User.id) if code_term in pseudonymous_code(uid)]
+        query = query.filter(or_(nick_col.contains(term), User.id.in_(code_ids)))
     if gender:
         query = query.filter(gender_col == gender)
     # 예전에는 최근 100명만 보여서, 가입자가 100명을 넘으면 오래된 사람(탈퇴자 포함)이 목록에서 사라졌다.
@@ -673,6 +681,40 @@ def adjust_user_membership(
     )
     db.commit()
     return {"user_id": str(user.id), "member_until": after, "membership_status": membership_service.status(user)}
+
+
+@router.post("/users/{user_id}/vip-adjust")
+def adjust_user_vip(
+    user_id: uuid.UUID,
+    payload: MembershipAdjustRequest,
+    request: Request,
+    admin: CurrentAdmin = Depends(require_permission("payments:confirm")),
+    db: Session = Depends(get_db),
+):
+    """VIP 기간을 며칠 늘리거나 줄인다 (2026-10-06). 이용권 기간 조정과 같은 규칙, 최고 관리자만.
+
+    남아 있으면 끝나는 날에서 더하거나 빼고, 끝났거나 없으면 지금부터 더한다 (빼기는 무시).
+    VIP에는 기본 이용권이 포함되므로(has_membership) 기본 이용권 기간은 따로 건드리지 않는다.
+    """
+    user = _user_or_404(db, user_id)
+    if user.deleted_at is not None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="탈퇴한 사용자는 바꿀 수 없습니다.")
+    if payload.days == 0:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="0일은 바꿀 게 없습니다.")
+    before = user.vip_until.isoformat() if user.vip_until else None
+    membership_service.adjust_vip(user, payload.days)
+    after = user.vip_until.isoformat() if user.vip_until else None
+    audit_service.record(
+        db,
+        admin_id=admin.id,
+        action="VIP_ADJUST",
+        target_type="USER",
+        target_id=user.id,
+        request=request,
+        metadata={"days": payload.days, "before": before, "after": after, "reason": payload.reason},
+    )
+    db.commit()
+    return {"user_id": str(user.id), "vip_until": after, "vip_active": vip_service.has_paid_vip(user)}
 
 
 @router.patch("/users/{user_id}/status")

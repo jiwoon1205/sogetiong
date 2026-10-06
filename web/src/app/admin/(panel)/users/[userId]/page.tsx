@@ -155,6 +155,10 @@ export default function UserDetail() {
             <MembershipForm key={`${d.user_id}-${d.member_until}`} userId={d.user_id} onDone={() => load(!!d.private)} />
           )}
 
+          {admin.can("payments:confirm") && !d.deleted_at && !d.membership_free && (
+            <MembershipForm kind="vip" key={`vip-${d.user_id}-${d.vip_until}`} userId={d.user_id} onDone={() => load(!!d.private)} />
+          )}
+
           {admin.can("photos:evaluate") && d.profile && !d.deleted_at && (
             <TierForm key={`${d.user_id}-${d.appearance_tier}`} userId={d.user_id} current={d.appearance_tier} onDone={() => load(!!d.private)} />
           )}
@@ -607,8 +611,11 @@ function membershipLabel(d: Detail): string {
   }
 }
 
-/** 이용권 기간 늘리기/줄이기 (2026-10-04 D8). 입금 확인 지연·서버 장애 보상, 실수 정정용. 최고 관리자만 */
-function MembershipForm({ userId, onDone }: { userId: string; onDone: () => void }) {
+/** 이용권(또는 VIP) 기간 늘리기/줄이기 (2026-10-04 D8, VIP는 2026-10-06). 입금 확인 지연·서버 장애 보상, 실수 정정용. 최고 관리자만 */
+function MembershipForm({ userId, onDone, kind = "member" }: { userId: string; onDone: () => void; kind?: "member" | "vip" }) {
+  const isVip = kind === "vip";
+  const label = isVip ? "VIP" : "이용권";
+  const labelObj = isVip ? "VIP를" : "이용권을";
   const [days, setDays] = useState("");
   const [reason, setReason] = useState("");
   const [error, setError] = useState("");
@@ -619,12 +626,12 @@ function MembershipForm({ userId, onDone }: { userId: string; onDone: () => void
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (!window.confirm(`이용권을 ${n > 0 ? `${n}일 늘릴까요` : `${-n}일 줄일까요`}?`)) return;
+    if (!window.confirm(`${labelObj} ${n > 0 ? `${n}일 늘릴까요` : `${-n}일 줄일까요`}?`)) return;
     setLoading(true);
     setError("");
     setOk(false);
     try {
-      await adminApi(`/users/${userId}/membership-adjust`, { method: "POST", body: { days: n, reason } });
+      await adminApi(`/users/${userId}/${isVip ? "vip-adjust" : "membership-adjust"}`, { method: "POST", body: { days: n, reason } });
       setOk(true);
       setDays("");
       setReason("");
@@ -638,14 +645,17 @@ function MembershipForm({ userId, onDone }: { userId: string; onDone: () => void
 
   return (
     <form onSubmit={submit} className="space-y-4">
-      <p className="eyebrow">이용권 기간 조정</p>
-      <Field label="일수 (늘리기는 양수, 줄이기는 음수, 최대 60)" htmlFor="member-days">
-        <Input id="member-days" inputMode="numeric" value={days} onChange={(e) => setDays(e.target.value.trim())} placeholder="예: 3 또는 -2" />
+      <p className="eyebrow">{label} 기간 조정</p>
+      <Field label="일수 (늘리기는 양수, 줄이기는 음수, 최대 60)" htmlFor={`${kind}-days`}>
+        <Input id={`${kind}-days`} inputMode="numeric" value={days} onChange={(e) => setDays(e.target.value.trim())} placeholder="예: 3 또는 -2" />
       </Field>
-      <Field label="사유 (감사 로그에 남아요)" htmlFor="member-reason">
-        <Input id="member-reason" value={reason} onChange={(e) => setReason(e.target.value)} maxLength={300} placeholder="입금 확인 지연 보상" />
+      <Field label="사유 (감사 로그에 남아요)" htmlFor={`${kind}-reason`}>
+        <Input id={`${kind}-reason`} value={reason} onChange={(e) => setReason(e.target.value)} maxLength={300} placeholder="입금 확인 지연 보상" />
       </Field>
-      <p className="text-[12.5px] text-ink-faint">남아 있으면 끝나는 날에서 더하거나 빼요. 끝난 사람은 오늘부터 더해요. 사용자에게 알림은 가지 않아요.</p>
+      <p className="text-[12.5px] text-ink-faint">
+        남아 있으면 끝나는 날에서 더하거나 빼요. 끝난 사람은 오늘부터 더해요. 사용자에게 알림은 가지 않아요.
+        {isVip && " VIP에는 기본 이용권이 포함돼서, VIP 기간 동안은 기본 이용권이 없어도 좋아요를 쓸 수 있어요."}
+      </p>
       {error && <Notice tone="error">{error}</Notice>}
       {ok && <Notice tone="ok">변경했어요.</Notice>}
       <Button type="submit" loading={loading} disabled={!valid}>
