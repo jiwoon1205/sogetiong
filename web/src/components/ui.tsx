@@ -269,7 +269,7 @@ export function Modal({ open, onClose, title, children }: { open: boolean; onClo
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className="w-full max-w-md rounded-t-2xl border border-line bg-paper p-6 sm:rounded-card"
+        className="max-h-[90dvh] w-full max-w-md overflow-y-auto overscroll-contain rounded-t-2xl border border-line bg-paper p-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] sm:rounded-card"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-5 flex items-center justify-between">

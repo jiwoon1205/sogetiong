@@ -60,7 +60,14 @@ function Shell({ children }: { children: React.ReactNode }) {
 
   // 채팅방은 화면 전체를 쓰는 별도 창이라 위쪽 머리말·아래 탭·여백을 그리지 않는다.
   // (예전에는 아래 탭을 숨겨도 그 자리 여백 pb-20(80px)이 남아서, 모바일에서 화면 전체가 한 번 더 스크롤되는 문제가 있었다)
-  if (inChat) return <>{children}</>;
+  // 휴대폰 알림을 눌러 대화방으로 바로 들어온 사람도 공지를 보게 공지 팝업은 여기서도 그린다 (2026-10-06)
+  if (inChat)
+    return (
+      <>
+        {children}
+        <AnnouncementModal announcement={me.announcement} />
+      </>
+    );
 
   return (
     <div className="min-h-dvh pb-20 sm:pb-0">

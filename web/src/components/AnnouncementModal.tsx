@@ -132,12 +132,13 @@ async function saveSeen(key: string) {
 export function AnnouncementModal({ announcement }: { announcement?: string | null }) {
   const router = useRouter();
   const { me } = useSession();
-  const [closed, setClosed] = useState(() => (announcement ? alreadySeen(announcement) : true));
+  // 닫은 공지 이름을 기억한다 (예전에는 true/false 하나라서, 화면이 열린 채로 새 공지가 와도 안 떴다 — 2026-10-06)
+  const [closedKey, setClosedKey] = useState<string | null>(null);
   const notice = announcement ? findNotice(announcement) : undefined;
-  if (!announcement || !notice || closed) return null;
+  if (!announcement || !notice || closedKey === announcement || alreadySeen(announcement)) return null;
 
   function markSeen() {
-    setClosed(true);
+    setClosedKey(announcement!);
     void saveSeen(announcement!);
   }
 
