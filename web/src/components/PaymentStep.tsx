@@ -163,7 +163,39 @@ export function MembershipRenew({ onActivated }: { onActivated: () => void }) {
   );
 }
 
-/** 입금 안내 화면 (이용권·VIP 공통): 계좌·결제 코드, "입금했어요" 버튼, 안내 문구 */
+/** 결제 방법 3단계 (2026-10-07): 입금자명을 안 바꾸거나 "입금 완료" 버튼을 안 누르는 사람이 많아 강조 */
+function PayHowTo({ amount, code }: { amount: number; code: string }) {
+  const step = "flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-brick text-[13px] font-semibold text-paper";
+  return (
+    <div className="rounded-card border-2 border-brick bg-brick-wash px-4 py-4">
+      <p className="text-[14.5px] font-semibold text-brick-deep">결제 방법 · 3단계를 모두 해야 끝나요</p>
+      <ol className="mt-3 space-y-3 text-[14px] leading-relaxed text-ink">
+        <li className="flex gap-2.5">
+          <span className={step}>1</span>
+          <span>
+            위 계좌로 <b>{amount.toLocaleString()}원</b>을 보내요.
+          </span>
+        </li>
+        <li className="flex gap-2.5">
+          <span className={step}>2</span>
+          <span>
+            보낼 때 <b>입금자명(받는 분에게 표시)</b>을 실명이 아니라 <b className="num text-[16px] tracking-wider text-brick">{code}</b>로 꼭 바꿔요.
+            <span className="mt-0.5 block text-[12.5px] text-ink-soft">바꾸지 않으면 누가 보낸 돈인지 알 수 없어서 확인이 안 돼요.</span>
+          </span>
+        </li>
+        <li className="flex gap-2.5">
+          <span className={step}>3</span>
+          <span>
+            이 화면으로 돌아와 아래 <b>&lsquo;입금 완료했어요&rsquo;</b> 버튼을 꼭 눌러요.
+            <span className="mt-0.5 block text-[12.5px] text-ink-soft">버튼을 눌러야 운영자에게 확인 요청이 가요. 안 누르면 입금해도 이용권이 시작되지 않아요.</span>
+          </span>
+        </li>
+      </ol>
+    </div>
+  );
+}
+
+/** 입금 안내 화면 (이용권·VIP 공통): 계좌·결제 코드, "입금 완료했어요" 버튼, 안내 문구 */
 export function PaymentPanel({
   info,
   sending,
@@ -198,9 +230,7 @@ export function PaymentPanel({
             <Row label="예금주" value={info.account_holder ?? ""} />
             <Row label="입금자명" value={info.code} copy strong />
           </dl>
-          <Notice tone="error">
-            입금자명에 <b>실명 대신 결제 코드 {info.code}</b>를 꼭 적어 주세요. 코드가 없으면 누가 보낸 입금인지 알 수 없어요.
-          </Notice>
+          {!waiting && <PayHowTo amount={info.amount} code={info.code} />}
         </>
       )}
 
@@ -217,8 +247,11 @@ export function PaymentPanel({
                 입금이 확인되지 않았어요. 금액({info.amount.toLocaleString()}원)과 입금자명({info.code})을 확인한 뒤 다시 눌러 주세요.
               </Notice>
             )}
-            <Button size="lg" className="w-full" loading={sending} onClick={onRequest}>
-              입금했어요
+            <p className="text-center text-[13.5px] font-semibold text-brick">
+              ⚠️ 입금한 뒤 아래 버튼을 꼭 눌러 주세요. 누르지 않으면 확인이 시작되지 않아요.
+            </p>
+            <Button size="lg" className="-mt-3 w-full" loading={sending} onClick={onRequest}>
+              입금 완료했어요
             </Button>
           </>
         )
@@ -227,7 +260,8 @@ export function PaymentPanel({
       {error && <Notice tone="error">{error}</Notice>}
 
       <ul className="list-disc space-y-1.5 pl-5 text-[13px] leading-relaxed text-ink-soft">
-        <li>입금 후 15분 이내 확인돼요.</li>
+        <li>&lsquo;입금 완료했어요&rsquo;를 누른 뒤 15분 이내 확인돼요.</li>
+        <li>입금자명을 바꾸지 못하고 보냈다면 보낸 이름·시각·금액을 문의 메일로 알려 주세요.</li>
         <li>
           결제는 {hours}에 할 수 있어요. 그 밖의 시간에 보낸 입금은 오전 {info.open_hour}시 이후 확인돼요.
         </li>
