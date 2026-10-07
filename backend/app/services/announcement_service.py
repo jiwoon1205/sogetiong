@@ -4,6 +4,8 @@
   그 뒤로는 어느 기기에서 로그인해도 다시 뜨지 않는다.
 - 하루 한 번 공지 (2026-10-06): 결제 시스템 오픈 안내. 이름에 한국 날짜를 붙인다 (예: payment-open:2026-10-06).
   오늘 "확인"을 누르면 오늘은 안 뜨고, 날짜가 바뀌면 이름이 달라져서 다시 한 번 뜬다.
+  2026-10-07: 한국 시간 오후 3시(PAYMENT_DAILY_REPEAT_HOUR)부터는 이름에 "-15"를 붙여 (예: payment-open:2026-10-07-15)
+  오전에 이미 본 사람에게도 한 번 더 뜬다. 오후 3시 뒤에 처음 들어온 사람은 한 번만 본다.
   보여주는 동안: 이용권 판매 중(MEMBERSHIP_ENABLED) + 정식 배포(OPEN_AT) 전.
   안 보여주는 사람: 이미 이용권·VIP를 산 사람, 운영자 테스트 계정.
   하루 공지가 떠 있는 동안에는 CURRENT보다 먼저 보여준다.
@@ -13,7 +15,7 @@
 
 from datetime import datetime
 
-from app.core.time import kst_today, utcnow
+from app.core.time import KST, kst_today, utcnow
 from app.models.user import User
 from app.services import membership_service, vip_service
 
@@ -22,6 +24,8 @@ CURRENT: str | None = "push-alerts-2026-10"
 
 # 결제 시스템 오픈 공지 (하루 한 번, 정식 배포 전까지)
 PAYMENT_DAILY_PREFIX = "payment-open:"
+# 이 시각(한국 시간)부터 하루 공지를 한 번 더 띄운다 (2026-10-07). None이면 하루 한 번만
+PAYMENT_DAILY_REPEAT_HOUR: int | None = 15
 
 
 def _bought(user: User) -> bool:
@@ -35,7 +39,10 @@ def daily_payment_key(user: User, now: datetime | None = None) -> str | None:
         return None
     if vip_service.is_vip_tester(user) or _bought(user):
         return None
-    return f"{PAYMENT_DAILY_PREFIX}{kst_today(now).isoformat()}"
+    key = f"{PAYMENT_DAILY_PREFIX}{kst_today(now).isoformat()}"
+    if PAYMENT_DAILY_REPEAT_HOUR is not None and now.astimezone(KST).hour >= PAYMENT_DAILY_REPEAT_HOUR:
+        key += f"-{PAYMENT_DAILY_REPEAT_HOUR}"  # 오후 공지: 오전에 본 사람에게도 한 번 더
+    return key
 
 
 def pending(user: User, now: datetime | None = None) -> str | None:

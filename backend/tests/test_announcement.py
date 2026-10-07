@@ -5,6 +5,7 @@
 - 지금 공지가 아닌 이름은 받지 않는다. 공지를 끄면(None) 아무것도 안 나온다.
 """
 
+from app.models.user import User
 from app.services import announcement_service
 
 from tests.conftest import UserClient, signup
@@ -64,7 +65,7 @@ def test_payment_notice_once_a_day_before_open(sent_codes, db, paid_world, monke
     tomorrow = time_mod.kst_today() + timedelta(days=1)
     monkeypatch.setattr("app.services.announcement_service.kst_today", lambda now=None: tomorrow)
     nxt = a.get("/api/v1/me").json()["announcement"]
-    assert nxt == f"{announcement_service.PAYMENT_DAILY_PREFIX}{tomorrow.isoformat()}" and nxt != key
+    assert nxt.startswith(f"{announcement_service.PAYMENT_DAILY_PREFIX}{tomorrow.isoformat()}") and nxt != key
 
 
 def test_payment_notice_hidden_after_open_or_purchase(sent_codes, db, paid_world, monkeypatch):
@@ -82,3 +83,32 @@ def test_payment_notice_hidden_after_open_or_purchase(sent_codes, db, paid_world
     monkeypatch.setattr(paid_world, "membership_enabled", False)
     monkeypatch.setattr(paid_world, "vip_enabled", False)
     assert not (a.get("/api/v1/me").json()["announcement"] or "").startswith(announcement_service.PAYMENT_DAILY_PREFIX)
+
+
+def test_payment_notice_again_from_3pm(sent_codes, db, paid_world, monkeypatch):
+    """한국 시간 오후 3시부터는 오전에 본 사람에게도 한 번 더 뜬다 (2026-10-07)."""
+    from app.core.time import KST
+    from datetime import datetime
+
+    admin = admin_login(db)
+    a = ready_user(sent_codes, db, admin, "a@hufs.ac.kr", gender="MALE", want="FEMALE")
+    _daily(monkeypatch, paid_world)
+    user = db.query(User).filter(User.email == "a@hufs.ac.kr").one()
+    monkeypatch.setattr(paid_world, "open_at", datetime(2026, 10, 8, tzinfo=KST))
+    am = datetime(2026, 10, 7, 11, 0, tzinfo=KST)
+    before3 = datetime(2026, 10, 7, 14, 59, tzinfo=KST)
+    pm = datetime(2026, 10, 7, 15, 0, tzinfo=KST)
+    night = datetime(2026, 10, 7, 23, 59, tzinfo=KST)
+    k_am = announcement_service.daily_payment_key(user, am)
+    assert k_am == "payment-open:2026-10-07"
+    assert announcement_service.daily_payment_key(user, before3) == k_am
+    k_pm = announcement_service.daily_payment_key(user, pm)
+    assert k_pm == "payment-open:2026-10-07-15" and k_pm != k_am
+    assert announcement_service.daily_payment_key(user, night) == k_pm
+    # 오전에 봤어도 오후 3시부터 다시 뜨고, 오후 공지를 보면 그날은 끝
+    user.announcement_seen = k_am
+    assert announcement_service.pending(user, pm) == k_pm
+    user.announcement_seen = k_pm
+    assert announcement_service.pending(user, night) is None
+    # 오후에 "봤음"으로 보내는 이름도 받아준다
+    assert announcement_service.is_showable(user, k_pm, pm)
