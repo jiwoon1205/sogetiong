@@ -89,14 +89,14 @@ def test_banked_days_started_during_maintenance_count_from_open(maint, can_start
 def test_after_open_counts_from_now(maint, can_start):
     u = blank_user()
     membership_service.add_membership(None, u, kst(2026, 10, 12))
-    assert as_utc(u.member_until) == kst_midnight_after(2026, 11, 9)
+    assert as_utc(u.member_until) == kst_midnight_after(2026, 10, 26)  # 정식 배포 뒤 구매 = 2주 (2026-10-06)
 
 
 def test_no_open_at_keeps_old_rule(maint, can_start, monkeypatch):
     monkeypatch.setattr(maint, "open_at", None)
     u = blank_user()
     membership_service.add_membership(None, u, kst(2026, 10, 9))
-    assert as_utc(u.member_until) == kst_midnight_after(2026, 11, 6)
+    assert as_utc(u.member_until) == kst_midnight_after(2026, 10, 23)  # 2주 (2026-10-06)
     assert membership_service.before_open(kst(2026, 10, 9)) is False
 
 

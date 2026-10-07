@@ -52,3 +52,28 @@ export function untilDay(iso: string): string {
   const day = d.toLocaleDateString("ko-KR", { timeZone: "Asia/Seoul", month: "long", day: "numeric" });
   return `${day} 밤 12시까지`;
 }
+
+/** 한국 시간 날짜를 "YYYY-MM-DD"로 */
+function kstDate(d: Date): string {
+  return d.toLocaleDateString("en-CA", { timeZone: "Asia/Seoul" });
+}
+
+/** 할인 마감 D-Day (2026-10-07). 마감 시각(밤 12시 = 다음 날 0시)을 지난 마지막 날 기준.
+ *  마지막 날이면 "D-Day", 하루 전이면 "D-1". 이미 끝났으면 null. */
+export function dday(iso: string, now: Date = new Date()): string | null {
+  const end = parseTime(iso);
+  if (end.getTime() <= now.getTime()) return null;
+  const last = kstDate(new Date(end.getTime() - 1000));
+  const diff = Math.round((Date.parse(last) - Date.parse(kstDate(now))) / 86_400_000);
+  return diff <= 0 ? "D-Day" : `D-${diff}`;
+}
+
+/** 할인 마감 안내. 예: "오늘 밤 12시 마감" / "10월 7일 밤 12시 마감" */
+export function ddayEnd(iso: string, now: Date = new Date()): string {
+  return dday(iso, now) === "D-Day" ? "오늘 밤 12시 마감" : untilDay(iso).replace("까지", " 마감");
+}
+
+/** 할인율 (내림). 예: 8,000원 → 3,000원 = 62 */
+export function discountPercent(regular: number, price: number): number {
+  return regular > 0 ? Math.floor(((regular - price) / regular) * 100) : 0;
+}

@@ -16,6 +16,7 @@ from datetime import timedelta
 
 import pytest
 
+from app.core.config import get_settings
 from app.core.time import utcnow
 from app.models.matching import Like
 from app.models.photo import AppearanceEvaluation
@@ -275,3 +276,14 @@ def test_price_regular_and_discount(sent_codes, db, world, monkeypatch):
     assert me.get("/api/v1/me/payment").json()["amount"] == 4000  # 아직 "입금했어요" 전이면 지금 가격으로
     monkeypatch.setattr(world, "membership_discount_until", None)
     assert membership_service.price() == 4000
+
+
+def test_regular_price_follows_period(monkeypatch):
+    """정가는 지금 사면 받는 일수 기준 (2026-10-07): 베타(28일) = 8,000원, 정식 배포 뒤(14일) = 4,000원."""
+    s = get_settings()
+    monkeypatch.setattr(s, "open_at", utcnow() + timedelta(days=1))
+    assert membership_service.regular_price() == 8000
+    monkeypatch.setattr(s, "open_at", utcnow() - timedelta(seconds=1))
+    assert membership_service.regular_price() == 4000
+    monkeypatch.setattr(s, "open_at", None)
+    assert membership_service.regular_price() == 4000

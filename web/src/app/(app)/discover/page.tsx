@@ -1,5 +1,6 @@
 "use client";
 
+import { DiscountTag, SalePrice } from "@/components/DiscountTag";
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { MatchCelebration } from "@/components/MatchCelebration";
@@ -363,8 +364,6 @@ function LikesLocked({
   const { me } = useSession();
   const m = me.membership;
   const ended = m?.status === "expired";
-  const regular = m?.regular_price;
-  const discounted = m && regular && m.price < regular;
   return (
     <div className="mb-4 rounded-card border border-line bg-paper-card px-4 py-4">
       <p className="text-[14px] font-semibold text-ink">{ended ? "이용권이 끝났어요" : "무료 체험 좋아요를 모두 사용했어요"}</p>
@@ -374,17 +373,14 @@ function LikesLocked({
           <>
             {" "}
             기본 이용권은 {m.days}일{" "}
-            {discounted ? (
-              <>
-                <s className="text-ink-faint">{regular!.toLocaleString()}원</s> <b className="text-ink">{m.price.toLocaleString()}원</b>
-              </>
-            ) : (
-              <b className="text-ink">{m.price.toLocaleString()}원</b>
-            )}
+            <span className="text-ink">
+              <SalePrice m={m} />
+            </span>
             이고, 사면 사진 바로 재검토도 1번 받을 수 있어요.
           </>
         )}
       </p>
+      <DiscountTag m={m} className="mt-2" />
       {open ? (
         <div className="mt-4 space-y-3">
           <MembershipRenew onActivated={onActivated} />

@@ -74,6 +74,14 @@ def period_days(kind: str = "SIGNUP", bought_at: datetime | None = None) -> int:
     return s.vip_days if kind == "VIP" else s.membership_days
 
 
+def regular_price(now: datetime | None = None) -> int:
+    """정가 (2026-10-07). 정식 배포 뒤 가격(MEMBERSHIP_PRICE원 = MEMBERSHIP_DAYS일)을 지금 사면 받는 일수로 환산한다.
+    베타 기간(28일)이면 4,000원 × 28/14 = 8,000원, 정식 배포 뒤(14일)면 4,000원.
+    예전에는 28일짜리에도 정가 4,000원을 붙여 할인 폭이 실제보다 작게 보였다."""
+    s = get_settings()
+    return round(s.membership_price * period_days("SIGNUP", now) / s.membership_days)
+
+
 def _start(now: datetime) -> datetime:
     """기간을 세기 시작하는 시각 = max(지금, 오픈 시각). 점검 기간에 낸 날짜를 잃지 않게."""
     at = open_at()
@@ -292,7 +300,8 @@ def view(user: User, now: datetime | None = None) -> dict:
         "days": period_days("SIGNUP", now),  # 지금 사면 받는 일수 (베타 4주 / 정식 2주)
         "days_after_open": s.membership_days,  # 정식 배포 뒤에 사면 받는 일수 (공지용)
         "price": price(now),
-        "regular_price": s.membership_price,
+        "regular_price": regular_price(now),  # 지금 사면 받는 일수 기준 정가 (베타 28일 = 8,000원)
+        "price_after_open": s.membership_price,  # 정식 배포 뒤 가격 (2주 4,000원, 공지용)
         "discount_until": s.membership_discount_until_utc.isoformat() if s.membership_discount_until_utc else None,
         "sales_open": sales_open(),
         "warn_days": s.membership_warn_days,

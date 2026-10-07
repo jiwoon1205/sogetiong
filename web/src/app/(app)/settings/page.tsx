@@ -1,5 +1,6 @@
 "use client";
 
+import { DiscountTag, SalePrice } from "@/components/DiscountTag";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { AlertSettings } from "@/components/AlertSettings";
@@ -83,14 +84,14 @@ function MyMembership({ onActivated }: { onActivated: () => void }) {
   else if (m.before_open) line = "아직 이용권이 없어요. 지금은 무료 베타 기간이에요.";
   else if (m.trial && m.trial.left > 0) line = `무료 체험 중 · 좋아요 ${m.trial.left}/${m.trial.limit}개 남음 (다시 생기지 않아요)`;
   else line = "무료 체험 좋아요를 모두 사용했어요. 추천 보기·넘기기·대화는 계속할 수 있어요.";
-  const discounted = m.regular_price && m.price < m.regular_price;
   return (
     <section id="membership" className="mt-14 scroll-mt-20">
       <p className="eyebrow mb-4">내 이용권</p>
       <div className="mb-4 rounded-card border border-line bg-paper-card px-5 py-4">
         <p className="text-[13px] text-ink-faint">
-          기본 이용권 ({m.days}일 {m.price.toLocaleString()}원{discounted ? ` · 정가 ${m.regular_price!.toLocaleString()}원` : ""})
+          기본 이용권 {m.days}일 <SalePrice m={m} strikeClass="text-ink-faint" />
         </p>
+        <DiscountTag m={m} className="mt-1" />
         <p className="mt-0.5 text-[14.5px]">{line}</p>
         {vipUntil && <p className="mt-2 text-[13.5px] text-brick">VIP {untilDay(vipUntil)}</p>}
       </div>

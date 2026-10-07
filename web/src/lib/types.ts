@@ -94,8 +94,10 @@ export type Membership = {
   days_after_open?: number;
   /** 지금 가격 (할인 중이면 할인가) */
   price: number;
-  /** 정가 (2026-10-06: 4,000원) */
+  /** 정가 = 지금 사면 받는 일수 기준 (2026-10-07: 베타 28일 8,000원 / 정식 배포 뒤 14일 4,000원) */
   regular_price?: number;
+  /** 정식 배포 뒤 가격 (2주 4,000원, 공지용) */
+  price_after_open?: number;
   /** 할인이 끝나는 시각. 없으면 할인 없음 */
   discount_until?: string | null;
   /** 이용권을 살 수 있나 (유료 시작 전에도 미리 살 수 있다) */

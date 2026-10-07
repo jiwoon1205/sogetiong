@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Button, Modal } from "@/components/ui";
 import { api } from "@/lib/api";
-import { untilDay } from "@/lib/format";
+import { dday, ddayEnd, discountPercent } from "@/lib/format";
 import { useSession } from "@/lib/session";
 import type { Membership } from "@/lib/types";
 
@@ -23,8 +23,10 @@ const PAYMENT_OPEN: Notice = {
   title: "이용권 결제가 열렸어요",
   body: (m) => {
     const price = m?.price ?? 3000;
-    const regular = m?.regular_price ?? 4000;
-    const until = m?.discount_until ? untilDay(m.discount_until) : "정식 배포 전까지";
+    const regular = m?.regular_price ?? 8000; // 지금 사면 받는 일수 기준 정가 (베타 4주 = 8,000원)
+    const afterPrice = m?.price_after_open ?? 4000; // 정식 배포 뒤 가격 (2주)
+    const until = m?.discount_until ? ddayEnd(m.discount_until) : "정식 배포 전까지";
+    const d = m?.discount_until ? dday(m.discount_until) : null;
     const vipPrice = 6000;
     const days = m?.days ?? 28; // 지금(베타) 사면 받는 일수
     const after = m?.days_after_open ?? 14; // 정식 배포 뒤에 사면 받는 일수
@@ -32,19 +34,22 @@ const PAYMENT_OPEN: Notice = {
     return (
       <>
         <div className="rounded-card border border-brick/30 bg-brick-wash px-4 py-4 text-center">
-          <p className="text-[13px] font-semibold text-brick">정식 배포 전에만 할인해요</p>
+          <p className="text-[13px] font-semibold text-brick">
+            {d && <span className="mr-1.5 rounded-full bg-brick px-2 py-0.5 text-paper">할인 {d}</span>}
+            정식 배포 전에만 {discountPercent(regular, price)}% 할인해요
+          </p>
           <p className="mt-1.5 text-[15px] text-ink">
             기본 이용권 {weeks(days)} <s className="text-ink-faint">{regular.toLocaleString()}원</s>{" "}
             <b className="num text-[22px] font-semibold text-brick">{price.toLocaleString()}원</b>
           </p>
-          <p className="mt-1 text-[12.5px] text-ink-soft">{until} · 정식 배포 후에는 {regular.toLocaleString()}원</p>
+          <p className="mt-1 text-[12.5px] text-ink-soft">{until} · 정식 배포 후에는 {weeks(after)} {afterPrice.toLocaleString()}원</p>
         </div>
         <div className="mt-3 rounded-card border border-line bg-paper-card px-4 py-3 text-center">
           <p className="text-[13.5px] leading-relaxed text-ink">
             ⏳ <b className="font-semibold">정식 배포 후에 사면 기간이 {weeks(after)}로 줄어요.</b>
           </p>
           <p className="mt-1 text-[12.5px] text-ink-soft">
-            가격은 그대로, 기본 이용권·VIP 모두 {weeks(after)}예요. 지금(베타 기간) 사면 {weeks(days)}!
+            기본 이용권 {afterPrice.toLocaleString()}원 · VIP {vipPrice.toLocaleString()}원이 모두 {weeks(after)}예요. 지금(베타 기간) 사면 {weeks(days)}!
           </p>
         </div>
         <ul className="mt-4 space-y-2 text-[14px] leading-relaxed text-ink-soft">
