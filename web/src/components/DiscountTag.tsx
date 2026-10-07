@@ -22,12 +22,22 @@ export function DiscountTag({ m, className = "" }: { m: Membership | undefined |
 }
 
 /** 정가에 가로줄 + 할인가. 할인 중이 아니면 지금 가격만 */
-export function SalePrice({ m, price, strikeClass = "text-ink-faint" }: { m: Membership | undefined | null; price?: number; strikeClass?: string }) {
+export function SalePrice({
+  m,
+  price,
+  strikeClass = "text-ink-faint",
+  priceClass = "",
+}: {
+  m: Membership | undefined | null;
+  price?: number;
+  strikeClass?: string;
+  priceClass?: string;
+}) {
   const now = price ?? m?.price ?? 0;
   if (!onSale(m) || now >= m.regular_price) return <>{now.toLocaleString()}원</>;
   return (
     <>
-      <s className={strikeClass}>{m.regular_price.toLocaleString()}원</s> <b className="font-semibold">{now.toLocaleString()}원</b>
+      <s className={strikeClass}>{m.regular_price.toLocaleString()}원</s> <b className={`font-semibold ${priceClass}`}>{now.toLocaleString()}원</b>
     </>
   );
 }

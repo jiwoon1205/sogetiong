@@ -89,7 +89,7 @@ function MyMembership({ onActivated }: { onActivated: () => void }) {
       <p className="eyebrow mb-4">내 이용권</p>
       <div className="mb-4 rounded-card border border-line bg-paper-card px-5 py-4">
         <p className="text-[13px] text-ink-faint">
-          기본 이용권 {m.days}일 <SalePrice m={m} strikeClass="text-ink-faint" />
+          기본 이용권 {m.days}일 <SalePrice m={m} strikeClass="text-ink-faint" priceClass="text-brick" />
         </p>
         <DiscountTag m={m} className="mt-1" />
         <p className="mt-0.5 text-[14.5px]">{line}</p>

@@ -139,8 +139,10 @@ export function MembershipRenew({ onActivated }: { onActivated: () => void }) {
   if (!paying)
     return (
       <Button size="lg" className="w-full" onClick={() => setPaying(true)}>
-        {m?.status === "active" ? "미리 연장하기" : "기본 이용권 시작하기"} · {days}일{" "}
-        <SalePrice m={m} price={info.amount} strikeClass="font-normal opacity-60" />
+        <span>
+          {m?.status === "active" ? "미리 연장하기" : "기본 이용권 시작하기"} · {days}일{" "}
+          <SalePrice m={m} price={info.amount} strikeClass="font-normal opacity-60" />
+        </span>
       </Button>
     );
   return (
