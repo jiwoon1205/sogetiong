@@ -194,6 +194,8 @@ export type MatchItem = {
   match_id: string;
   matched_at: string;
   partner: Card;
+  /** 안 읽은 상대 메시지 수 (2026-10-08) */
+  unread_count?: number;
   last_message: { body: string; is_mine: boolean; sent_at: string } | null;
 };
 

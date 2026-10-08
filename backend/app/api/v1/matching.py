@@ -10,10 +10,10 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.core.rate_limit import enforce_rate_limit
-from app.core.time import utcnow
+from app.core.time import as_utc, utcnow
 from app.db.session import get_db
 from app.deps import CurrentUser, get_current_user
-from app.models.matching import Like, Match, MatchingPreference, Message, Report
+from app.models.matching import Like, Match, MatchingPreference, MatchRead, Message, Report
 from app.models.profile import PublicProfile
 from app.models.user import User
 from app.schemas.matching import SendMessageRequest, TargetRequest
@@ -389,6 +389,48 @@ def _last_messages(db: Session, match_ids: list[uuid.UUID]) -> dict[uuid.UUID, M
     return {m.match_id: m for m in rows}
 
 
+def _unread_counts(db: Session, match_ids: list[uuid.UUID], user_id: uuid.UUID) -> dict[uuid.UUID, int]:
+    """대화방마다 안 읽은 상대 메시지 수 (2026-10-08, 쿼리 1번).
+    마지막으로 읽은 시각(match_reads)보다 늦게 온 상대 메시지를 센다. 읽은 기록이 없으면 상대 메시지 전부."""
+    if not match_ids:
+        return {}
+    rows = (
+        db.query(Message.match_id, func.count(Message.id))
+        .outerjoin(MatchRead, (MatchRead.match_id == Message.match_id) & (MatchRead.user_id == user_id))
+        .filter(
+            Message.match_id.in_(match_ids),
+            Message.sender_user_id != user_id,
+            (MatchRead.last_read_at.is_(None)) | (Message.created_at > MatchRead.last_read_at),
+        )
+        .group_by(Message.match_id)
+        .all()
+    )
+    return {mid: n for mid, n in rows}
+
+
+def _mark_read(db: Session, match_id: uuid.UUID, user_id: uuid.UUID) -> None:
+    """대화방을 열어 메시지를 받아 갔으면 "여기까지 읽음"으로 기록한다 (2026-10-08).
+    상대의 가장 최근 메시지 시각으로 적는다. 바뀐 게 없으면 DB에 쓰지 않는다 (4초마다 불려도 가볍게)."""
+    latest = (
+        db.query(func.max(Message.created_at))
+        .filter(Message.match_id == match_id, Message.sender_user_id != user_id)
+        .scalar()
+    )
+    if latest is None:
+        return
+    row = db.get(MatchRead, (match_id, user_id))
+    if row is None:
+        db.add(MatchRead(match_id=match_id, user_id=user_id, last_read_at=latest))
+    elif row.last_read_at is None or as_utc(row.last_read_at) < as_utc(latest):
+        row.last_read_at = latest
+    else:
+        return
+    try:
+        db.commit()
+    except IntegrityError:  # 같은 사람이 두 화면에서 동시에 열었을 때
+        db.rollback()
+
+
 @router.get("/matches")
 def list_matches(current: CurrentUser = Depends(get_current_user), db: Session = Depends(get_db)):
     matches = (
@@ -401,6 +443,7 @@ def list_matches(current: CurrentUser = Depends(get_current_user), db: Session =
     # 차단 관계와 마지막 메시지를 매칭마다 따로 묻지 않고 한 번에 가져온다 (매칭이 20개여도 쿼리 2번)
     blocked = profile_service.blocked_user_ids(db, current.id)
     last_messages = _last_messages(db, [m.id for m in matches])
+    unread = _unread_counts(db, [m.id for m in matches], current.id)
 
     # 대화 목록은 "마지막으로 대화가 오간 시간" 기준 최신순으로 보여준다.
     # 메시지가 없는 매칭은 매칭된 시간을 기준으로 삼는다.
@@ -421,6 +464,7 @@ def list_matches(current: CurrentUser = Depends(get_current_user), db: Session =
                 "match_id": str(m.id),
                 "matched_at": m.created_at.isoformat(),
                 "partner": cards[partner],
+                "unread_count": unread.get(m.id, 0),  # 안 읽은 상대 메시지 수 (2026-10-08)
                 "last_message": {
                     "body": last.body,
                     "is_mine": last.sender_user_id == current.id,
@@ -543,6 +587,9 @@ def list_messages(
             query = query.filter(Message.created_at < anchor.created_at)
         rows = query.order_by(Message.created_at.desc()).limit(limit).all()
         rows.reverse()
+    # 읽음 기록 (2026-10-08): 처음 열 때, 또는 새로 받아 간 메시지에 상대 메시지가 있을 때만 (예전 메시지 더 보기는 제외)
+    if not before and (after is None or any(m.sender_user_id != current.id for m in rows)):
+        _mark_read(db, match.id, current.id)
     # 상대의 내부 user_id 대신 is_mine만 보낸다
     return {
         "messages": [

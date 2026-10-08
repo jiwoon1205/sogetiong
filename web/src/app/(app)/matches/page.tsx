@@ -8,6 +8,7 @@ import { ReportModal } from "@/components/ReportModal";
 import { ButtonLink, Notice, PageTitle, Spinner } from "@/components/ui";
 import { api, errorMessage } from "@/lib/api";
 import { timeAgo } from "@/lib/format";
+import { usePolling } from "@/lib/polling";
 import { markMatchSeen, unseenMatches } from "@/lib/seenMatches";
 import type { MatchItem } from "@/lib/types";
 
@@ -38,6 +39,16 @@ export default function MatchesPage() {
       .catch(() => {});
   }, []);
 
+  // 목록을 열어 둔 동안 새 메시지(안 읽은 수·마지막 메시지·순서)를 15초마다 새로 받는다 (2026-10-08)
+  usePolling(
+    () =>
+      api<{ matches: MatchItem[] }>("/matches")
+        .then((r) => setItems(r.matches))
+        .catch(() => {}),
+    15000,
+    [],
+  );
+
   if (error) return <Notice tone="error">{error}</Notice>;
   if (!items) return <Spinner />;
 
@@ -54,22 +65,38 @@ export default function MatchesPage() {
         </div>
       ) : (
         <ul className="divide-y divide-line border-y border-line">
-          {items.map((m) => (
-            <li key={m.match_id}>
-              <Link href={`/chat/${m.match_id}`} className="flex items-center gap-4 py-4 transition-colors hover:bg-paper-deep/60">
-                <Initial name={m.partner.nickname} />
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-baseline justify-between gap-3">
-                    <p className="truncate text-[15.5px] font-semibold">{m.partner.nickname}</p>
-                    <p className="shrink-0 text-[12px] text-ink-faint">{timeAgo(m.last_message?.sent_at ?? m.matched_at)}</p>
+          {items.map((m) => {
+            // 안 읽은 메시지 (2026-10-08): 카톡처럼 오른쪽에 숫자 배지, 마지막 메시지를 진하게
+            const unread = m.unread_count ?? 0;
+            return (
+              <li key={m.match_id}>
+                <Link href={`/chat/${m.match_id}`} className="flex items-center gap-4 py-4 transition-colors hover:bg-paper-deep/60">
+                  <Initial name={m.partner.nickname} />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-baseline justify-between gap-3">
+                      <p className="truncate text-[15.5px] font-semibold">{m.partner.nickname}</p>
+                      <p className={unread ? "shrink-0 text-[12px] font-semibold text-brick" : "shrink-0 text-[12px] text-ink-faint"}>
+                        {timeAgo(m.last_message?.sent_at ?? m.matched_at)}
+                      </p>
+                    </div>
+                    <div className="mt-0.5 flex items-center justify-between gap-3">
+                      <p className={unread ? "truncate text-[13.5px] font-semibold text-ink" : "truncate text-[13.5px] text-ink-soft"}>
+                        {m.last_message ? `${m.last_message.is_mine ? "나: " : ""}${m.last_message.body}` : "새로운 매칭 — 먼저 인사해보세요"}
+                      </p>
+                      {unread > 0 && (
+                        <span
+                          aria-label={`안 읽은 메시지 ${unread}개`}
+                          className="num flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-brick px-1.5 text-[11.5px] font-semibold leading-none text-paper"
+                        >
+                          {unread > 99 ? "99+" : unread}
+                        </span>
+                      )}
+                    </div>
                   </div>
-                  <p className="mt-0.5 truncate text-[13.5px] text-ink-soft">
-                    {m.last_message ? `${m.last_message.is_mine ? "나: " : ""}${m.last_message.body}` : "새로운 매칭 — 먼저 인사해보세요"}
-                  </p>
-                </div>
-              </Link>
-            </li>
-          ))}
+                </Link>
+              </li>
+            );
+          })}
         </ul>
       )}
 

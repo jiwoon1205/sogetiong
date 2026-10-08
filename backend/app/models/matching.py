@@ -128,6 +128,20 @@ class Message(Base):
     created_at: Mapped[datetime] = created_at()
 
 
+class MatchRead(Base):
+    """대화방마다 "내가 어디까지 읽었나" (2026-10-08). 대화 목록에 안 읽은 메시지 수를 보여줄 때 쓴다.
+
+    last_read_at = 내가 대화방을 열었을 때 본 상대의 마지막 메시지 시각.
+    이 시각보다 늦게 온 상대 메시지 = 안 읽은 메시지. 행이 없으면 상대 메시지가 모두 안 읽은 것.
+    상대에게는 보여주지 않는다 (읽음 표시 기능 아님)."""
+
+    __tablename__ = "match_reads"
+
+    match_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("matches.id"), primary_key=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("users.id"), primary_key=True)
+    last_read_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 # ---------- 안전 ----------
 
 class Block(Base):

@@ -8,6 +8,7 @@ from app.models.matching import (
     Like,
     Match,
     MatchingPreference,
+    MatchRead,
     Message,
     Notification,
     PreferredCampus,
