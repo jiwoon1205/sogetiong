@@ -83,11 +83,15 @@ export const REFUND_NOTE =
 
 /** 기본 이용권 연장·다시 사기 (2026-10-04 구독제). 이용권이 끝났을 때 화면, 설정 화면에서 쓴다.
  *  언제든 살 수 있고, 남아 있으면 끝나는 날 뒤에 기간(m.days)이 붙는다. 확인되면 onActivated를 부른다. */
-export function MembershipRenew({ onActivated }: { onActivated: () => void }) {
+/** 다른 화면에서 "결제창을 바로 펼쳐서" 설정으로 보낼 때 쓰는 표시 (sessionStorage, 2026-10-08) */
+export const OPEN_PAY_KEY = "open-membership-pay";
+
+export function MembershipRenew({ onActivated, autoOpen = false }: { onActivated: () => void; autoOpen?: boolean }) {
   const [info, setInfo] = useState<PaymentDetail | null>(null);
   const [error, setError] = useState("");
   const [sending, setSending] = useState(false);
-  const [paying, setPaying] = useState(false);
+  // autoOpen (2026-10-08): "이용권 사러 가기"로 들어오면 결제창(계좌·입금자명)을 바로 펼친다
+  const [paying, setPaying] = useState(autoOpen);
   const last = useRef<PaymentDetail | null>(null);
 
   const load = useCallback(async () => {

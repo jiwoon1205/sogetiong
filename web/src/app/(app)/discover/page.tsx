@@ -3,10 +3,11 @@
 import { DiscountTag, SalePrice } from "@/components/DiscountTag";
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { MatchCelebration } from "@/components/MatchCelebration";
-import { MembershipRenew } from "@/components/PaymentStep";
+import { MembershipRenew, OPEN_PAY_KEY } from "@/components/PaymentStep";
 import { ProfileCard } from "@/components/ProfileCard";
-import { Button, ButtonLink, Notice, Spinner } from "@/components/ui";
+import { Button, ButtonLink, Modal, Notice, Spinner } from "@/components/ui";
 import { ApiError, api, errorMessage } from "@/lib/api";
 import { markMatchSeen } from "@/lib/seenMatches";
 import { useSession } from "@/lib/session";
@@ -71,6 +72,9 @@ export default function DiscoverPage() {
   const [likes, setLikes] = useState<Likes | null>(null);
   // 좋아요를 못 할 때 누르면 여는 이용권 안내
   const [showBuy, setShowBuy] = useState(false);
+  // 체험 좋아요를 다 썼을 때 알림창 (2026-10-08). 마지막 체험 좋아요로 매칭되면 축하 화면을 닫은 뒤에 띄운다
+  const [outOfLikes, setOutOfLikes] = useState(false);
+  const [outAfterCelebration, setOutAfterCelebration] = useState(false);
 
   const load = useCallback(async () => {
     setState({ kind: "loading" });
@@ -111,7 +115,7 @@ export default function DiscoverPage() {
     async (action: "like" | "pass") => {
       if (state.kind !== "cards" || !state.cards[0] || busy) return;
       if (action === "like" && likes && likes.mode !== "paid" && likes.left <= 0) {
-        setShowBuy(true);
+        setOutOfLikes(true);
         return;
       }
       if (action === "like" && likes && likes.left <= 0) {
@@ -133,10 +137,17 @@ export default function DiscoverPage() {
             const mode = prev.mode === "trial" && res.likes_left_today <= 0 ? "none" : prev.mode;
             return { ...prev, mode, left: res.likes_left_today };
           });
+          // 방금 마지막 체험 좋아요를 썼다 → 알림창 (매칭됐으면 축하 화면 다음에)
+          const trialJustEnded = likes?.mode === "trial" && res.likes_left_today <= 0;
+          // 설정 화면 등이 옛 숫자("3/3개 남음")를 보여주지 않게 내 정보도 새로 받는다
+          if (trialJustEnded) void refresh();
           if (res.matched && res.match_id) {
             // 이 기기에서 축하 화면을 이미 봤다고 기록 → 대화 목록에서 한 번 더 뜨지 않게
             markMatchSeen(res.match_id);
             setMatched({ card, matchId: res.match_id });
+            if (trialJustEnded) setOutAfterCelebration(true);
+          } else if (trialJustEnded) {
+            setOutOfLikes(true);
           }
         } else {
           await api("/passes", { method: "POST", body: { profile_id: card.profile_id } });
@@ -151,7 +162,7 @@ export default function DiscoverPage() {
         // → 좋아요만 막고, 카드는 그대로 두고 이용권 안내를 연다 (넘기기는 계속 가능)
         if (err instanceof ApiError && (err.code === "TRIAL_ENDED" || err.code === "MEMBERSHIP_REQUIRED")) {
           setLikes((prev) => (prev ? { ...prev, mode: "none", left: 0 } : prev));
-          setShowBuy(true);
+          setOutOfLikes(true);
           void refresh();
           return;
         }
@@ -183,6 +194,10 @@ export default function DiscoverPage() {
       onClose={() => {
         markMatchSeen(matched.matchId);
         setMatched(null);
+        if (outAfterCelebration) {
+          setOutAfterCelebration(false);
+          setOutOfLikes(true);
+        }
       }}
     />
   );
@@ -191,6 +206,14 @@ export default function DiscoverPage() {
     <>
       {renderBody()}
       {celebration}
+      {!matched && (
+        <OutOfLikesModal
+          open={outOfLikes}
+          expired={me.membership?.status === "expired"}
+          showVip={Boolean(me.vip?.visible)}
+          onClose={() => setOutOfLikes(false)}
+        />
+      )}
     </>
   );
 
@@ -286,6 +309,66 @@ export default function DiscoverPage() {
 }
 
 type Likes = { mode: LikeAccess; left: number; limit: number; base: number; vip: boolean };
+
+/** 체험 좋아요를 다 썼을 때(또는 이용권이 끝났는데 좋아요를 누를 때) 알림창 (2026-10-08).
+ *  "이용권 사러 가기" → 설정 "내 이용권"에서 결제창(계좌·입금자명)을 바로 펼친다. */
+function OutOfLikesModal({ open, expired, showVip, onClose }: { open: boolean; expired: boolean; showVip: boolean; onClose: () => void }) {
+  const { me } = useSession();
+  const router = useRouter();
+  const m = me.membership;
+  function goPay() {
+    try {
+      sessionStorage.setItem(OPEN_PAY_KEY, "1");
+    } catch {
+      /* 저장소를 못 쓰면 결제창을 직접 펼치면 된다 */
+    }
+    onClose();
+    router.push("/settings#membership");
+  }
+  return (
+    <Modal open={open} onClose={onClose} title={expired ? "이용권이 끝났어요" : "무료 체험 좋아요를 모두 사용했어요"}>
+      <div className="rounded-card border border-brick/30 bg-brick-wash px-4 py-4 text-center">
+        <p className="text-[15px] leading-relaxed text-ink">
+          {expired ? (
+            <>좋아요를 다시 보내려면 이용권이 필요해요.</>
+          ) : (
+            <>
+              무료 체험 좋아요 <b className="font-semibold text-brick">3개</b>를 모두 썼어요.
+              <br />
+              체험 좋아요는 다시 생기지 않아요.
+            </>
+          )}
+        </p>
+        {m && (
+          <p className="mt-2 text-[14.5px] text-ink">
+            기본 이용권 {m.days}일{" "}
+            <span className="text-[17px]">
+              <SalePrice m={m} priceClass="text-brick" />
+            </span>
+          </p>
+        )}
+      </div>
+      <ul className="mt-4 space-y-1.5 text-[13.5px] leading-relaxed text-ink-soft">
+        <li>💗 이용권이 있으면 하루 좋아요 5개를 쓸 수 있어요.</li>
+        <li>📸 살 때마다 사진 바로 재검토를 1번 받을 수 있어요.</li>
+        <li>💬 이용권이 없어도 추천 보기·넘기기·대화는 계속할 수 있어요.</li>
+      </ul>
+      <div className="mt-5 space-y-2.5">
+        <Button size="lg" className="w-full" onClick={goPay}>
+          이용권 사러 가기
+        </Button>
+        {showVip && (
+          <ButtonLink href="/liked" variant="secondary" size="lg" className="w-full">
+            VIP 보기
+          </ButtonLink>
+        )}
+        <Button variant="ghost" className="w-full" onClick={onClose}>
+          나중에
+        </Button>
+      </div>
+    </Modal>
+  );
+}
 
 /** "5개" 또는 VIP는 "5+5개" */
 function limitLabel({ limit, base, vip }: { limit: number; base: number; vip: boolean }) {

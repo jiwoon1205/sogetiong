@@ -2,10 +2,10 @@
 
 import { DiscountTag, SalePrice } from "@/components/DiscountTag";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { AlertSettings } from "@/components/AlertSettings";
 import { BusinessInfo } from "@/components/BusinessInfo";
-import { MembershipRenew } from "@/components/PaymentStep";
+import { MembershipRenew, OPEN_PAY_KEY } from "@/components/PaymentStep";
 import { PreferencesForm } from "@/components/PreferencesForm";
 import { SupportContact } from "@/components/SupportContact";
 import { Button, Field, Input, Modal, Notice, PageTitle, Spinner } from "@/components/ui";
@@ -73,6 +73,23 @@ export default function SettingsPage() {
 /** 내 이용권 (2026-10-04 구독제): 남은 기간 + 미리 연장. 판매 전·테스트 계정은 안 보인다.
  *  2026-10-06: 유료 시작 전에도 판매 중이면 보인다 (미리 사기), 무료 체험 좋아요 남은 개수도 보여준다. */
 function MyMembership({ onActivated }: { onActivated: () => void }) {
+  // 체험 좋아요를 다 쓴 알림창의 "이용권 사러 가기"로 들어오면 결제창을 바로 펼친다 (2026-10-08)
+  const [autoPay] = useState(() => {
+    try {
+      return sessionStorage.getItem(OPEN_PAY_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
+  useEffect(() => {
+    if (!autoPay) return;
+    try {
+      sessionStorage.removeItem(OPEN_PAY_KEY);
+    } catch {
+      /* 저장소를 못 쓰는 브라우저 */
+    }
+    document.getElementById("membership")?.scrollIntoView({ block: "start" });
+  }, [autoPay]);
   const { me } = useSession();
   const m = me.membership;
   if (!m || !(m.sales_open ?? m.enabled) || m.free) return null;
@@ -95,7 +112,7 @@ function MyMembership({ onActivated }: { onActivated: () => void }) {
         <p className="mt-0.5 text-[14.5px]">{line}</p>
         {vipUntil && <p className="mt-2 text-[13.5px] text-brick">VIP {untilDay(vipUntil)}</p>}
       </div>
-      {m.status !== "banked" && <MembershipRenew onActivated={onActivated} />}
+      {m.status !== "banked" && <MembershipRenew onActivated={onActivated} autoOpen={autoPay} />}
       <p className="mt-3 text-[12.5px] leading-relaxed text-ink-faint">
         자동 결제는 없어요. 남은 기간이 있을 때 미리 사면 끝나는 날 뒤에 {m.days}일이 더해져요. 살 때마다 사진 바로 재검토를 1번 받을 수 있어요 (쌓이지 않아요). 연장 결제는 입금 확인 후 환불되지 않아요.
       </p>
