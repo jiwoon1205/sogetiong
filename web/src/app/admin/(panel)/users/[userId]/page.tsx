@@ -30,6 +30,8 @@ type Detail = {
   /** 무료 체험 좋아요 사용 개수 (2026-10-06) */
   trial_likes_used?: number;
   trial_like_limit?: number;
+  /** 오늘 좋아요 현황 (2026-10-10). paid면 오늘 보낸 수·한도, 아니면 남은 체험 좋아요 */
+  likes_today?: LikesToday;
   /** 매칭 정지 (2026-10-05, 관리자만 봄) */
   match_suspended?: boolean;
   match_suspended_at?: string | null;
@@ -86,7 +88,7 @@ export default function UserDetail() {
           {d.is_beta_member ? "베타 가입" : "유료화 뒤 가입"}
           {" · "}
           {membershipLabel(d)}
-          {d.trial_like_limit ? <> · 체험 좋아요 {d.trial_likes_used ?? 0}/{d.trial_like_limit}</> : null}
+          {d.likes_today ? <> · {likesLabel(d.likes_today)}</> : d.trial_like_limit ? <> · 체험 좋아요 {d.trial_likes_used ?? 0}/{d.trial_like_limit}</> : null}
           {d.vip_until && <> · VIP 끝 {dateTime(d.vip_until)}</>}
         </p>
       </div>
@@ -153,6 +155,10 @@ export default function UserDetail() {
 
           {admin.can("payments:confirm") && !d.deleted_at && (
             <MembershipForm key={`${d.user_id}-${d.member_until}`} userId={d.user_id} onDone={() => load(!!d.private)} />
+          )}
+
+          {admin.can("payments:confirm") && !d.deleted_at && d.likes_today && (
+            <GiveLikesForm key={`likes-${d.user_id}`} userId={d.user_id} likes={d.likes_today} onDone={() => load(!!d.private)} />
           )}
 
           {admin.can("payments:confirm") && !d.deleted_at && !d.membership_free && (
@@ -592,6 +598,71 @@ function GenderForm({ userId, gender, want, onDone }: { userId: string; gender: 
       {ok && <Notice tone="ok">변경했어요. 사용자에게 알림이 갔어요.</Notice>}
       <Button type="submit" loading={loading} disabled={(g === gender && w === want) || reason.trim().length < 2}>
         변경
+      </Button>
+    </form>
+  );
+}
+
+type LikesToday = { access: "paid" | "trial" | "none"; sent: number | null; limit: number | null; left: number; bonus_today: number };
+
+function likesLabel(l: LikesToday): string {
+  if (l.access === "paid") return `오늘 좋아요 ${l.sent ?? 0}/${l.limit ?? 0}${l.bonus_today ? ` (관리자 +${l.bonus_today})` : ""}`;
+  return l.left > 0 ? `체험 좋아요 ${l.left}개 남음` : "좋아요 불가 (체험 다 씀·이용권 없음)";
+}
+
+/** 좋아요 더 주기 (2026-10-10, 최고 관리자). 이용권·VIP·베타면 "오늘만" 한도에 더하고, 아니면 체험 좋아요를 더 준다 */
+function GiveLikesForm({ userId, likes, onDone }: { userId: string; likes: LikesToday; onDone: () => void }) {
+  const [count, setCount] = useState("");
+  const [reason, setReason] = useState("");
+  const [error, setError] = useState("");
+  const [ok, setOk] = useState("");
+  const [loading, setLoading] = useState(false);
+  const n = Number(count);
+  const valid = Number.isInteger(n) && n >= 1 && n <= 20 && reason.trim().length >= 2;
+  const paid = likes.access === "paid";
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!window.confirm(paid ? `오늘 좋아요를 ${n}개 더 줄까요? (오늘 밤 12시까지만)` : `체험 좋아요를 ${n}개 더 줄까요?`)) return;
+    setLoading(true);
+    setError("");
+    setOk("");
+    try {
+      const r = await adminApi<{ kind: "today" | "trial"; likes: LikesToday }>(`/users/${userId}/likes`, { method: "POST", body: { count: n, reason } });
+      setOk(r.kind === "today" ? `오늘 남은 좋아요 ${r.likes.left}개가 됐어요.` : `체험 좋아요 ${r.likes.left}개가 남았어요.`);
+      setCount("");
+      setReason("");
+      onDone();
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <form onSubmit={submit} className="space-y-4">
+      <p className="eyebrow">좋아요 더 주기</p>
+      <p className="text-[14px] text-ink">
+        지금: <b className="font-semibold">{likesLabel(likes)}</b>
+        {paid && <span className="text-ink-soft"> · 오늘 남은 {likes.left}개</span>}
+      </p>
+      <Field label="더 줄 개수 (1~20)" htmlFor="give-likes-count">
+        <Input id="give-likes-count" inputMode="numeric" value={count} onChange={(e) => setCount(e.target.value.trim())} placeholder="예: 3" />
+      </Field>
+      <Field label="사유 (감사 로그에 남아요)" htmlFor="give-likes-reason">
+        <Input id="give-likes-reason" value={reason} onChange={(e) => setReason(e.target.value)} maxLength={300} placeholder="오류 보상" />
+      </Field>
+      <p className="text-[12.5px] text-ink-faint">
+        {paid
+          ? "이용권·VIP 사용자는 오늘 하루 한도에 더해져요. 한국 시간 밤 12시가 지나면 사라져요. 같은 날 또 주면 더해져요."
+          : "체험 중이거나 좋아요를 못 하는 사용자(체험 다 씀·이용권 끝)는 체험 좋아요가 늘어나요. 날짜 제한은 없고, 이용권을 사면 남은 체험 좋아요는 사라져요."}{" "}
+        사용자에게 알림은 가지 않아요.
+      </p>
+      {error && <Notice tone="error">{error}</Notice>}
+      {ok && <Notice tone="ok">{ok}</Notice>}
+      <Button type="submit" loading={loading} disabled={!valid}>
+        좋아요 주기
       </Button>
     </form>
   );

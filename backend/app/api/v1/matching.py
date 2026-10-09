@@ -144,7 +144,8 @@ def discover(
         "likes_left_today": membership_service.trial_left(current.user)
         if trial
         else profile_service.likes_left_today(db, current.id, like_limit),
-        "daily_like_limit": membership_service.trial_limit() if trial else like_limit,
+        # 관리자가 체험 좋아요를 더 줬으면 남은 개수가 3보다 클 수 있다 (2026-10-10)
+        "daily_like_limit": max(membership_service.trial_limit(), membership_service.trial_left(current.user)) if trial else like_limit,
         # VIP는 하트를 "5+5"로 보여준다 (무료 몫 5개 + VIP 몫 5개)
         "vip": vip_service.is_vip(current.user),
         "base_like_limit": settings.daily_like_limit,

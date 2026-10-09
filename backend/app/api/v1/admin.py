@@ -25,6 +25,7 @@ from app.models.profile import PrivateProfile, PublicProfile
 from app.models.university import Department
 from app.models.user import User, UserDailyVisit
 from app.schemas.admin import (
+    GiveLikesRequest,
     AdminLoginRequest,
     AdminTwoFactorRequest,
     EvaluationRequest,
@@ -588,8 +589,10 @@ def get_user(
         "membership_status": membership_service.status(user),
         "membership_free": vip_service.is_vip_tester(user),
         # 무료 체험 좋아요 사용 개수 (2026-10-06)
-        "trial_likes_used": min(user.trial_likes_used or 0, membership_service.trial_limit()),
+        "trial_likes_used": max(0, min(user.trial_likes_used or 0, membership_service.trial_limit())),
         "trial_like_limit": membership_service.trial_limit(),
+        # 오늘 좋아요 현황 (2026-10-10): 관리자가 "좋아요 더 주기"를 할 때 본다
+        "likes_today": _likes_today(db, user),
         # 매칭 정지 (2026-10-05, 관리자만 봄): 켜져 있으면 서로 LIKE해도 매칭이 숨겨진다
         "match_suspended": user.match_suspended,
         "match_suspended_at": user.match_suspended_at.isoformat() if user.match_suspended_at else None,
@@ -698,6 +701,49 @@ def adjust_user_membership(
     )
     db.commit()
     return {"user_id": str(user.id), "member_until": after, "membership_status": membership_service.status(user)}
+
+
+@router.post("/users/{user_id}/likes")
+def give_user_likes(
+    user_id: uuid.UUID,
+    payload: GiveLikesRequest,
+    request: Request,
+    admin: CurrentAdmin = Depends(require_permission("payments:confirm")),
+    db: Session = Depends(get_db),
+):
+    """좋아요를 더 준다 (2026-10-10, 최고 관리자). 이용권·VIP·베타면 "오늘만" 하루 한도에 더하고,
+    체험 중이거나 좋아요를 못 하는 사람(체험 다 씀·이용권 끝)은 체험 좋아요를 더 준다. 사용자에게 알림은 없다."""
+    user = _user_or_404(db, user_id)
+    if user.deleted_at is not None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="탈퇴한 사용자는 바꿀 수 없습니다.")
+    before = _likes_today(db, user)
+    kind = membership_service.give_likes(user, payload.count)
+    db.flush()
+    after = _likes_today(db, user)
+    audit_service.record(
+        db,
+        admin_id=admin.id,
+        action="LIKES_GIVE",
+        target_type="USER",
+        target_id=user.id,
+        request=request,
+        metadata={"count": payload.count, "kind": kind, "before_left": before["left"], "after_left": after["left"], "reason": payload.reason},
+    )
+    db.commit()
+    return {"user_id": str(user.id), "kind": kind, "likes": after}
+
+
+def _likes_today(db: Session, user: User) -> dict:
+    """관리자 화면용 좋아요 현황 (2026-10-10).
+    access: paid(하루 한도) / trial(체험 좋아요 남음) / none(좋아요 불가)
+    paid면 오늘 보낸 수·오늘 한도·관리자가 준 오늘 추가분, 아니면 남은 체험 좋아요."""
+    access = membership_service.like_access(user)
+    if access == "paid":
+        limit = vip_service.daily_like_limit(user)
+        sent = profile_service.likes_sent_today(db, user.id)
+        return {"access": access, "sent": sent, "limit": limit, "left": max(0, limit - sent), "bonus_today": vip_service.bonus_likes_today(user)}
+    left = membership_service.trial_left(user)
+    return {"access": access, "sent": None, "limit": None, "left": left, "bonus_today": 0}
 
 
 @router.post("/users/{user_id}/vip-adjust")

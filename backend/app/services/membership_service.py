@@ -23,7 +23,7 @@ from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
-from app.core.time import as_utc, kst_day_start, utcnow
+from app.core.time import as_utc, kst_day_start, kst_today, utcnow
 from app.models.user import User
 from app.services import profile_service, vip_service
 
@@ -154,6 +154,29 @@ def like_access(user: User, now: datetime | None = None) -> str:
     if has_membership(user, now):
         return "paid"
     return "trial" if trial_left(user) > 0 else "none"
+
+
+def give_likes(user: User, count: int, now: datetime | None = None) -> str:
+    """관리자가 좋아요를 더 준다 (2026-10-10). 어떤 좋아요를 주는지는 지금 상태에 따라 다르다.
+
+    - 이용권·VIP·베타(paid): 오늘(한국 시간)만 쓰는 추가 좋아요 → 하루 한도 + count. 자정이 지나면 사라진다.
+      같은 날 또 주면 더해진다.
+    - 체험 중·체험 다 씀·이용권 끝(trial/none): 하루 한도가 없으므로 체험 좋아요를 count개 더 준다 (날짜 제한 없음).
+      나중에 이용권을 사면 다른 체험 좋아요처럼 사라진다 (end_trial).
+    돌려주는 값: "today" 또는 "trial" (감사 로그·화면 안내용)
+    """
+    now = now or utcnow()
+    if like_access(user, now) == "paid":
+        today = kst_today(now)
+        if user.bonus_likes_date == today:
+            user.bonus_likes = (user.bonus_likes or 0) + count
+        else:
+            user.bonus_likes = count
+            user.bonus_likes_date = today
+        return "today"
+    # 체험 좋아요는 "쓴 개수"로 세므로, 쓴 개수를 줄여서 더 준다 (0보다 작아질 수 있다 = 기본 3개보다 많이 남음)
+    user.trial_likes_used = (user.trial_likes_used or 0) - count
+    return "trial"
 
 
 def end_trial(user: User) -> None:
@@ -310,5 +333,10 @@ def view(user: User, now: datetime | None = None) -> dict:
         "before_open": before_open(now),
         # 무료 체험 (2026-10-06). like_access: paid / trial / none
         "like_access": like_access(user, now),
-        "trial": {"limit": trial_limit(), "used": min(user.trial_likes_used or 0, trial_limit()), "left": trial_left(user)},
+        # 관리자가 체험 좋아요를 더 줬으면 남은 개수가 3보다 클 수 있다 → limit을 남은 개수 이상으로 보여준다 (2026-10-10)
+        "trial": {
+            "limit": max(trial_limit(), trial_left(user)),
+            "used": max(0, min(user.trial_likes_used or 0, trial_limit())),
+            "left": trial_left(user),
+        },
     }

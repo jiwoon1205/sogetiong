@@ -89,6 +89,13 @@ class ReportUpdateRequest(BaseModel):
     admin_note: str | None = Field(default=None, max_length=1000)
 
 
+class GiveLikesRequest(BaseModel):
+    """POST /admin/users/{user_id}/likes — 좋아요 더 주기 (2026-10-10). 사유는 감사 로그에 남는다."""
+
+    count: int = Field(ge=1, le=20)
+    reason: str = Field(min_length=2, max_length=300)
+
+
 class MembershipAdjustRequest(BaseModel):
     """POST /admin/users/{user_id}/membership-adjust — 이용권 기간 늘리기/줄이기 (2026-10-04 D8)
 

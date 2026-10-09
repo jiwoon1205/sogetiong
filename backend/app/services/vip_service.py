@@ -19,7 +19,7 @@ from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
-from app.core.time import as_utc, utcnow
+from app.core.time import as_utc, kst_today, utcnow
 from app.models.user import User
 
 
@@ -61,9 +61,16 @@ def feature_visible(user: User) -> bool:
     return s.vip_enabled or s.vip_preview or is_vip_tester(user)
 
 
+def bonus_likes_today(user: User) -> int:
+    """관리자가 준 오늘만 쓰는 추가 좋아요 (2026-10-10). 날짜가 오늘(한국 시간)이 아니면 0."""
+    return (user.bonus_likes or 0) if user.bonus_likes_date == kst_today() else 0
+
+
 def daily_like_limit(user: User) -> int:
+    """오늘 보낼 수 있는 LIKE 수 = 기본(무료 5 / VIP 10) + 관리자가 준 오늘 추가분."""
     s = get_settings()
-    return s.vip_daily_like_limit if is_vip(user) else s.daily_like_limit
+    base = s.vip_daily_like_limit if is_vip(user) else s.daily_like_limit
+    return base + bonus_likes_today(user)
 
 
 def pass_cooldown_hours(user: User) -> int:

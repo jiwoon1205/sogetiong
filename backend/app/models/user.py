@@ -66,6 +66,10 @@ class User(Base):
     #   이 시각 뒤에 그 혜택으로 낸 사진이 승인되면 사용한 것 (사면 다시 1회로 채워짐, 쌓이지 않음)
     trial_likes_used: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
     rereview_granted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # 관리자가 준 "오늘만" 추가 좋아요 (2026-10-10, 마이그레이션 0023). bonus_likes_date가 오늘(한국 시간)일 때만 하루 한도에 더한다.
+    # 날짜가 지나면 저절로 무시된다 (지우지 않아도 됨). 계산은 vip_service.daily_like_limit
+    bonus_likes: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
+    bonus_likes_date: Mapped[date | None] = mapped_column(Date, nullable=True)
 
     public_profile = relationship("PublicProfile", back_populates="user", uselist=False)
     private_profile = relationship("PrivateProfile", back_populates="user", uselist=False)
