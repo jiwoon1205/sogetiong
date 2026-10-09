@@ -45,6 +45,8 @@ CAMPUSES: dict[str, list[str]] = {
         "Language & AI융합학부", "Social Science & AI융합학부",
         # 학부 (단과대학 소속 없음)
         "국제학부", "Language & Diplomacy학부", "Language & Trade학부", "자유전공학부(서울)",
+        # 2026-10-09 추가 (사용자 요청)
+        "KFL학부 외국어로서의한국어통번역전공", "동북아외교통상",
     ],
     "글로벌캠퍼스": [
         # 인문대학
