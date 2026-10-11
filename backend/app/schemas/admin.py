@@ -89,6 +89,13 @@ class ReportUpdateRequest(BaseModel):
     admin_note: str | None = Field(default=None, max_length=1000)
 
 
+class SuperVipRequest(BaseModel):
+    """POST /admin/users/{user_id}/super-vip — 슈퍼 VIP 켜기/끄기 (2026-10-12). 사유는 감사 로그에 남는다."""
+
+    enabled: bool
+    reason: str = Field(min_length=2, max_length=300)
+
+
 class GiveLikesRequest(BaseModel):
     """POST /admin/users/{user_id}/likes — 좋아요 더 주기 (2026-10-10). 사유는 감사 로그에 남는다."""
 

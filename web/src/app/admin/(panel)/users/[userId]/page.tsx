@@ -34,6 +34,8 @@ type Detail = {
   likes_today?: LikesToday;
   /** 탈퇴 7일 뒤 사진 파일이 지워진 다음 재가입, 아직 새 사진 없음 (2026-10-11) */
   photo_files_purged?: boolean;
+  /** 슈퍼 VIP (2026-10-12) */
+  super_vip?: boolean;
   /** 매칭 정지 (2026-10-05, 관리자만 봄) */
   match_suspended?: boolean;
   match_suspended_at?: string | null;
@@ -157,6 +159,10 @@ export default function UserDetail() {
 
           {admin.can("payments:confirm") && !d.deleted_at && (
             <MembershipForm key={`${d.user_id}-${d.member_until}`} userId={d.user_id} onDone={() => load(!!d.private)} />
+          )}
+
+          {admin.can("payments:confirm") && !d.deleted_at && (
+            <SuperVipForm key={`super-${d.user_id}-${d.super_vip}`} userId={d.user_id} enabled={!!d.super_vip} onDone={() => load(!!d.private)} />
           )}
 
           {admin.can("payments:confirm") && !d.deleted_at && d.likes_today && (
@@ -610,6 +616,48 @@ function GenderForm({ userId, gender, want, onDone }: { userId: string; gender: 
   );
 }
 
+/** 슈퍼 VIP 켜기/끄기 (2026-10-12, 최고 관리자) */
+function SuperVipForm({ userId, enabled, onDone }: { userId: string; enabled: boolean; onDone: () => void }) {
+  const [reason, setReason] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!window.confirm(enabled ? "슈퍼 VIP를 끌까요?" : "슈퍼 VIP로 지정할까요?")) return;
+    setLoading(true);
+    setError("");
+    try {
+      await adminApi(`/users/${userId}/super-vip`, { method: "POST", body: { enabled: !enabled, reason } });
+      setReason("");
+      onDone();
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <form onSubmit={submit} className="space-y-4">
+      <p className="eyebrow">슈퍼 VIP</p>
+      <p className="text-[14px] text-ink">
+        지금: <b className={enabled ? "font-semibold text-brick" : "font-semibold"}>{enabled ? "슈퍼 VIP" : "아님"}</b>
+      </p>
+      <Field label="사유 (감사 로그에 남아요)" htmlFor="super-vip-reason">
+        <Input id="super-vip-reason" value={reason} onChange={(e) => setReason(e.target.value)} maxLength={300} placeholder="운영 계정" />
+      </Field>
+      <p className="text-[12.5px] text-ink-faint">
+        영구 무료 VIP예요. 상대의 나이·캠퍼스 조건과 관계없이 추천 맨 앞(한 화면에 최대 2명)에 나와요. 성별·차단·같은 과 제외는 지켜요. 본인과 다른 사용자에게는 아무 표시도 없어요.
+      </p>
+      {error && <Notice tone="error">{error}</Notice>}
+      <Button type="submit" variant={enabled ? "danger" : "primary"} loading={loading} disabled={reason.trim().length < 2}>
+        {enabled ? "슈퍼 VIP 끄기" : "슈퍼 VIP로 지정"}
+      </Button>
+    </form>
+  );
+}
+
 type LikesToday = { access: "paid" | "trial" | "none"; sent: number | null; limit: number | null; left: number; bonus_today: number };
 
 function likesLabel(l: LikesToday): string {
@@ -676,6 +724,7 @@ function GiveLikesForm({ userId, likes, onDone }: { userId: string; likes: Likes
 }
 
 function membershipLabel(d: Detail): string {
+  if (d.super_vip) return "슈퍼 VIP (영구 무료)";
   if (d.membership_free) return "이용권 무료 (테스트 계정)";
   switch (d.membership_status) {
     case "active":

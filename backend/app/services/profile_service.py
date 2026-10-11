@@ -180,6 +180,7 @@ def people_from_profiles(db: Session, profiles: list[PublicProfile]) -> list[Per
     births = birth_dates_of(db, user_ids)
     interests = interests_of(db, user_ids)
     evaluations = latest_evaluations(db, user_ids)
+    supers = {uid for (uid,) in db.query(User.id).filter(User.id.in_(user_ids), User.super_vip.is_(True))} if user_ids else set()
     people = []
     for p in profiles:
         if p.user_id not in births:
@@ -199,6 +200,7 @@ def people_from_profiles(db: Session, profiles: list[PublicProfile]) -> list[Per
                 has_ideal_type=bool(p.ideal_type),
                 tier=evaluation.tier if evaluation else None,
                 activity=activity.get(p.user_id, 0.0),
+                super_vip=p.user_id in supers,
             )
         )
     return people

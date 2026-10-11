@@ -70,6 +70,9 @@ class User(Base):
     # 날짜가 지나면 저절로 무시된다 (지우지 않아도 됨). 계산은 vip_service.daily_like_limit
     bonus_likes: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
     bonus_likes_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    # 슈퍼 VIP (2026-10-12, 마이그레이션 0024, 관리자가 지정): 영구 무료 VIP + 상대의 나이·캠퍼스 조건과 무관하게 추천에 나온다.
+    # 성별·차단·같은 과 제외는 지킨다. 본인·다른 사람 모두 모른다. → matching_service.mutually_compatible, rank
+    super_vip: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false(), nullable=False)
 
     public_profile = relationship("PublicProfile", back_populates="user", uselist=False)
     private_profile = relationship("PrivateProfile", back_populates="user", uselist=False)

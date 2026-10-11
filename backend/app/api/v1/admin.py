@@ -26,6 +26,7 @@ from app.models.university import Department
 from app.models.user import User, UserDailyVisit
 from app.schemas.admin import (
     GiveLikesRequest,
+    SuperVipRequest,
     AdminLoginRequest,
     AdminTwoFactorRequest,
     EvaluationRequest,
@@ -588,6 +589,8 @@ def get_user(
         "member_days_banked": user.member_days_banked or 0,
         "membership_status": membership_service.status(user),
         "membership_free": vip_service.is_vip_tester(user),
+        # 슈퍼 VIP (2026-10-12): 영구 무료 VIP + 나이·캠퍼스 조건과 무관하게 추천 맨 앞 (관리자만 봄)
+        "super_vip": bool(user.super_vip),
         # 무료 체험 좋아요 사용 개수 (2026-10-06)
         "trial_likes_used": max(0, min(user.trial_likes_used or 0, membership_service.trial_limit())),
         "trial_like_limit": membership_service.trial_limit(),
@@ -703,6 +706,35 @@ def adjust_user_membership(
     )
     db.commit()
     return {"user_id": str(user.id), "member_until": after, "membership_status": membership_service.status(user)}
+
+
+@router.post("/users/{user_id}/super-vip")
+def set_super_vip(
+    user_id: uuid.UUID,
+    payload: SuperVipRequest,
+    request: Request,
+    admin: CurrentAdmin = Depends(require_permission("payments:confirm")),
+    db: Session = Depends(get_db),
+):
+    """슈퍼 VIP 켜기/끄기 (2026-10-12, 최고 관리자). 영구 무료 VIP + 상대의 나이·캠퍼스 조건과 무관하게 추천 맨 앞에 나온다.
+    성별·차단·같은 과 제외는 지킨다. 사용자에게 알림은 없고, 화면 어디에도 표시되지 않는다."""
+    user = _user_or_404(db, user_id)
+    if user.deleted_at is not None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="탈퇴한 사용자는 바꿀 수 없습니다.")
+    if user.super_vip == payload.enabled:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="이미 그 상태예요.")
+    user.super_vip = payload.enabled
+    audit_service.record(
+        db,
+        admin_id=admin.id,
+        action="SUPER_VIP_ON" if payload.enabled else "SUPER_VIP_OFF",
+        target_type="USER",
+        target_id=user.id,
+        request=request,
+        metadata={"reason": payload.reason},
+    )
+    db.commit()
+    return {"user_id": str(user.id), "super_vip": user.super_vip}
 
 
 @router.post("/users/{user_id}/likes")

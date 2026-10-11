@@ -24,7 +24,10 @@ from app.models.user import User
 
 
 def is_vip_tester(user: User) -> bool:
-    """VIP 테스트 계정인가? (설정 VIP_TEST_EMAILS에 적힌 학교 메일)"""
+    """영구 무료 VIP인가? = VIP 테스트 계정(설정 VIP_TEST_EMAILS에 적힌 학교 메일) 또는 슈퍼 VIP (2026-10-12).
+    이용권 없이 항상 이용·VIP 혜택·"내 이용권" 칸 숨김·하루 매칭 한도 제외가 모두 같다."""
+    if getattr(user, "super_vip", False):
+        return True
     return (user.email or "").strip().lower() in get_settings().vip_test_email_set
 
 
@@ -44,7 +47,7 @@ def is_vip(user: User) -> bool:
 def vip_user_ids(db: Session) -> set[uuid.UUID]:
     """지금 VIP인 사람 전부 (혜택 5: 이 사람들을 PASS하면 그날만 숨겨진다)."""
     emails = get_settings().vip_test_email_set
-    conditions = [User.vip_until > utcnow()]
+    conditions = [User.vip_until > utcnow(), User.super_vip.is_(True)]
     if emails:
         conditions.append(func.lower(User.email).in_(emails))
     return {r[0] for r in db.query(User.id).filter(or_(*conditions))}

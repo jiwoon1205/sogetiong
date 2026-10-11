@@ -87,6 +87,8 @@ class Settings(BaseSettings):
 
     # 나를 LIKE한 사람 우대: 추천 한 페이지에 최대 이만큼 자리를 준다 (위치는 매번 랜덤)
     liked_me_slots: int = 2
+    # 슈퍼 VIP (2026-10-12): 추천 한 페이지 맨 앞에 넣는 최대 인원. 여러 명이면 그중 랜덤
+    super_vip_slots: int = 2
     # 우대를 적용할 확률. 항상 넣으면 "이 카드 = 나를 좋아하는 사람"이라고 티가 난다.
     liked_me_probability: float = 0.7
 

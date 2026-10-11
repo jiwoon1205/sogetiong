@@ -48,6 +48,8 @@ class Person:
     tier: str | None = None  # HIGH / MID / LOW (내부 전용)
     # 활동 점수 0~1: 최근 14일 중 접속한 날 수 ÷ 14 (2026-10-01)
     activity: float = 0.0
+    # 슈퍼 VIP (2026-10-12, 관리자 지정): 나이·캠퍼스 조건과 무관하게 추천에 나온다 (내부 전용)
+    super_vip: bool = False
 
 
 @dataclass
@@ -93,6 +95,21 @@ def satisfies(viewer: Person, candidate: Person) -> bool:
     return True
 
 
+def _basic_ok(viewer: Person, candidate: Person) -> bool:
+    """슈퍼 VIP가 끼어 있을 때도 지키는 조건 (한 방향): 원하는 성별, 학과 있음, 같은 과 제외 (2026-10-12).
+    나이·캠퍼스는 보지 않는다. 차단은 API(excluded_user_ids)에서 따로 뺀다."""
+    prefs = viewer.preferences
+    if prefs is None:
+        return False
+    if prefs.preferred_gender != "ANY" and candidate.gender != prefs.preferred_gender:
+        return False
+    if candidate.department_id is None:
+        return False
+    if prefs.exclude_same_department and candidate.department_id == viewer.department_id:
+        return False
+    return True
+
+
 def mutually_compatible(viewer: Person, candidate: Person) -> bool:
     """양쪽 조건을 모두 만족해야 추천한다.
 
@@ -101,6 +118,9 @@ def mutually_compatible(viewer: Person, candidate: Person) -> bool:
     """
     if viewer.user_id == candidate.user_id:
         return False
+    if viewer.super_vip or candidate.super_vip:
+        # 슈퍼 VIP: 상대의 나이·캠퍼스 조건과 무관 (양쪽 모두 같은 규칙 → 슈퍼 VIP를 LIKE한 사람에게 LIKE로 답할 수도 있다)
+        return _basic_ok(viewer, candidate) and _basic_ok(candidate, viewer)
     return satisfies(viewer, candidate) and satisfies(candidate, viewer)
 
 
@@ -243,10 +263,11 @@ def rank(
     rng: random.Random | None = None,
     seen_before: set[uuid.UUID] | dict[uuid.UUID, float] | None = None,
     cannot_like: set[uuid.UUID] | None = None,
+    super_vip_slots: int = 0,
 ) -> list[Person]:
     rng = rng or random.Random()
     ordered = order(viewer, candidates, weights, rng, seen_before, cannot_like)
-    return _boost_liked_me(
+    page = _boost_liked_me(
         viewer,
         ordered,
         liked_me or set(),
@@ -255,3 +276,16 @@ def rank(
         liked_me_probability,
         rng,
     )
+    return _put_super_vip_first(ordered, page, limit, super_vip_slots, rng)
+
+
+def _put_super_vip_first(ordered: list[Person], page: list[Person], limit: int, slots: int, rng: random.Random) -> list[Person]:
+    """슈퍼 VIP를 페이지 맨 앞에 최대 slots명 넣는다 (2026-10-12). 여러 명이면 그중 랜덤으로 고른다.
+    조건(성별·같은 과)·차단·PASS 숨김을 통과한 사람만 ordered에 들어 있다."""
+    supers = [p for p in ordered if p.super_vip]
+    if slots <= 0 or not supers:
+        return page
+    picked = rng.sample(supers, min(slots, len(supers)))
+    picked_ids = {p.user_id for p in picked}
+    rest = [p for p in page if p.user_id not in picked_ids]
+    return (picked + rest)[:limit]

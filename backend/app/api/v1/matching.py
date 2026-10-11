@@ -129,6 +129,7 @@ def discover(
         liked_me_probability=settings.liked_me_probability,
         seen_before=profile_service.passed_before_ids(db, current.id, pass_cooldown_hours=cooldown),
         cannot_like=cannot_like,
+        super_vip_slots=settings.super_vip_slots,  # 슈퍼 VIP는 페이지 맨 앞 (2026-10-12)
     )
     # 카드에는 외모 등급도, "나를 LIKE했는지"도 들어가지 않는다 (build_cards가 보내는 항목만 나감)
     cards = profile_service.build_cards(db, [by_user[p.user_id] for p in ranked])
