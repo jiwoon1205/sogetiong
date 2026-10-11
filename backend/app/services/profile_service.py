@@ -204,13 +204,34 @@ def people_from_profiles(db: Session, profiles: list[PublicProfile]) -> list[Per
     return people
 
 
-def has_approved_photo(db: Session, user_id: uuid.UUID) -> bool:
+def approved_photo_filter():
+    """"승인된 사진이 있다"의 기준 (2026-10-11): 승인 + 사진 파일이 아직 있음.
+
+    탈퇴 7일 뒤 사진 파일은 지워지지만(withdrawal_service) 승인 기록은 남는다. 그 뒤에 재가입하면 그 기록이
+    새 계정으로 옮겨져서, 예전에는 볼 수 있는 사진 없이 "사진 승인됨"으로 추천에 나왔다 (관리자도 사진을 볼 수 없음).
+    → 파일이 지워진 사진은 승인된 사진으로 치지 않는다. 그런 사람은 새 사진을 올려야 한다."""
     return (
-        db.query(UserPhoto.id)
-        .filter(UserPhoto.user_id == user_id, UserPhoto.review_status == "APPROVED")
-        .first()
-        is not None
+        UserPhoto.review_status == "APPROVED",
+        UserPhoto.upload_status != "DELETED",
+        UserPhoto.storage_key != "",
     )
+
+
+def approved_photo_user_ids(db: Session):
+    """볼 수 있는 승인 사진이 있는 사용자 ID (서브쿼리용)."""
+    return db.query(UserPhoto.user_id).filter(*approved_photo_filter())
+
+
+def has_approved_photo(db: Session, user_id: uuid.UUID) -> bool:
+    return db.query(UserPhoto.id).filter(UserPhoto.user_id == user_id, *approved_photo_filter()).first() is not None
+
+
+def photo_files_purged(db: Session, user_id: uuid.UUID) -> bool:
+    """파일이 지워진 사진만 있고 볼 수 있는 사진이 하나도 없다 = 탈퇴 7일 뒤 사진 파일이 지워진 다음 재가입하고
+    아직 새 사진을 안 낸 사람 (2026-10-11). 새 사진을 내면 첫 검수처럼 받는다 (재검토 대기·이용권 조건 없음)."""
+    photos = db.query(UserPhoto.id).filter(UserPhoto.user_id == user_id)
+    has_file = photos.filter(UserPhoto.upload_status != "DELETED", UserPhoto.storage_key != "").first() is not None
+    return not has_file and photos.filter(UserPhoto.upload_status == "DELETED").first() is not None
 
 
 def has_pending_photo(db: Session, user_id: uuid.UUID) -> bool:
@@ -233,7 +254,7 @@ def discoverable_profiles_query(db: Session, university_id: uuid.UUID, *, member
     외모 등급은 "가장 최근 평가"에 있어야 한다 → 등급 없는 예전 평가만 있는 사람은
     추천 엔진(people_from_profiles → tier=None)에서 가장 뒤로 가고, API에서 한 번 더 거른다.
     """
-    approved = db.query(UserPhoto.user_id).filter(UserPhoto.review_status == "APPROVED")
+    approved = approved_photo_user_ids(db)
     evaluated = db.query(AppearanceEvaluation.user_id).filter(AppearanceEvaluation.tier.isnot(None))
     with_prefs = db.query(MatchingPreference.user_id)
     query = (

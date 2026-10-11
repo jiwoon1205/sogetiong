@@ -58,6 +58,8 @@ export type Me = {
     photo_status: "NOT_SUBMITTED" | "PENDING" | "IN_REVIEW" | "APPROVED" | "REJECTED" | "SUPERSEDED";
     preferences_done: boolean;
     photo_approved?: boolean;
+    /** 탈퇴 7일 뒤 예전 사진 파일이 지워진 다음 재가입 → 사진을 다시 올려야 함 (2026-10-11) */
+    photo_reupload?: boolean;
     /** 첫 이용권 입금이 확인돼야 사진을 낼 수 있다 (2026-10-03). 유료화 끔·이미 낸 사람 → false */
     payment_required?: boolean;
     /** 가입 단계 표시에 "이용권"을 넣을지 (유료화를 켰고 테스트 계정이 아님) */

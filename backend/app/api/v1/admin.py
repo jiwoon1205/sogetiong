@@ -110,7 +110,7 @@ def dashboard(admin: CurrentAdmin = Depends(require_permission("dashboard:read")
     active_users = db.query(User.id).filter(User.status == "ACTIVE")
 
     # 사진 검수까지 끝난 사람 (승인된 사진이 있음)
-    approved = db.query(UserPhoto.user_id).filter(UserPhoto.review_status == "APPROVED")
+    approved = profile_service.approved_photo_user_ids(db)
 
     def visitors_since(day):
         return db.query(UserDailyVisit.user_id).filter(UserDailyVisit.visit_date >= day)
@@ -536,7 +536,7 @@ def _onboarding_stages(db: Session, user_ids: list[uuid.UUID]) -> dict[uuid.UUID
         .filter(UserPhoto.user_id.in_(user_ids), UserPhoto.upload_status != "DELETED")
         .all()
     )
-    approved = {uid for uid, st in photo_rows if st == "APPROVED"}
+    approved = {uid for (uid,) in profile_service.approved_photo_user_ids(db).filter(UserPhoto.user_id.in_(user_ids))}
     unpaid = {
         u.id
         for u in db.query(User).filter(User.id.in_(user_ids)).all()
@@ -593,6 +593,8 @@ def get_user(
         "trial_like_limit": membership_service.trial_limit(),
         # 오늘 좋아요 현황 (2026-10-10): 관리자가 "좋아요 더 주기"를 할 때 본다
         "likes_today": _likes_today(db, user),
+        # 탈퇴 7일 뒤 사진 파일이 지워진 다음 재가입한 사람 (2026-10-11): 볼 수 있는 사진이 없다 → 새 사진을 내야 추천에 나온다
+        "photo_files_purged": user.deleted_at is None and profile_service.photo_files_purged(db, user.id),
         # 매칭 정지 (2026-10-05, 관리자만 봄): 켜져 있으면 서로 LIKE해도 매칭이 숨겨진다
         "match_suspended": user.match_suspended,
         "match_suspended_at": user.match_suspended_at.isoformat() if user.match_suspended_at else None,

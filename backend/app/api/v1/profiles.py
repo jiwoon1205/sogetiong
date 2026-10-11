@@ -44,7 +44,13 @@ def _my_profile(db: Session, current: CurrentUser) -> PublicProfile:
 
 
 def _latest_photo(db: Session, current: CurrentUser) -> UserPhoto | None:
-    return db.query(UserPhoto).filter(UserPhoto.user_id == current.id).order_by(UserPhoto.uploaded_at.desc()).first()
+    # 파일이 지워진 사진(탈퇴 7일 뒤 정리, 2026-10-11)은 빼고 본다
+    return (
+        db.query(UserPhoto)
+        .filter(UserPhoto.user_id == current.id, UserPhoto.upload_status != "DELETED")
+        .order_by(UserPhoto.uploaded_at.desc())
+        .first()
+    )
 
 
 def _profile_done(db: Session, current: CurrentUser) -> bool:
@@ -84,6 +90,8 @@ def get_me(current: CurrentUser = Depends(get_current_user), db: Session = Depen
             "preferences_done": has_prefs,
             # 예전에 승인된 사진이 있으면 (재검토가 반려돼도) 가입 과정은 끝난 것
             "photo_approved": profile_service.has_approved_photo(db, current.id),
+            # 탈퇴 7일 뒤 예전 사진 파일이 지워진 다음 재가입함 → 사진 단계에서 "다시 올려 주세요" 안내 (2026-10-11)
+            "photo_reupload": profile_service.photo_files_purged(db, current.id),
             # 첫 이용권 (2026-10-03, 2026-10-04 구독제): 매칭 조건 다음, 사진 전에 입금이 확인돼야 한다
             "payment_required": membership_service.needs_first_payment(
                 current.user, has_approved_photo=profile_service.has_approved_photo(db, current.id)
@@ -432,6 +440,10 @@ def upload_photo(
     rule = _resubmit_status(
         db, current.id, vip=vip_service.is_vip(current.user), granted_at=current.user.rereview_granted_at
     )
+    if not approved_before:
+        # 볼 수 있는 승인 사진이 없으면 첫 검수다 (2026-10-11): 탈퇴 7일 뒤 사진 파일이 지워지고 재가입한 사람은
+        # 예전 평가 기록이 이어져 있어도 재검토 대기·혜택 사용 없이 낸다
+        rule = {**rule, "allowed": True, "uses_free_rereview": False, "uses_purchase_rereview": False}
     if not rule["allowed"]:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,

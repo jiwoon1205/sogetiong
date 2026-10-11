@@ -32,6 +32,8 @@ type Detail = {
   trial_like_limit?: number;
   /** 오늘 좋아요 현황 (2026-10-10). paid면 오늘 보낸 수·한도, 아니면 남은 체험 좋아요 */
   likes_today?: LikesToday;
+  /** 탈퇴 7일 뒤 사진 파일이 지워진 다음 재가입, 아직 새 사진 없음 (2026-10-11) */
+  photo_files_purged?: boolean;
   /** 매칭 정지 (2026-10-05, 관리자만 봄) */
   match_suspended?: boolean;
   match_suspended_at?: string | null;
@@ -170,6 +172,11 @@ export default function UserDetail() {
           )}
 
           {admin.can("photos:read") && (d.photos?.length ?? 0) > 0 && <UserPhotos key={`${d.user_id}-photos`} photos={d.photos!} />}
+          {d.photo_files_purged && (
+            <Notice>
+              볼 수 있는 사진이 없어요. 탈퇴하고 7일이 지나 예전 사진 파일이 지워진 뒤 재가입한 계정이에요. 사용자가 새 사진을 올리면(첫 검수처럼 바로 낼 수 있어요) 여기에서 볼 수 있고, 그 전까지는 추천에 나오지 않아요.
+            </Notice>
+          )}
 
           {admin.can("chats:read") && <UserChats userId={d.user_id} />}
 

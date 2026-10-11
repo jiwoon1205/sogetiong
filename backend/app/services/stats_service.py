@@ -17,10 +17,9 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.core.time import kst_today
-from app.models.photo import UserPhoto
 from app.models.profile import PublicProfile
 from app.models.user import User, UserDailyVisit
-from app.services.profile_service import count
+from app.services.profile_service import approved_photo_user_ids, count
 
 CACHE_SECONDS = 300
 
@@ -30,7 +29,7 @@ _cache: dict = {"at": 0.0, "value": None}
 
 def _compute(db: Session) -> dict:
     week_start = kst_today() - timedelta(days=6)
-    approved = db.query(UserPhoto.user_id).filter(UserPhoto.review_status == "APPROVED")
+    approved = approved_photo_user_ids(db)
     visitors = db.query(UserDailyVisit.user_id).filter(UserDailyVisit.visit_date >= week_start)
 
     def active_gender(gender: str) -> int:

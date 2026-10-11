@@ -8,7 +8,7 @@ import { PhotoUpload } from "@/components/PhotoUpload";
 import { PreferencesForm } from "@/components/PreferencesForm";
 import { ProfileForm } from "@/components/ProfileForm";
 import { Steps } from "@/components/Steps";
-import { PageTitle, Spinner } from "@/components/ui";
+import { Notice, PageTitle, Spinner } from "@/components/ui";
 import { useCatalog } from "@/lib/catalog";
 import { SessionGate, useSession } from "@/lib/session";
 import { STEP, firstStep } from "@/lib/onboarding";
@@ -79,6 +79,13 @@ function Onboarding() {
       {step === STEP.PHOTO && (
         <>
           <PageTitle title="사진을 1~3장 제출해주세요" desc="AI가 전체적인 인상·스타일·자기관리·사진 분위기를 평가해요." />
+          {me.onboarding.photo_reupload && (
+            <div className="mb-5">
+              <Notice>
+                탈퇴하고 7일이 지나 예전 사진은 지워졌어요. 사진을 다시 올려 주세요. 바로 검수받을 수 있어요.
+              </Notice>
+            </div>
+          )}
           <PhotoUpload
             onUploaded={async () => {
               await refresh();
