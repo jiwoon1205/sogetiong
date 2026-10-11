@@ -261,24 +261,6 @@ def test_new_match_alerts_the_other_person(sent_codes, db, push_on, sent):
     assert [(e, p["body"], p["url"]) for e, p in sent["push"]] == [(FCM + "device1", "새로운 매칭이 생겼어요", f"/chat/{match_id}")]
 
 
-def test_hidden_match_sends_nothing(sent_codes, db, push_on, sent):
-    """매칭 정지로 숨겨진 매칭은 알림도 없다 (본인이 정지 사실을 알 수 없게)."""
-    admin = admin_login(db, email="boss@test.com")
-    a = ready_user(sent_codes, db, admin, "a@hufs.ac.kr", gender="FEMALE", prefs={"preferred_gender": "MALE"})
-    b = ready_user(sent_codes, db, admin, "b@hufs.ac.kr", gender="MALE", prefs={"preferred_gender": "FEMALE"})
-    subscribe(a)
-    users = admin.get("/api/v1/admin/users").json()["users"]
-    b_id = next(u["user_id"] for u in users if u["nickname"] == "user_b")
-    r = admin.patch(f"/api/v1/admin/users/{b_id}/match-suspension", json={"suspended": True, "reason": "테스트 정지"})
-    assert r.status_code == 200, r.text
-    a.post("/api/v1/likes", json={"profile_id": b.profile_id})
-    _away()
-    sent["push"].clear()
-    sent["mail"].clear()
-    b.post("/api/v1/likes", json={"profile_id": a.profile_id})
-    assert sent["push"] == [] and sent["mail"] == []
-
-
 def test_test_button(sent_codes, db, push_on, sent):
     a, _ = _pair(sent_codes, db)
     assert a.post("/api/v1/me/alerts/push/test").status_code == 409  # 이 기기에서 안 켬

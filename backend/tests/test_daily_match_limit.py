@@ -115,20 +115,6 @@ def test_vip_liked_me_list_unchanged(sent_codes, db):
     assert user_of(db, w).match_suspended is False
 
 
-def test_revealed_matches_do_not_count(sent_codes, db):
-    admin, w, men = setup(sent_codes, db)
-    wu = user_of(db, w)
-    admin.patch(f"/api/v1/admin/users/{wu.id}/match-suspension", json={"suspended": True, "reason": "수동"})
-    mutual(w, men[0])
-    mutual(w, men[1])
-    admin.patch(f"/api/v1/admin/users/{wu.id}/match-suspension", json={"suspended": False, "reason": "해제"})
-    for m in db.query(Match).filter(Match.status == "HIDDEN").all():
-        assert admin.post(f"/api/v1/admin/matches/{m.id}/reveal").status_code == 200
-    mutual(w, men[2])
-    assert match_limit_service.matches_today(db, wu.id) == 1
-    assert match_limit_service.reached_daily_limit(db, user_of(db, w)) is False
-
-
 def test_limit_zero_turns_off(sent_codes, db, monkeypatch):
     from app.core.config import get_settings
 

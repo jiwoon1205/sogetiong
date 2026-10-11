@@ -81,18 +81,6 @@ def test_super_like_only_to_recommendable_people(sent_codes, db, world):
     assert user_of(db, me).super_likes == 3  # 실패하면 쓰지 않음
 
 
-def test_hidden_match_when_suspended(sent_codes, db, world):
-    admin = admin_login(db)
-    me = ready_user(sent_codes, db, admin, "me@hufs.ac.kr", gender="MALE", want="FEMALE")
-    her = ready_user(sent_codes, db, admin, "her@hufs.ac.kr", gender="FEMALE", want="MALE")
-    uid = _give(admin, db, me, 1)
-    assert admin.patch(f"/api/v1/admin/users/{uid}/match-suspension", json={"suspended": True, "reason": "테스트"}).status_code == 200
-    r = _super(me, her)
-    assert r.status_code == 200 and r.json()["matched"] is False
-    assert db.query(Match).filter(Match.status == "HIDDEN").count() == 1
-    assert her.get("/api/v1/matches").json()["matches"] == []
-
-
 def test_buy_confirm_and_refund(sent_codes, db, world):
     admin = admin_login(db)
     me = ready_user(sent_codes, db, admin, "me@hufs.ac.kr", gender="MALE", want="FEMALE")

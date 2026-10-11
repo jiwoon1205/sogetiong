@@ -82,13 +82,12 @@ def carry_over_blocks(db: Session, previous_ids: list[uuid.UUID], new_user_id: u
 def carry_over_account(db: Session, previous: list[User], new_user: User) -> None:
     """탈퇴 후 다시 가입한 사람에게 예전 계정의 것을 이어준다 (2026-10-05).
 
-    탈퇴 → 재가입으로 외모 점수·재검토 대기·이용권·매칭 정지를 "초기화"하지 못하게 한다.
+    탈퇴 → 재가입으로 외모 점수·재검토 대기를 "초기화"하지 못하게 한다.
     - 사진·외모 평가(점수·등급) 기록을 새 계정으로 옮긴다 → 사진 단계 없이 바로 이어서 이용,
       재검토 대기(마지막 평가 후 7일/VIP 3일)와 "바로 재검토 평생 1번" 사용 여부도 그대로 이어진다.
       (탈퇴 7일 뒤 사진 파일은 지워지지만, 평가 기록은 남아서 그대로 옮겨진다)
     - 이용권·VIP 기간은 이어주지 않는다 (2026-10-11: 탈퇴하는 즉시 끝남 → profiles._end_paid_periods).
       그 전에는 남은 기간을 이어줬다.
-    - 매칭 정지 상태도 이어진다 (본인은 모름).
     차단 관계는 carry_over_blocks가 따로 옮긴다.
     """
     old = [u for u in previous if u.status == "DELETED" and u.id != new_user.id]
@@ -109,9 +108,6 @@ def carry_over_account(db: Session, previous: list[User], new_user: User) -> Non
     # 체험 개수는 예전 계정에서 비우지 않는다 (줄어드는 값이 아니라서 여러 번 재가입해도 늘지 않음)
     new_user.trial_likes_used = max([new_user.trial_likes_used or 0] + [u.trial_likes_used or 0 for u in old])
     new_user.rereview_granted_at = latest([new_user.rereview_granted_at] + [u.rereview_granted_at for u in old])
-    if any(u.match_suspended for u in old):
-        new_user.match_suspended = True
-        new_user.match_suspended_at = latest(u.match_suspended_at for u in old)
 
 
 # ---------- 학교 이메일 인증 ----------

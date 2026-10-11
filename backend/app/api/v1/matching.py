@@ -173,9 +173,6 @@ def liked_me(current: CurrentUser = Depends(get_current_user), db: Session = Dep
     if not vip_service.is_vip(current.user):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="VIP_REQUIRED")
 
-    # 매칭 정지된 사람(2026-10-05): 받은 LIKE에 답해도 매칭이 안 뜨므로, 이상하게 느끼지 않게 목록을 비워 둔다
-    if current.user.match_suspended:
-        return {"profiles": []}
     likers = profile_service.likers_of(db, current.id)
     excluded = profile_service.excluded_user_ids(db, current.id, include_passed=False)
     liked_at = {uid: at for uid, at in likers if uid not in excluded}
@@ -293,18 +290,13 @@ def like(payload: TargetRequest, current: CurrentUser = Depends(get_current_user
     match = None
     if reverse:
         a, b = profile_service.match_pair(current.id, target.user_id)
-        # 매칭 정지 (2026-10-05): 둘 중 한 명이라도 정지면 숨김 매칭으로 만든다.
-        # 두 사람 모두에게 매칭·알림이 보이지 않고, 관리자가 "다시 보이게"를 누르면 그때 알림이 간다.
-        hidden = current.user.match_suspended or bool(
-            db.query(User.match_suspended).filter(User.id == target.user_id).scalar()
-        )
-        match = Match(user_a_id=a, user_b_id=b, status="HIDDEN" if hidden else "ACTIVE")
+        # (매칭 정지·숨김 매칭은 2026-10-12에 없앴다)
+        match = Match(user_a_id=a, user_b_id=b, status="ACTIVE")
         db.add(match)
         db.flush()
-        if not hidden:
-            for uid in (a, b):
-                # 방금 LIKE를 누른 본인은 화면에서 바로 보므로 휴대폰 알림은 상대에게만
-                notify_match_created(db, uid, match.id, push=uid != current.id)
+        for uid in (a, b):
+            # 방금 LIKE를 누른 본인은 화면에서 바로 보므로 휴대폰 알림은 상대에게만
+            notify_match_created(db, uid, match.id, push=uid != current.id)
     try:
         db.commit()
     except IntegrityError:
@@ -314,7 +306,6 @@ def like(payload: TargetRequest, current: CurrentUser = Depends(get_current_user
         match = db.query(Match).filter(Match.user_a_id == a, Match.user_b_id == b).first()
 
     # 매칭되기 전에는 상대가 나를 LIKE했는지 알려주지 않는다 (설계도 §23)
-    # 숨김 매칭은 "매칭 안 됨"과 똑같이 응답한다 (매칭 정지 사실을 알 수 없게)
     visible = match is not None and match.status == "ACTIVE"
     trial = access == "trial"
     return {
@@ -355,11 +346,7 @@ def super_like(payload: TargetRequest, current: CurrentUser = Depends(get_curren
 
     _upsert_action(db, current.id, target.user_id, "LIKE", is_super=True)
     a, b = profile_service.match_pair(current.id, target.user_id)
-    # 매칭 정지 (2026-10-05): 둘 중 한 명이라도 정지면 숨김 매칭 (본인은 모름)
-    hidden = current.user.match_suspended or bool(
-        db.query(User.match_suspended).filter(User.id == target.user_id).scalar()
-    )
-    match = Match(user_a_id=a, user_b_id=b, status="HIDDEN" if hidden else "ACTIVE", super_like_by=current.id)
+    match = Match(user_a_id=a, user_b_id=b, status="ACTIVE", super_like_by=current.id)
     db.add(match)
     try:
         db.flush()
@@ -367,21 +354,19 @@ def super_like(payload: TargetRequest, current: CurrentUser = Depends(get_curren
         # 거의 동시에 매칭이 생긴 경우: 슈퍼 라이크를 쓰지 않은 것으로 되돌린다
         db.rollback()
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="이미 매칭된 사람이에요.")
-    if not hidden:
-        notify(
-            db,
-            target.user_id,
-            "MATCH_CREATED",
-            "슈퍼 라이크로 연결됐어요",
-            "상대가 슈퍼 라이크를 보내 바로 대화가 열렸어요. 원하지 않으면 대화를 끝내거나 차단할 수 있어요.",
-            match.id,
-        )
-        push_service.queue(db, target.user_id, push_service.MATCH, match.id)
+    notify(
+        db,
+        target.user_id,
+        "MATCH_CREATED",
+        "슈퍼 라이크로 연결됐어요",
+        "상대가 슈퍼 라이크를 보내 바로 대화가 열렸어요. 원하지 않으면 대화를 끝내거나 차단할 수 있어요.",
+        match.id,
+    )
+    push_service.queue(db, target.user_id, push_service.MATCH, match.id)
     db.commit()
-    visible = match.status == "ACTIVE"
     return {
-        "matched": visible,
-        "match_id": str(match.id) if visible else None,
+        "matched": True,
+        "match_id": str(match.id),
         "super_likes": super_like_service.view(current.user),
     }
 

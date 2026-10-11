@@ -48,9 +48,7 @@ class User(Base):
     # ※ is_beta_member·signup_paid_at은 2026-10-04부터 결제 판단에 쓰지 않는다 (기록용). 베타 회원도 이용권이 필요하다.
     member_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     member_days_banked: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
-    # 매칭 정지 (2026-10-05, 마이그레이션 0017). 관리자만 켜고 끈다. 본인에게는 절대 알려주지 않는다.
-    # 켜져 있으면: 서로 LIKE해도 매칭이 "숨김(HIDDEN)"으로 만들어져 두 사람 모두에게 보이지 않는다.
-    # 정지를 풀어도 숨겨진 매칭은 그대로 숨김이다 → 관리자가 하나씩 골라서 다시 보이게 한다.
+    # 매칭 정지 (2026-10-05, 마이그레이션 0017) → 2026-10-12에 기능을 없앴다 (0026에서 모두 해제). 칸만 남아 있고 쓰지 않는다.
     match_suspended: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false(), nullable=False)
     match_suspended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # 휴대폰 알림을 못 받을 때(알림을 안 켰거나 배달 실패) 새 메시지·새 매칭을 학교 메일로 알려줄지

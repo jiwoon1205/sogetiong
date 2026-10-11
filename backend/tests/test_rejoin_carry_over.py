@@ -115,12 +115,3 @@ def test_withdrawal_without_paid_period_writes_no_log(sent_codes, db):
     assert db.query(AuditLog).filter(AuditLog.action == "WITHDRAW_PAID_PERIOD_ENDED").count() == 0
 
 
-def test_match_suspension_carries_over(sent_codes, db):
-    admin = admin_login(db)
-    a = ready_user(sent_codes, db, admin, EMAIL)
-    uid = str(_user(db).id)
-    r = admin.patch(f"/api/v1/admin/users/{uid}/match-suspension", json={"suspended": True, "reason": "테스트 정지"})
-    assert r.status_code == 200, r.text
-    _delete(a)
-    _rejoin(sent_codes, db)
-    assert _user(db).match_suspended is True
