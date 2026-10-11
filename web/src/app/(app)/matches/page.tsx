@@ -74,7 +74,14 @@ export default function MatchesPage() {
                   <Initial name={m.partner.nickname} />
                   <div className="min-w-0 flex-1">
                     <div className="flex items-baseline justify-between gap-3">
-                      <p className="truncate text-[15.5px] font-semibold">{m.partner.nickname}</p>
+                      <p className="flex min-w-0 items-center gap-1.5">
+                        <span className="truncate text-[15.5px] font-semibold">{m.partner.nickname}</span>
+                        {m.super_like && (
+                          <span className="shrink-0 rounded bg-brick-wash px-1.5 py-0.5 text-[11px] font-semibold text-brick">
+                            ⭐ 슈퍼 라이크
+                          </span>
+                        )}
+                      </p>
                       <p className={unread ? "shrink-0 text-[12px] font-semibold text-brick" : "shrink-0 text-[12px] text-ink-faint"}>
                         {timeAgo(m.last_message?.sent_at ?? m.matched_at)}
                       </p>

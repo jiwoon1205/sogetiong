@@ -35,6 +35,9 @@ export default function ChatPage() {
   const [error, setError] = useState("");
   const [sending, setSending] = useState(false);
   const [panel, setPanel] = useState<"none" | "profile" | "menu" | "report">("none");
+  // 슈퍼 라이크 매칭 (2026-10-12): sent = 내가 보냄(상대 답장 전 메시지 1개만), received = 내가 받음
+  const [superLike, setSuperLike] = useState<"sent" | "received" | null>(null);
+  const [sendLocked, setSendLocked] = useState(false);
   const [hasNew, setHasNew] = useState(false); // 위로 올려 읽는 중에 상대 메시지가 오면 "새 메시지" 버튼을 띄운다
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -56,9 +59,11 @@ export default function ChatPage() {
   const loadMessages = useCallback(async () => {
     try {
       const after = lastIdRef.current;
-      const r = await api<{ messages: ChatMessage[] }>(
+      const r = await api<{ messages: ChatMessage[]; super_like?: "sent" | "received" | null; send_locked?: boolean }>(
         after ? `/matches/${matchId}/messages?after=${encodeURIComponent(after)}` : `/matches/${matchId}/messages`,
       );
+      setSuperLike(r.super_like ?? null);
+      setSendLocked(Boolean(r.send_locked));
       if (r.messages.length === 0) return; // 새 메시지 없음 → 화면을 다시 그리지 않는다
       setMessages((prev) => mergeMessages(prev, r.messages));
     } catch (err) {
@@ -142,10 +147,13 @@ export default function ChatPage() {
     try {
       const msg = await api<ChatMessage>(`/matches/${matchId}/messages`, { method: "POST", body: { body } });
       setMessages((m) => mergeMessages(m, [msg]));
+      // 슈퍼 라이크를 보낸 사람: 상대 답장 전이면 첫 메시지 뒤로 잠근다 (서버도 막음)
+      if (superLike === "sent" && !messages.some((x) => !x.is_mine)) setSendLocked(true);
       setText("");
       inputRef.current?.focus(); // 보낸 뒤에도 키보드가 내려가지 않게
     } catch (err) {
-      setError(errorMessage(err));
+      if (err instanceof ApiError && err.code === "SUPER_LIKE_WAIT_REPLY") setSendLocked(true);
+      else setError(errorMessage(err));
     } finally {
       setSending(false);
     }
@@ -256,6 +264,17 @@ export default function ChatPage() {
       ) : (
         <form onSubmit={send} className="shrink-0 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2">
           {error && <p className="mb-2 px-1 text-[13px] text-brick">{error}</p>}
+          {superLike === "received" && !messages.some((m) => m.is_mine) && (
+            <p className="mb-2 rounded-md bg-brick-wash px-3 py-2 text-[12.5px] leading-relaxed text-ink-soft">
+              <b className="font-semibold text-brick">⭐ 슈퍼 라이크로 연결된 대화예요.</b> 원하지 않으면 오른쪽 위 &lsquo;더보기&rsquo;에서 대화를 끝내거나 차단할 수 있어요.
+            </p>
+          )}
+          {superLike === "sent" && !messages.some((m) => !m.is_mine) && (
+            <p className="mb-2 rounded-md bg-brick-wash px-3 py-2 text-[12.5px] leading-relaxed text-ink-soft">
+              <b className="font-semibold text-brick">⭐ 슈퍼 라이크로 연결됐어요.</b>{" "}
+              {sendLocked ? "상대가 답장하면 이어서 대화할 수 있어요." : "상대가 답장하기 전까지 메시지는 1개만 보낼 수 있어요."}
+            </p>
+          )}
           {/* 카톡처럼 둥근 입력창 하나에 보내기 버튼을 넣었다 (위쪽 회색 줄·큰 회색 버튼을 없애 키보드 위가 깔끔하게) */}
           <div className="flex items-end gap-1.5 rounded-[24px] border border-line bg-paper-card py-1 pl-4 pr-1 transition-colors focus-within:border-ink-soft">
             <textarea
@@ -273,7 +292,8 @@ export default function ChatPage() {
               }}
               maxLength={1000}
               rows={1}
-              placeholder="메시지 보내기"
+              disabled={sendLocked}
+              placeholder={sendLocked ? "상대의 답장을 기다리는 중" : "메시지 보내기"}
               aria-label="메시지"
               // 글자 16px: 아이폰은 이보다 작으면 누를 때 화면을 확대한다
               className="min-h-[40px] flex-1 resize-none bg-transparent py-2 text-[16px] leading-snug text-ink placeholder:text-ink-faint focus:outline-none focus-visible:outline-none sm:text-[15px]"
@@ -282,7 +302,7 @@ export default function ChatPage() {
             <button
               type="submit"
               aria-label="보내기"
-              disabled={!text.trim() || sending}
+              disabled={!text.trim() || sending || sendLocked}
               onPointerDown={(e) => e.preventDefault()}
               className="mb-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-ink text-paper transition-opacity disabled:opacity-20"
             >

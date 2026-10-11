@@ -88,6 +88,8 @@ class Like(Base):
     # 무료 체험으로 보낸 LIKE (2026-10-06, 마이그레이션 0021). 하루 LIKE 한도를 셀 때 빼고 센다
     # (체험 LIKE를 쓴 날 이용권을 사도 그날 LIKE를 바로 5개 쓸 수 있게)
     is_trial: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false(), nullable=False)
+    # 슈퍼 라이크로 보낸 LIKE (2026-10-12, 마이그레이션 0025). 하루 LIKE 한도·체험 개수와 따로 센다
+    is_super: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false(), nullable=False)
     created_at: Mapped[datetime] = created_at()
     updated_at: Mapped[datetime] = updated_at()
 
@@ -107,6 +109,8 @@ class Match(Base):
     user_b_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("users.id"), nullable=False, index=True)
     status: Mapped[str] = mapped_column(String(20), default="ACTIVE", nullable=False)
     ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # 슈퍼 라이크로 생긴 매칭이면 보낸 사람 (2026-10-12, 마이그레이션 0025). 받은 사람이 답장하기 전까지 보낸 사람은 메시지 1개만
+    super_like_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("users.id"), nullable=True)
     created_at: Mapped[datetime] = created_at()
     updated_at: Mapped[datetime] = updated_at()
 

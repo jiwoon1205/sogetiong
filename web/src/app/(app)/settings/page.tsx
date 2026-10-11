@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { AlertSettings } from "@/components/AlertSettings";
 import { BusinessInfo } from "@/components/BusinessInfo";
 import { MembershipRenew, OPEN_PAY_KEY } from "@/components/PaymentStep";
+import { StarIcon, SuperLikeBuy } from "@/components/SuperLike";
 import { PreferencesForm } from "@/components/PreferencesForm";
 import { SupportContact } from "@/components/SupportContact";
 import { Button, Field, Input, Modal, Notice, PageTitle, Spinner } from "@/components/ui";
@@ -113,10 +114,46 @@ function MyMembership({ onActivated }: { onActivated: () => void }) {
         {vipUntil && <p className="mt-2 text-[13.5px] text-brick">VIP {untilDay(vipUntil)}</p>}
       </div>
       {m.status !== "banked" && <MembershipRenew onActivated={onActivated} autoOpen={autoPay} />}
+      <MySuperLikes onBought={onActivated} />
       <p className="mt-3 text-[12.5px] leading-relaxed text-ink-faint">
         자동 결제는 없어요. 남은 기간이 있을 때 미리 사면 끝나는 날 뒤에 {m.days}일이 더해져요. 살 때마다 사진 바로 재검토를 1번 받을 수 있어요 (쌓이지 않아요). 연장 결제는 입금 확인 후 환불되지 않아요.
       </p>
     </section>
+  );
+}
+
+/** 슈퍼 라이크 남은 개수 + 사기 (2026-10-12) */
+function MySuperLikes({ onBought }: { onBought: () => void }) {
+  const { me } = useSession();
+  const [open, setOpen] = useState(false);
+  const count = me.super_likes?.count ?? 0;
+  return (
+    <div className="mt-6 rounded-card border border-line bg-paper-card px-5 py-4">
+      <div className="flex items-center justify-between gap-3">
+        <p className="flex items-center gap-2 text-[14.5px]">
+          <span className="flex h-7 w-7 items-center justify-center rounded-full bg-brick-wash text-brick">
+            <StarIcon className="h-4 w-4" />
+          </span>
+          슈퍼 라이크 <b className="num font-semibold">{count}</b>개
+        </p>
+        <Button size="sm" variant="secondary" onClick={() => setOpen((v) => !v)}>
+          {open ? "닫기" : "사기"}
+        </Button>
+      </div>
+      <p className="mt-1 text-[12.5px] text-ink-faint">
+        1개 {(me.super_likes?.price ?? 1000).toLocaleString()}원 · 상대가 좋아요를 누르지 않아도 바로 대화가 열려요. 상대가 답장하기 전까지 메시지는 1개만 보낼 수 있어요.
+      </p>
+      {open && (
+        <div className="mt-4">
+          <SuperLikeBuy
+            onBought={() => {
+              setOpen(false);
+              onBought();
+            }}
+          />
+        </div>
+      )}
+    </div>
   );
 }
 

@@ -14,7 +14,8 @@ from app.models._common import created_at, pk
 #   REJECTED  : 관리자가 "입금 없음"으로 처리 → 사용자가 다시 "입금했어요"를 누를 수 있다
 #   REFUNDED  : 환불함 (사진 검수 전에만 가능) → 다시 입금 전 상태가 된다
 PAYMENT_STATUSES = ("CREATED", "REQUESTED", "CONFIRMED", "REJECTED", "REFUNDED")
-PAYMENT_KINDS = ("SIGNUP", "VIP")  # SIGNUP = 기본 이용권, VIP = VIP (기본 포함) — 2026-10-04 구독제. 기간은 membership_service.period_days
+PAYMENT_KINDS = ("SIGNUP", "VIP", "SUPER_LIKE")  # SIGNUP = 기본 이용권, VIP = VIP (기본 포함) — 2026-10-04 구독제. 기간은 membership_service.period_days
+# SUPER_LIKE = 슈퍼 라이크 quantity개 (2026-10-12, 1개 SUPER_LIKE_PRICE원). 기간 없음
 
 
 class Payment(Base):
@@ -29,6 +30,8 @@ class Payment(Base):
     user_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("users.id"), nullable=False, index=True)
     kind: Mapped[str] = mapped_column(String(20), default="SIGNUP", nullable=False)
     amount: Mapped[int] = mapped_column(Integer, nullable=False)
+    # 슈퍼 라이크 개수 (2026-10-12, 마이그레이션 0025). 이용권·VIP는 1
+    quantity: Mapped[int] = mapped_column(Integer, default=1, server_default="1", nullable=False)
     code: Mapped[str] = mapped_column(String(12), unique=True, nullable=False)
     status: Mapped[str] = mapped_column(String(20), default="CREATED", nullable=False, index=True)
     created_at: Mapped[datetime] = created_at()

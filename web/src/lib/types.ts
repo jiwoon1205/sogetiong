@@ -69,6 +69,8 @@ export type Me = {
   vip?: { visible: boolean; active: boolean; until: string | null };
   /** 이용권 (2026-10-04 구독제) */
   membership?: Membership;
+  /** 슈퍼 라이크 남은 개수·가격 (2026-10-12) */
+  super_likes?: SuperLikes;
   /** 설문 (2026-10-05). pending = 설문을 받는 중이고 아직 안 답함 → 설문 화면만 보여준다 */
   survey?: { pending: boolean };
   /** 아직 안 본 한 번짜리 공지 이름 (2026-10-05). 없으면 null */
@@ -198,6 +200,8 @@ export type MatchItem = {
   partner: Card;
   /** 안 읽은 상대 메시지 수 (2026-10-08) */
   unread_count?: number;
+  /** 슈퍼 라이크로 생긴 매칭 (2026-10-12): sent = 내가 보냄, received = 내가 받음 */
+  super_like?: "sent" | "received" | null;
   last_message: { body: string; is_mine: boolean; sent_at: string } | null;
 };
 
@@ -248,4 +252,14 @@ export type Alerts = {
   device_count: number;
   /** 휴대폰 알림을 못 받을 때 학교 메일로 알려줄지 */
   email_notify: boolean;
+};
+
+/** 슈퍼 라이크 (2026-10-12) */
+export type SuperLikes = { count: number; price: number; max_quantity: number };
+
+/** GET /me/super-likes */
+export type SuperLikeInfo = SuperLikes & {
+  can_buy: boolean;
+  blocked_reason: string | null;
+  payment: (PaymentDetail & { quantity: number }) | null;
 };

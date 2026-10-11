@@ -23,6 +23,7 @@ from app.services import (
     membership_service,
     profile_service,
     push_service,
+    super_like_service,
     vip_service,
 )
 from app.services.notification_service import has_unread, notify, notify_match_created
@@ -150,6 +151,9 @@ def discover(
         # VIP는 하트를 "5+5"로 보여준다 (무료 몫 5개 + VIP 몫 5개)
         "vip": vip_service.is_vip(current.user),
         "base_like_limit": settings.daily_like_limit,
+        # 슈퍼 라이크 남은 개수·가격 (2026-10-12)
+        "super_likes": super_like_service.view(current.user),
+        "super_like_on_sale": membership_service.sales_open(),
     }
 
 
@@ -205,16 +209,18 @@ def _target(db: Session, current: CurrentUser, profile_id: uuid.UUID) -> PublicP
     return target
 
 
-def _upsert_action(db: Session, from_id: uuid.UUID, to_id: uuid.UUID, action: str, *, is_trial: bool = False) -> None:
+def _upsert_action(
+    db: Session, from_id: uuid.UUID, to_id: uuid.UUID, action: str, *, is_trial: bool = False, is_super: bool = False
+) -> None:
     row = db.query(Like).filter(Like.from_user_id == from_id, Like.to_user_id == to_id).first()
     if row is None:
-        db.add(Like(from_user_id=from_id, to_user_id=to_id, action=action, is_trial=is_trial))
+        db.add(Like(from_user_id=from_id, to_user_id=to_id, action=action, is_trial=is_trial, is_super=is_super))
     elif action == "LIKE":
         # PASS 48시간이 지나 다시 나온 사람에게 LIKE하는 경우: PASS 행을 지우고 새로 만든다.
         # 하루 LIKE 개수는 created_at으로 세기 때문 (행을 고쳐 쓰면 예전 PASS 날짜가 남아서 개수에 안 잡힌다 → 하루 5개 제한을 피할 수 있음)
         db.delete(row)
         db.flush()
-        db.add(Like(from_user_id=from_id, to_user_id=to_id, action=action, is_trial=is_trial))
+        db.add(Like(from_user_id=from_id, to_user_id=to_id, action=action, is_trial=is_trial, is_super=is_super))
     else:
         # 다시 PASS: 값이 같으면 SQLAlchemy가 updated_at을 안 바꾸므로 직접 바꾼다 (48시간을 이때부터 다시 셈)
         row.action = action
@@ -322,6 +328,64 @@ def like(payload: TargetRequest, current: CurrentUser = Depends(get_current_user
     }
 
 
+@router.post("/super-likes")
+def super_like(payload: TargetRequest, current: CurrentUser = Depends(get_current_user), db: Session = Depends(get_db)):
+    """슈퍼 라이크 (2026-10-12): 추천에 뜬 사람에게 보내면 상대가 LIKE하지 않아도 바로 매칭된다.
+
+    보낸 사람은 상대가 답장하기 전까지 메시지 1개만 보낼 수 있다. 받은 사람에게는 "슈퍼 라이크로 연결됐어요"가 보인다.
+    남은 슈퍼 라이크가 없으면 409 SUPER_LIKE_REQUIRED → 화면에서 구매창을 연다.
+    """
+    enforce_rate_limit(f"superlike:{current.id}", 20, 60)
+    target = _target(db, current, payload.profile_id)
+    viewer = _viewer(db, current)
+    # 추천에 나올 수 있는 사람에게만: 차단·이미 LIKE·PASS 숨김·매칭(끝난 것 포함)이 아니고 조건이 맞아야 한다
+    excluded = profile_service.excluded_user_ids(
+        db, current.id, pass_cooldown_hours=vip_service.pass_cooldown_hours(current.user)
+    )
+    candidates = profile_service.people_from_profiles(db, [target])
+    if (
+        target.user_id in excluded
+        or not candidates
+        or not matching_service.mutually_compatible(viewer, candidates[0])
+    ):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="프로필을 찾을 수 없습니다.")
+    if not super_like_service.use_one(db, current.user):
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="SUPER_LIKE_REQUIRED")
+
+    _upsert_action(db, current.id, target.user_id, "LIKE", is_super=True)
+    a, b = profile_service.match_pair(current.id, target.user_id)
+    # 매칭 정지 (2026-10-05): 둘 중 한 명이라도 정지면 숨김 매칭 (본인은 모름)
+    hidden = current.user.match_suspended or bool(
+        db.query(User.match_suspended).filter(User.id == target.user_id).scalar()
+    )
+    match = Match(user_a_id=a, user_b_id=b, status="HIDDEN" if hidden else "ACTIVE", super_like_by=current.id)
+    db.add(match)
+    try:
+        db.flush()
+    except IntegrityError:
+        # 거의 동시에 매칭이 생긴 경우: 슈퍼 라이크를 쓰지 않은 것으로 되돌린다
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="이미 매칭된 사람이에요.")
+    if not hidden:
+        notify(
+            db,
+            target.user_id,
+            "MATCH_CREATED",
+            "슈퍼 라이크로 연결됐어요",
+            "상대가 슈퍼 라이크를 보내 바로 대화가 열렸어요. 원하지 않으면 대화를 끝내거나 차단할 수 있어요.",
+            match.id,
+        )
+        push_service.queue(db, target.user_id, push_service.MATCH, match.id)
+    db.commit()
+    visible = match.status == "ACTIVE"
+    return {
+        "matched": visible,
+        "match_id": str(match.id) if visible else None,
+        "super_likes": super_like_service.view(current.user),
+    }
+
+
 @router.post("/passes")
 def pass_profile(payload: TargetRequest, current: CurrentUser = Depends(get_current_user), db: Session = Depends(get_db)):
     enforce_rate_limit(f"pass:{current.id}", 120, 60)
@@ -389,6 +453,12 @@ def _last_messages(db: Session, match_ids: list[uuid.UUID]) -> dict[uuid.UUID, M
     )
     rows = db.query(Message).join(ranked, ranked.c.id == Message.id).filter(ranked.c.rn == 1).all()
     return {m.match_id: m for m in rows}
+
+
+def _super_like_side(match: Match, user_id: uuid.UUID) -> str | None:
+    if match.super_like_by is None:
+        return None
+    return "sent" if match.super_like_by == user_id else "received"
 
 
 def _unread_counts(db: Session, match_ids: list[uuid.UUID], user_id: uuid.UUID) -> dict[uuid.UUID, int]:
@@ -467,6 +537,7 @@ def list_matches(current: CurrentUser = Depends(get_current_user), db: Session =
                 "matched_at": m.created_at.isoformat(),
                 "partner": cards[partner],
                 "unread_count": unread.get(m.id, 0),  # 안 읽은 상대 메시지 수 (2026-10-08)
+                "super_like": _super_like_side(m, current.id),  # 슈퍼 라이크 매칭 (2026-10-12)
                 "last_message": {
                     "body": last.body,
                     "is_mine": last.sender_user_id == current.id,
@@ -597,7 +668,11 @@ def list_messages(
         "messages": [
             {"message_id": str(m.id), "body": m.body, "is_mine": m.sender_user_id == current.id, "sent_at": m.created_at.isoformat()}
             for m in rows
-        ]
+        ],
+        # 슈퍼 라이크 매칭 (2026-10-12): sent(내가 보냄) / received(내가 받음) / null
+        "super_like": _super_like_side(match, current.id),
+        # true면 상대가 답장할 때까지 메시지를 더 보낼 수 없다 (보낸 사람만, 메시지 1개 보낸 뒤)
+        "send_locked": super_like_service.message_locked(db, match, current.id),
     }
 
 
@@ -610,6 +685,9 @@ def send_message(
 ):
     enforce_rate_limit(f"message:{current.id}", 30, 60)
     match = _my_match(db, current, match_id)
+    if super_like_service.message_locked(db, match, current.id):
+        # 슈퍼 라이크를 보낸 사람은 상대가 답장하기 전까지 메시지 1개만 (2026-10-12)
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="SUPER_LIKE_WAIT_REPLY")
     message = Message(match_id=match.id, sender_user_id=current.id, body=payload.body)
     db.add(message)
     partner = match.partner_of(current.id)

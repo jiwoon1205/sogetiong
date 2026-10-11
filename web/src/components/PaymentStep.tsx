@@ -191,7 +191,7 @@ function PayHowTo({ amount, code }: { amount: number; code: string }) {
           <span className={step}>3</span>
           <span>
             이 화면으로 돌아와 아래 <b>&lsquo;입금 완료했어요&rsquo;</b> 버튼을 꼭 눌러요.
-            <span className="mt-0.5 block text-[12.5px] text-ink-soft">버튼을 눌러야 운영자에게 확인 요청이 가요. 안 누르면 입금해도 이용권이 시작되지 않아요.</span>
+            <span className="mt-0.5 block text-[12.5px] text-ink-soft">버튼을 눌러야 운영자에게 확인 요청이 가요. 안 누르면 입금해도 반영되지 않아요.</span>
           </span>
         </li>
       </ol>

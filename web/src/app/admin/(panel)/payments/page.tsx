@@ -10,7 +10,9 @@ import { usePolling } from "@/lib/polling";
 
 type PaymentRow = {
   payment_id: string;
-  kind: "SIGNUP" | "VIP";
+  kind: "SIGNUP" | "VIP" | "SUPER_LIKE";
+  /** 슈퍼 라이크 개수 (2026-10-12) */
+  quantity?: number;
   code: string;
   amount: number;
   status: "REQUESTED" | "CONFIRMED" | "REJECTED" | "REFUNDED";
@@ -87,7 +89,7 @@ export default function PaymentsPage() {
       <PageTitle
         eyebrow="결제"
         title="입금 확인"
-        desc="은행 앱에서 입금자명(결제 코드)과 금액이 맞는지 확인한 뒤 처리하세요. 기본 이용권과 VIP가 함께 나와요. 사용자에게는 15분 이내 확인이라고 안내돼 있어요."
+        desc="은행 앱에서 입금자명(결제 코드)과 금액이 맞는지 확인한 뒤 처리하세요. 기본 이용권·VIP·슈퍼 라이크가 함께 나와요. 사용자에게는 15분 이내 확인이라고 안내돼 있어요."
       />
       <div className="mb-6 flex gap-6 border-b border-line text-[14px]">
         {TABS.map((t) => (
@@ -124,8 +126,8 @@ export default function PaymentsPage() {
                 <div>
                   <span className="font-mono text-[16px] font-semibold tracking-wider">{p.code}</span>
                   <span className="num ml-3 text-[14px]">{p.amount.toLocaleString()}원</span>
-                  <span className={cn("ml-2 rounded px-1.5 py-0.5 text-[11.5px]", p.kind === "VIP" ? "bg-brick-wash text-brick" : "bg-paper-deep text-ink-soft")}>
-                    {p.kind === "VIP" ? "VIP" : "기본 이용권"}
+                  <span className={cn("ml-2 rounded px-1.5 py-0.5 text-[11.5px]", p.kind === "SIGNUP" ? "bg-paper-deep text-ink-soft" : "bg-brick-wash text-brick")}>
+                    {p.kind === "VIP" ? "VIP" : p.kind === "SUPER_LIKE" ? `⭐ 슈퍼 라이크 ${p.quantity ?? 1}개` : "기본 이용권"}
                   </span>
                   {p.user_status && p.user_status !== "ACTIVE" && (
                     <span className="ml-2 rounded bg-paper-deep px-1.5 py-0.5 text-[11.5px] text-ink-soft">
@@ -177,12 +179,18 @@ export default function PaymentsPage() {
                       입금 확인으로 바꾸기
                     </Button>
                   )}
-                  {view === "history" && p.status === "CONFIRMED" && p.kind === "SIGNUP" && (
+                  {view === "history" && p.status === "CONFIRMED" && p.kind !== "VIP" && (
                     <Button
                       size="sm"
                       variant="danger"
                       disabled={!p.refundable}
-                      title={p.refundable ? undefined : "사진 검수를 받은 사용자는 환불할 수 없어요"}
+                      title={
+                        p.refundable
+                          ? undefined
+                          : p.kind === "SUPER_LIKE"
+                            ? "이미 사용한 슈퍼 라이크가 있어서 환불할 수 없어요"
+                            : "사진 검수를 받은 사용자는 환불할 수 없어요"
+                      }
                       loading={busy === p.payment_id + "refund"}
                       onClick={() => act(p, "refund")}
                     >
@@ -197,7 +205,7 @@ export default function PaymentsPage() {
       )}
       {view === "history" && (
         <p className="mt-4 text-[12.5px] text-ink-faint">
-          기본 이용권 환불: 사용자가 고객센터 메일로 보낸 계좌로 먼저 송금한 뒤 [환불 처리]를 누르세요. 첫 이용권을 사진 검수 전에 취소하는 경우만 환불돼요. 사진 검수를 받았거나(반려 포함) 이용권이 이미 시작된 사람(연장 결제)은 환불할 수 없어요. VIP는 입금 확인 후 환불하지 않아요.
+          기본 이용권 환불: 사용자가 고객센터 메일로 보낸 계좌로 먼저 송금한 뒤 [환불 처리]를 누르세요. 첫 이용권을 사진 검수 전에 취소하는 경우만 환불돼요. 사진 검수를 받았거나(반려 포함) 이용권이 이미 시작된 사람(연장 결제)은 환불할 수 없어요. VIP는 입금 확인 후 환불하지 않아요. 슈퍼 라이크는 그 결제로 산 개수를 하나도 쓰지 않았을 때만 환불돼요 (환불하면 남은 개수에서 빠져요).
         </p>
       )}
     </>

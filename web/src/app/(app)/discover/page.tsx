@@ -7,12 +7,13 @@ import { useRouter } from "next/navigation";
 import { MatchCelebration } from "@/components/MatchCelebration";
 import { MembershipRenew, OPEN_PAY_KEY } from "@/components/PaymentStep";
 import { ProfileCard } from "@/components/ProfileCard";
+import { StarIcon, SuperLikeSheet } from "@/components/SuperLike";
 import { Button, ButtonLink, Modal, Notice, Spinner } from "@/components/ui";
 import { ApiError, api, errorMessage } from "@/lib/api";
 import { markMatchSeen } from "@/lib/seenMatches";
 import { useSession } from "@/lib/session";
 import { useKstNewDay } from "@/lib/useKstNewDay";
-import type { Card, LikeAccess } from "@/lib/types";
+import type { Card, LikeAccess, SuperLikes } from "@/lib/types";
 
 type State =
   | { kind: "loading" }
@@ -63,7 +64,7 @@ export default function DiscoverPage() {
   const [state, setState] = useState<State>({ kind: "loading" });
   const [busy, setBusy] = useState(false);
   // 방금 서로 좋아요가 된 상대 → 축하 화면
-  const [matched, setMatched] = useState<{ card: Card; matchId: string } | null>(null);
+  const [matched, setMatched] = useState<{ card: Card; matchId: string; superLike?: boolean } | null>(null);
   const [error, setError] = useState("");
   // 남은 좋아요
   // - paid: 오늘 남은 좋아요 (한국 시간 자정에 다시 충전). VIP는 하루 10개를 "5+5"로 보여준다 (base = 무료 몫, 2026-10-03)
@@ -75,6 +76,12 @@ export default function DiscoverPage() {
   // 체험 좋아요를 다 썼을 때 알림창 (2026-10-08). 마지막 체험 좋아요로 매칭되면 축하 화면을 닫은 뒤에 띄운다
   const [outOfLikes, setOutOfLikes] = useState(false);
   const [outAfterCelebration, setOutAfterCelebration] = useState(false);
+  // 슈퍼 라이크 (2026-10-12): 남은 개수, 창 열기, 보내는 중
+  const [superLikes, setSuperLikes] = useState(0);
+  const [superOnSale, setSuperOnSale] = useState(false);
+  const [superOpen, setSuperOpen] = useState(false);
+  const [superSending, setSuperSending] = useState(false);
+  const [superError, setSuperError] = useState("");
 
   const load = useCallback(async () => {
     setState({ kind: "loading" });
@@ -86,7 +93,11 @@ export default function DiscoverPage() {
         vip?: boolean;
         base_like_limit?: number;
         like_access?: LikeAccess;
+        super_likes?: SuperLikes;
+        super_like_on_sale?: boolean;
       }>("/discover");
+      setSuperLikes(res.super_likes?.count ?? 0);
+      setSuperOnSale(Boolean(res.super_like_on_sale));
       setLikes({
         mode: res.like_access ?? "paid",
         left: res.likes_left_today,
@@ -174,6 +185,35 @@ export default function DiscoverPage() {
     [state, busy, load, likes, refresh],
   );
 
+  // 슈퍼 라이크 보내기 (2026-10-12): 상대가 LIKE하지 않아도 바로 매칭
+  const sendSuperLike = useCallback(async () => {
+    if (state.kind !== "cards" || !state.cards[0] || superSending) return;
+    const card = state.cards[0];
+    setSuperSending(true);
+    setSuperError("");
+    try {
+      const res = await api<{ matched: boolean; match_id: string | null; super_likes: SuperLikes }>("/super-likes", {
+        method: "POST",
+        body: { profile_id: card.profile_id },
+      });
+      setSuperLikes(res.super_likes.count);
+      setSuperOpen(false);
+      if (res.matched && res.match_id) {
+        markMatchSeen(res.match_id);
+        setMatched({ card, matchId: res.match_id, superLike: true });
+      }
+      const rest = state.cards.slice(1);
+      if (rest.length === 0) await load();
+      else setState({ kind: "cards", cards: rest });
+      void refresh();
+    } catch (err) {
+      if (err instanceof ApiError && err.code === "SUPER_LIKE_REQUIRED") setSuperLikes(0); // 창이 구매 화면으로 바뀐다
+      else setSuperError(errorMessage(err));
+    } finally {
+      setSuperSending(false);
+    }
+  }, [state, superSending, load, refresh]);
+
   // 키보드: ← 넘기기, → 좋아요
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -191,6 +231,7 @@ export default function DiscoverPage() {
     <MatchCelebration
       partnerName={matched.card.nickname}
       matchId={matched.matchId}
+      superLike={matched.superLike}
       onClose={() => {
         markMatchSeen(matched.matchId);
         setMatched(null);
@@ -206,6 +247,21 @@ export default function DiscoverPage() {
     <>
       {renderBody()}
       {celebration}
+      {state.kind === "cards" && state.cards[0] && (
+        <SuperLikeSheet
+          open={superOpen}
+          nickname={state.cards[0].nickname}
+          count={superLikes}
+          sending={superSending}
+          error={superError}
+          onSend={sendSuperLike}
+          onClose={() => setSuperOpen(false)}
+          onBought={(n) => {
+            setSuperLikes(n);
+            void refresh();
+          }}
+        />
+      )}
       {!matched && (
         <OutOfLikesModal
           open={outOfLikes}
@@ -275,10 +331,31 @@ export default function DiscoverPage() {
 
         {error && <div className="mt-4"><Notice tone="error">{error}</Notice></div>}
 
-        <div className="mt-6 grid grid-cols-2 gap-3">
+        {/* 넘기기 · 슈퍼 라이크(작은 동그라미, 2026-10-12) · 좋아요 */}
+        <div className="mt-6 grid grid-cols-[1fr_auto_1fr] items-center gap-3">
           <Button variant="secondary" size="lg" onClick={() => act("pass")} disabled={busy}>
             넘기기
           </Button>
+          {superOnSale || superLikes > 0 ? (
+            <button
+              type="button"
+              onClick={() => {
+                setSuperError("");
+                setSuperOpen(true);
+              }}
+              disabled={busy}
+              aria-label={`슈퍼 라이크 (남은 ${superLikes}개)`}
+              title="슈퍼 라이크 — 상대가 좋아요를 누르지 않아도 바로 매칭"
+              className="relative flex h-11 w-11 items-center justify-center rounded-full border border-brick/40 bg-brick-wash text-brick shadow-sm transition-colors hover:bg-brick hover:text-paper disabled:opacity-45"
+            >
+              <StarIcon className="h-[18px] w-[18px]" />
+              <span className="num absolute -right-1 -top-1 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-ink px-1 text-[10.5px] font-semibold leading-none text-paper">
+                {superLikes}
+              </span>
+            </button>
+          ) : (
+            <span aria-hidden />
+          )}
           <Button
             size="lg"
             onClick={() => act("like")}
@@ -287,8 +364,8 @@ export default function DiscoverPage() {
           >
             좋아요
             {likes && likes.left > 0 && (
-              <span className="ml-1.5 text-[13px] font-normal opacity-80">
-                (<span className="num">{likes.left}</span>개 남음)
+              <span className="whitespace-nowrap text-[13px] font-normal opacity-80">
+                (<span className="num">{likes.left}</span>)
               </span>
             )}
           </Button>

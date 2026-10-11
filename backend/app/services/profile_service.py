@@ -446,6 +446,7 @@ def likes_sent_today(db: Session, user_id: uuid.UUID) -> int:
             Like.from_user_id == user_id,
             Like.action == "LIKE",
             Like.is_trial.is_(False),  # 체험 LIKE는 하루 한도에서 뺀다 (2026-10-06)
+            Like.is_super.is_(False),  # 슈퍼 라이크도 따로 센다 (2026-10-12)
             Like.created_at >= kst_day_start(),
         )
         .scalar()

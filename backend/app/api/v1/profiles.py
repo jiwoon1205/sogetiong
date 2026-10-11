@@ -3,7 +3,7 @@
 import uuid
 from datetime import timedelta
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Response, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, Response, UploadFile, status
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -28,6 +28,7 @@ from app.services import (
     membership_service,
     payment_service,
     profile_service,
+    super_like_service,
     survey_service,
     vip_service,
 )
@@ -106,6 +107,8 @@ def get_me(current: CurrentUser = Depends(get_current_user), db: Session = Depen
         },
         # 이용권 (2026-10-04 구독제): 남은 기간 표시·만료 화면용
         "membership": membership_service.view(current.user),
+        # 슈퍼 라이크 남은 개수 (2026-10-12)
+        "super_likes": super_like_service.view(current.user),
         # VIP (2026-10-03). visible = "받은 LIKE" 탭을 보여줄지 (정식 오픈 전에는 테스트 계정만)
         "vip": {
             "visible": vip_service.feature_visible(current.user),
@@ -743,3 +746,46 @@ def request_vip_check(
     payment = payment_service.open_payment(db, current.id, "VIP")
     view = _request_check(db, background, payment)
     return {**info, "payment": view}
+
+
+# ---------- 슈퍼 라이크 (2026-10-12) ----------
+
+
+def _super_like_info(db: Session, current: CurrentUser, quantity: int | None) -> dict:
+    info = {**super_like_service.view(current.user), "can_buy": False, "blocked_reason": None, "payment": None}
+    if not membership_service.sales_open():
+        info["blocked_reason"] = "지금은 슈퍼 라이크를 판매하지 않아요."
+    elif not profile_service.has_approved_photo(db, current.id):
+        info["blocked_reason"] = "사진 검수가 끝난 뒤에 살 수 있어요."
+    else:
+        info["can_buy"] = True
+        payment = super_like_service.get_or_create_payment(db, current.user, quantity)
+        db.commit()
+        info["payment"] = {**_payment_view(payment, open_now=payment_service.is_payment_open()), "quantity": payment.quantity}
+    return info
+
+
+@router.get("/me/super-likes")
+def get_my_super_likes(
+    quantity: int | None = Query(default=None, ge=1, le=100),
+    current: CurrentUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """슈퍼 라이크 남은 개수·구매 안내. quantity를 주면 아직 "입금 완료했어요" 전인 결제의 개수·금액을 바꾼다."""
+    return _super_like_info(db, current, quantity)
+
+
+@router.post("/me/super-likes/request")
+def request_super_like_check(
+    background: BackgroundTasks,
+    quantity: int | None = Query(default=None, ge=1, le=100),
+    current: CurrentUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """슈퍼 라이크 "입금 완료했어요". 관리자가 확인하면 개수가 더해진다."""
+    info = _super_like_info(db, current, quantity)
+    if not info["can_buy"]:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=info["blocked_reason"])
+    payment = payment_service.open_payment(db, current.id, super_like_service.KIND)
+    view = _request_check(db, background, payment)
+    return {**info, "payment": {**view, "quantity": payment.quantity}}

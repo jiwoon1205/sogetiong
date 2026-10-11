@@ -38,7 +38,7 @@ from app.schemas.admin import (
     UserGenderRequest,
     UserStatusRequest,
 )
-from app.services import admin_alert_service, audit_service, match_limit_service, membership_service, payment_service, profile_service, vip_service, withdrawal_service
+from app.services import admin_alert_service, audit_service, match_limit_service, membership_service, payment_service, profile_service, super_like_service, vip_service, withdrawal_service
 from app.services.email_service import EmailDeliveryError, EmailService
 from app.services.notification_service import notify, notify_match_created
 from app.services.session_service import (
@@ -591,6 +591,7 @@ def get_user(
         "membership_free": vip_service.is_vip_tester(user),
         # 슈퍼 VIP (2026-10-12): 영구 무료 VIP + 나이·캠퍼스 조건과 무관하게 추천 맨 앞 (관리자만 봄)
         "super_vip": bool(user.super_vip),
+        "super_likes": user.super_likes or 0,  # 슈퍼 라이크 남은 개수 (2026-10-12)
         # 무료 체험 좋아요 사용 개수 (2026-10-06)
         "trial_likes_used": max(0, min(user.trial_likes_used or 0, membership_service.trial_limit())),
         "trial_like_limit": membership_service.trial_limit(),
@@ -706,6 +707,33 @@ def adjust_user_membership(
     )
     db.commit()
     return {"user_id": str(user.id), "member_until": after, "membership_status": membership_service.status(user)}
+
+
+@router.post("/users/{user_id}/super-likes")
+def give_user_super_likes(
+    user_id: uuid.UUID,
+    payload: GiveLikesRequest,
+    request: Request,
+    admin: CurrentAdmin = Depends(require_permission("payments:confirm")),
+    db: Session = Depends(get_db),
+):
+    """슈퍼 라이크 주기 (2026-10-12, 최고 관리자). 사용자에게 알림은 없다."""
+    user = _user_or_404(db, user_id)
+    if user.deleted_at is not None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="탈퇴한 사용자는 바꿀 수 없습니다.")
+    before = user.super_likes or 0
+    super_like_service.add(user, payload.count)
+    audit_service.record(
+        db,
+        admin_id=admin.id,
+        action="SUPER_LIKES_GIVE",
+        target_type="USER",
+        target_id=user.id,
+        request=request,
+        metadata={"count": payload.count, "before": before, "after": user.super_likes, "reason": payload.reason},
+    )
+    db.commit()
+    return {"user_id": str(user.id), "super_likes": user.super_likes}
 
 
 @router.post("/users/{user_id}/super-vip")
@@ -1388,11 +1416,23 @@ PAYMENT_HISTORY_LIMIT = 300
 
 
 def _payment_row(
-    p: Payment, user_status: str | None, match_suspended: bool, admin_emails: dict, reviewed: set, started: set
+    p: Payment,
+    user_status: str | None,
+    match_suspended: bool,
+    admin_emails: dict,
+    reviewed: set,
+    started: set,
+    super_left: dict | None = None,
 ) -> dict:
+    if p.kind == super_like_service.KIND:
+        # 슈퍼 라이크: 하나도 안 썼으면(남은 개수 ≥ 이 결제 개수) 환불 가능
+        refundable = p.status == "CONFIRMED" and (super_left or {}).get(p.user_id, 0) >= p.quantity
+    else:
+        refundable = p.kind == "SIGNUP" and p.status == "CONFIRMED" and p.user_id not in reviewed and p.user_id not in started
     return {
         "payment_id": str(p.id),
-        "kind": p.kind,  # SIGNUP(기본 이용권, 예전 이름 가입비) / VIP
+        "kind": p.kind,  # SIGNUP(기본 이용권, 예전 이름 가입비) / VIP / SUPER_LIKE(2026-10-12)
+        "quantity": p.quantity,  # 슈퍼 라이크 개수
         "code": p.code,
         "amount": p.amount,
         "status": p.status,
@@ -1406,7 +1446,8 @@ def _payment_row(
         "processed_by": admin_emails.get(p.processed_by_admin_id),
         # 환불은 기본 이용권만: 입금 확인 + 사진 검수를 한 번도 안 받음 + 이용권이 아직 시작 전 (2026-10-04 D6).
         # 연장 결제(이미 이용권을 쓰기 시작한 사람)와 VIP는 확인 후 환불 없음.
-        "refundable": p.kind == "SIGNUP" and p.status == "CONFIRMED" and p.user_id not in reviewed and p.user_id not in started,
+        # 슈퍼 라이크는 하나도 안 썼을 때만 (2026-10-12)
+        "refundable": refundable,
     }
 
 
@@ -1445,7 +1486,13 @@ def list_payments(
         if confirmed_users
         else set()
     )
-    return {"payments": [_payment_row(p, st, bool(ms), admin_emails, reviewed, started) for p, st, ms in rows]}
+    super_users = [p.user_id for p, _, _ in rows if p.kind == super_like_service.KIND and p.status == "CONFIRMED"]
+    super_left = (
+        dict(db.query(User.id, User.super_likes).filter(User.id.in_(super_users)).all()) if super_users else {}
+    )
+    return {
+        "payments": [_payment_row(p, st, bool(ms), admin_emails, reviewed, started, super_left) for p, st, ms in rows]
+    }
 
 
 def _payment_or_404(db: Session, payment_id: uuid.UUID) -> Payment:
@@ -1492,12 +1539,23 @@ def confirm_payment(
     payment.processed_at = now
     payment.processed_by_admin_id = admin.id
     user = db.get(User, payment.user_id)
-    if user is not None:
+    if user is not None and payment.kind != super_like_service.KIND:
         # 이용권·VIP를 살 때마다 "사진 바로 재검토 1회" (2026-10-06). 체험 종료는 add_membership/add_vip가 한다
         membership_service.grant_rereview(user, now)
     # 받는 일수: "입금했어요"를 누른 시각 기준. 베타 기간(OPEN_AT 전)이면 4주, 정식 배포 뒤면 2주 (2026-10-06)
     days = membership_service.period_days(payment.kind, payment.requested_at or now)
-    if user is not None and payment.kind == "VIP":
+    if user is not None and payment.kind == super_like_service.KIND:
+        # 슈퍼 라이크 (2026-10-12): 산 개수만큼 더한다. 기간·재검토 혜택 없음
+        super_like_service.add(user, payment.quantity)
+        notify(
+            db,
+            user.id,
+            "PAYMENT_CONFIRMED",
+            "입금이 확인되었어요",
+            f"슈퍼 라이크 {payment.quantity}개가 들어왔어요. 지금 {user.super_likes}개가 있어요.",
+            payment.id,
+        )
+    elif user is not None and payment.kind == "VIP":
         # 확인한 순간부터 VIP 기간. 남아 있던 기본 이용권은 VIP 뒤로 밀린다 (2026-10-04 구독제)
         membership_service.add_vip(db, user, now, days)
         notify(
@@ -1550,6 +1608,22 @@ def reject_payment(
     return {"payment_id": str(payment.id), "status": payment.status}
 
 
+def _refund_super_like(db: Session, admin: CurrentAdmin, request: Request, payment: Payment) -> dict:
+    """슈퍼 라이크 환불 (2026-10-12): 산 개수를 하나도 안 썼을 때만 (남은 개수가 이 결제 개수 이상). 남은 개수에서 뺀다."""
+    if payment.status != "CONFIRMED":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="입금 확인된 결제만 환불할 수 있습니다.")
+    owner = db.get(User, payment.user_id)
+    if owner is None or (owner.super_likes or 0) < payment.quantity:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="이미 사용한 슈퍼 라이크는 환불하지 않습니다.")
+    owner.super_likes -= payment.quantity
+    payment.status = "REFUNDED"
+    payment.processed_at = utcnow()
+    payment.processed_by_admin_id = admin.id
+    _record_payment(db, admin, request, payment, "PAYMENT_REFUND", "CONFIRMED")
+    db.commit()
+    return {"payment_id": str(payment.id), "status": payment.status}
+
+
 @router.post("/payments/{payment_id}/refund")
 def refund_payment(
     payment_id: uuid.UUID,
@@ -1563,6 +1637,8 @@ def refund_payment(
     아직 검수 전인 사진은 대기열에서 뺀다.
     """
     payment = _payment_or_404(db, payment_id)
+    if payment.kind == super_like_service.KIND:
+        return _refund_super_like(db, admin, request, payment)
     if payment.kind != "SIGNUP":
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="VIP는 입금 확인 후 환불하지 않습니다.")
     if payment.status != "CONFIRMED":

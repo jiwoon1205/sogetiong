@@ -15,10 +15,13 @@ export function MatchCelebration({
   partnerName,
   matchId,
   onClose,
+  superLike = false,
 }: {
   partnerName: string;
   matchId: string;
   onClose: () => void;
+  /** 슈퍼 라이크로 바로 매칭 (2026-10-12): 문구가 다르다 */
+  superLike?: boolean;
 }) {
   useEffect(() => {
     // 짧게 두 번 진동 (지원 안 하는 브라우저는 그냥 넘어감)
@@ -76,13 +79,17 @@ export function MatchCelebration({
         </div>
 
         <div className="mc-text">
-          <p className="eyebrow mb-4 text-brick">서로 좋아요</p>
+          <p className="eyebrow mb-4 text-brick">{superLike ? "⭐ 슈퍼 라이크" : "서로 좋아요"}</p>
           <h2 className="font-serif text-[30px] font-semibold leading-snug">
             {partnerName}님과
             <br />
-            마음이 맞았어요
+            {superLike ? "대화가 열렸어요" : "마음이 맞았어요"}
           </h2>
-          <p className="mt-4 text-[14.5px] leading-relaxed text-ink-soft">이름도 얼굴도 모르는 채로, 대화부터 시작해보세요.</p>
+          <p className="mt-4 text-[14.5px] leading-relaxed text-ink-soft">
+            {superLike
+              ? "상대가 답장하기 전까지 메시지는 1개만 보낼 수 있어요. 첫 인사를 신중하게 보내 보세요."
+              : "이름도 얼굴도 모르는 채로, 대화부터 시작해보세요."}
+          </p>
         </div>
         <div className="mc-actions mt-8 space-y-3">
           <ButtonLink href={`/chat/${matchId}`} size="lg" className="w-full">

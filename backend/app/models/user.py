@@ -73,6 +73,8 @@ class User(Base):
     # 슈퍼 VIP (2026-10-12, 마이그레이션 0024, 관리자가 지정): 영구 무료 VIP + 상대의 나이·캠퍼스 조건과 무관하게 추천에 나온다.
     # 성별·차단·같은 과 제외는 지킨다. 본인·다른 사람 모두 모른다. → matching_service.mutually_compatible, rank
     super_vip: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false(), nullable=False)
+    # 슈퍼 라이크 남은 개수 (2026-10-12, 마이그레이션 0025). 입금 확인·관리자 지급으로 늘고, 보낼 때 1개씩 준다. 기간 없음
+    super_likes: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
 
     public_profile = relationship("PublicProfile", back_populates="user", uselist=False)
     private_profile = relationship("PrivateProfile", back_populates="user", uselist=False)

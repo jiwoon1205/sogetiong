@@ -89,6 +89,9 @@ class Settings(BaseSettings):
     liked_me_slots: int = 2
     # 슈퍼 VIP (2026-10-12): 추천 한 페이지 맨 앞에 넣는 최대 인원. 여러 명이면 그중 랜덤
     super_vip_slots: int = 2
+    # 슈퍼 라이크 (2026-10-12): 1개 가격, 한 번에 살 수 있는 최대 개수. 판매는 MEMBERSHIP_ENABLED를 따른다
+    super_like_price: int = 1000
+    super_like_max_quantity: int = 10
     # 우대를 적용할 확률. 항상 넣으면 "이 카드 = 나를 좋아하는 사람"이라고 티가 난다.
     liked_me_probability: float = 0.7
 

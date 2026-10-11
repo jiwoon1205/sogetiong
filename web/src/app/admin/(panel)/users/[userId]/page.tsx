@@ -36,6 +36,8 @@ type Detail = {
   photo_files_purged?: boolean;
   /** 슈퍼 VIP (2026-10-12) */
   super_vip?: boolean;
+  /** 슈퍼 라이크 남은 개수 (2026-10-12) */
+  super_likes?: number;
   /** 매칭 정지 (2026-10-05, 관리자만 봄) */
   match_suspended?: boolean;
   match_suspended_at?: string | null;
@@ -94,6 +96,7 @@ export default function UserDetail() {
           {membershipLabel(d)}
           {d.likes_today ? <> · {likesLabel(d.likes_today)}</> : d.trial_like_limit ? <> · 체험 좋아요 {d.trial_likes_used ?? 0}/{d.trial_like_limit}</> : null}
           {d.vip_until && <> · VIP 끝 {dateTime(d.vip_until)}</>}
+          {d.super_likes ? <> · ⭐ 슈퍼 라이크 {d.super_likes}개</> : null}
         </p>
       </div>
 
@@ -159,6 +162,10 @@ export default function UserDetail() {
 
           {admin.can("payments:confirm") && !d.deleted_at && (
             <MembershipForm key={`${d.user_id}-${d.member_until}`} userId={d.user_id} onDone={() => load(!!d.private)} />
+          )}
+
+          {admin.can("payments:confirm") && !d.deleted_at && (
+            <GiveSuperLikesForm key={`sl-${d.user_id}-${d.super_likes}`} userId={d.user_id} count={d.super_likes ?? 0} onDone={() => load(!!d.private)} />
           )}
 
           {admin.can("payments:confirm") && !d.deleted_at && (
@@ -611,6 +618,57 @@ function GenderForm({ userId, gender, want, onDone }: { userId: string; gender: 
       {ok && <Notice tone="ok">변경했어요. 사용자에게 알림이 갔어요.</Notice>}
       <Button type="submit" loading={loading} disabled={(g === gender && w === want) || reason.trim().length < 2}>
         변경
+      </Button>
+    </form>
+  );
+}
+
+/** 슈퍼 라이크 주기 (2026-10-12, 최고 관리자) */
+function GiveSuperLikesForm({ userId, count, onDone }: { userId: string; count: number; onDone: () => void }) {
+  const [n, setN] = useState("");
+  const [reason, setReason] = useState("");
+  const [error, setError] = useState("");
+  const [ok, setOk] = useState("");
+  const [loading, setLoading] = useState(false);
+  const num = Number(n);
+  const valid = Number.isInteger(num) && num >= 1 && num <= 20 && reason.trim().length >= 2;
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!window.confirm(`슈퍼 라이크를 ${num}개 줄까요?`)) return;
+    setLoading(true);
+    setError("");
+    setOk("");
+    try {
+      const r = await adminApi<{ super_likes: number }>(`/users/${userId}/super-likes`, { method: "POST", body: { count: num, reason } });
+      setOk(`슈퍼 라이크 ${r.super_likes}개가 됐어요.`);
+      setN("");
+      setReason("");
+      onDone();
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <form onSubmit={submit} className="space-y-4">
+      <p className="eyebrow">슈퍼 라이크 주기</p>
+      <p className="text-[14px] text-ink">
+        지금: <b className="font-semibold">{count}개</b>
+      </p>
+      <Field label="줄 개수 (1~20)" htmlFor="give-sl-count">
+        <Input id="give-sl-count" inputMode="numeric" value={n} onChange={(e) => setN(e.target.value.trim())} placeholder="예: 1" />
+      </Field>
+      <Field label="사유 (감사 로그에 남아요)" htmlFor="give-sl-reason">
+        <Input id="give-sl-reason" value={reason} onChange={(e) => setReason(e.target.value)} maxLength={300} placeholder="이벤트 당첨" />
+      </Field>
+      <p className="text-[12.5px] text-ink-faint">기간 없이 쌓여요. 사용자에게 알림은 가지 않아요. 관리자가 준 것은 결제가 아니라 환불 대상이 아니에요.</p>
+      {error && <Notice tone="error">{error}</Notice>}
+      {ok && <Notice tone="ok">{ok}</Notice>}
+      <Button type="submit" loading={loading} disabled={!valid}>
+        슈퍼 라이크 주기
       </Button>
     </form>
   );
