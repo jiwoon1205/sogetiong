@@ -17,11 +17,13 @@ from app.models.matching import Match, MatchingPreference, PreferredCampus
 from app.models.photo import AppearanceEvaluation, UserPhoto
 from app.models.profile import Interest, PublicProfile, UserInterest
 from app.models.university import Campus, Department
+from app.models.user import User
 from app.schemas.auth import DeleteAccountRequest
 from app.schemas.profile import PreferencesRequest, ProfileUpdateRequest
 from app.services import (
     admin_alert_service,
     announcement_service,
+    audit_service,
     auth_service,
     membership_service,
     payment_service,
@@ -117,6 +119,33 @@ def get_me(current: CurrentUser = Depends(get_current_user), db: Session = Depen
     }
 
 
+def _end_paid_periods(db: Session, user: User, now) -> None:
+    """탈퇴하면 남은 이용권·VIP 기간은 그 즉시 끝난다 (2026-10-11). 다시 가입해도 돌아오지 않고 환불하지 않는다.
+
+    끝나는 시각을 탈퇴 시각으로 당긴다 (지우지 않음 → 관리자 화면에 "이용권 끝남(탈퇴 시각)"으로 남는다).
+    아직 시작 전인 이용권 일수(사진 검수 전에 산 것)도 없앤다. 남아 있던 기간은 분쟁 확인용으로 감사 로그에 남긴다.
+    """
+    before = {
+        "member_until": user.member_until.isoformat() if user.member_until else None,
+        "vip_until": user.vip_until.isoformat() if user.vip_until else None,
+        "member_days_banked": user.member_days_banked or 0,
+    }
+    ended = False
+    if user.member_until is not None and as_utc(user.member_until) > now:
+        user.member_until = now
+        ended = True
+    if user.vip_until is not None and as_utc(user.vip_until) > now:
+        user.vip_until = now
+        ended = True
+    if user.member_days_banked:
+        user.member_days_banked = 0
+        ended = True
+    if ended:
+        audit_service.record(
+            db, admin_id=None, action="WITHDRAW_PAID_PERIOD_ENDED", target_type="USER", target_id=user.id, metadata=before
+        )
+
+
 @router.delete("/me")
 def delete_me(
     payload: DeleteAccountRequest,
@@ -128,6 +157,7 @@ def delete_me(
 
     바로: 로그인 세션 삭제, 진행 중인 대화 종료, 이메일 익명화(지문만 보관), 상태 DELETED
           → 다른 사용자에게는 바로 보이지 않는다 (추천·프로필은 정상 계정만 보여줌)
+    남은 이용권·VIP 기간: 탈퇴하는 즉시 끝난다 (2026-10-11, _end_paid_periods). 재가입해도 이어지지 않는다
     7일 보관 후 자동 삭제: 공개 프로필, 관심사, 매칭 조건, 사진 파일 (withdrawal_service.purge_expired)
           → 그동안 관리자가 신고·분쟁 확인용으로 열람할 수 있다
     계속 보관: 계정 기본정보, private profile, 신고·채팅 기록, 탈퇴 전 닉네임·성별(관리자 검색용)
@@ -151,6 +181,7 @@ def delete_me(
     current.user.email = auth_service.anonymized_email(uid)
     current.user.status = "DELETED"
     current.user.deleted_at = now
+    _end_paid_periods(db, current.user, now)
     revoke_all_user_sessions(db, uid)
     db.commit()
     clear_user_cookies(response)

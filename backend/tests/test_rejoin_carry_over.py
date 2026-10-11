@@ -10,6 +10,7 @@ from datetime import timedelta
 
 from app.core.config import get_settings
 from app.core.time import as_utc, utcnow
+from app.models.admin import AuditLog
 from app.models.user import User
 
 from tests.conftest import (
@@ -84,40 +85,34 @@ def test_free_rereview_still_left_if_unused(sent_codes, db):
     assert r.status_code == 201, r.text
 
 
-def test_membership_and_vip_carry_over_once(sent_codes, db):
+def test_withdrawal_ends_membership_and_vip_right_away(sent_codes, db):
+    """탈퇴하면 남은 이용권·VIP 기간은 그 즉시 끝나고, 재가입해도 돌아오지 않는다 (2026-10-11)."""
     a = signup(sent_codes, db, EMAIL)
     user = _user(db)
-    until = utcnow() + timedelta(days=20)
-    vip = utcnow() + timedelta(days=10)
-    user.member_until, user.vip_until = until, vip
+    user.member_until = utcnow() + timedelta(days=20)
+    user.vip_until = utcnow() + timedelta(days=10)
+    user.member_days_banked = 14
     db.commit()
     _delete(a)
+
+    db.expire_all()
+    old = db.query(User).filter(User.status == "DELETED").one()
+    assert as_utc(old.member_until) <= utcnow() and as_utc(old.vip_until) <= utcnow()
+    assert old.member_days_banked == 0
+    log = db.query(AuditLog).filter(AuditLog.action == "WITHDRAW_PAID_PERIOD_ENDED").one()
+    assert log.metadata_json["member_days_banked"] == 14 and log.metadata_json["vip_until"] is not None
 
     a2 = signup(sent_codes, db, EMAIL)
     new = _user(db)
-    assert abs((as_utc(new.member_until) - until).total_seconds()) < 1
-    assert abs((as_utc(new.vip_until) - vip).total_seconds()) < 1
-
-    # 또 탈퇴·재가입해도 기간이 두 배가 되지 않는다
-    _delete(a2)
-    signup(sent_codes, db, EMAIL)
-    third = _user(db)
-    assert abs((as_utc(third.member_until) - until).total_seconds()) < 1
-    olds = db.query(User).filter(User.status == "DELETED").all()
-    assert all(u.member_until is None and u.vip_until is None for u in olds)
+    assert new.member_until is None and new.vip_until is None and (new.member_days_banked or 0) == 0
+    m = a2.get("/api/v1/me").json()["membership"]
+    assert m["until"] is None
 
 
-def test_banked_days_start_on_rejoin(sent_codes, db, monkeypatch):
-    """사진 검수 전에 낸 이용권(쌓아 둔 일수)도 이어진다."""
-    monkeypatch.setattr(get_settings(), "membership_enabled", True)
-    monkeypatch.setattr(get_settings(), "payment_bank_name", "은행")
+def test_withdrawal_without_paid_period_writes_no_log(sent_codes, db):
     a = signup(sent_codes, db, EMAIL)
-    user = _user(db)
-    user.member_days_banked = 28
-    db.commit()
     _delete(a)
-    signup(sent_codes, db, EMAIL)
-    assert _user(db).member_days_banked == 28  # 아직 사진이 없으니 쌓아 둔 그대로
+    assert db.query(AuditLog).filter(AuditLog.action == "WITHDRAW_PAID_PERIOD_ENDED").count() == 0
 
 
 def test_match_suspension_carries_over(sent_codes, db):

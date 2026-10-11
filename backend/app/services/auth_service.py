@@ -86,8 +86,8 @@ def carry_over_account(db: Session, previous: list[User], new_user: User) -> Non
     - 사진·외모 평가(점수·등급) 기록을 새 계정으로 옮긴다 → 사진 단계 없이 바로 이어서 이용,
       재검토 대기(마지막 평가 후 7일/VIP 3일)와 "바로 재검토 평생 1번" 사용 여부도 그대로 이어진다.
       (탈퇴 7일 뒤 사진 파일은 지워지지만, 평가 기록은 남아서 그대로 옮겨진다)
-    - 남은 이용권·VIP 기간, 쌓아 둔 이용권 일수를 이어준다 (탈퇴해 있던 동안에도 기간은 흘러간다).
-      옮긴 뒤 예전 계정의 값은 비운다 (여러 번 탈퇴·재가입해도 두 번 받지 않게).
+    - 이용권·VIP 기간은 이어주지 않는다 (2026-10-11: 탈퇴하는 즉시 끝남 → profiles._end_paid_periods).
+      그 전에는 남은 기간을 이어줬다.
     - 매칭 정지 상태도 이어진다 (본인은 모름).
     차단 관계는 carry_over_blocks가 따로 옮긴다.
     """
@@ -104,9 +104,6 @@ def carry_over_account(db: Session, previous: list[User], new_user: User) -> Non
         values = [as_utc(v) for v in values if v is not None]
         return max(values) if values else None
 
-    new_user.member_until = latest(u.member_until for u in old)
-    new_user.vip_until = latest(u.vip_until for u in old)
-    new_user.member_days_banked = sum(u.member_days_banked or 0 for u in old)
     new_user.signup_paid_at = latest(u.signup_paid_at for u in old)
     # 무료 체험 LIKE 사용 개수와 "사진 바로 재검토 1회" 구매 혜택도 이어진다 (2026-10-06).
     # 체험 개수는 예전 계정에서 비우지 않는다 (줄어드는 값이 아니라서 여러 번 재가입해도 늘지 않음)
@@ -115,10 +112,6 @@ def carry_over_account(db: Session, previous: list[User], new_user: User) -> Non
     if any(u.match_suspended for u in old):
         new_user.match_suspended = True
         new_user.match_suspended_at = latest(u.match_suspended_at for u in old)
-    for u in old:
-        u.member_until = None
-        u.vip_until = None
-        u.member_days_banked = 0
 
 
 # ---------- 학교 이메일 인증 ----------

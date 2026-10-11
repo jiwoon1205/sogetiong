@@ -1446,6 +1446,14 @@ def confirm_payment(
     payment = _payment_or_404(db, payment_id)
     if payment.status not in ("REQUESTED", "REJECTED"):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="확인 대기 중인 결제가 아닙니다.")
+    owner = db.get(User, payment.user_id)
+    if owner is not None and owner.deleted_at is not None:
+        # 탈퇴하면 이용권·VIP가 바로 끝나므로(2026-10-11) 탈퇴한 계정에 기간을 넣으면 아무도 못 쓴다.
+        # 입금이 있었다면 "환불"로 처리하고 사용자에게 다시 결제를 안내한다.
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="탈퇴한 사용자의 결제예요. 입금이 있었다면 환불로 처리해 주세요.",
+        )
     before = payment.status
     now = utcnow()
     payment.status = "CONFIRMED"
