@@ -16,7 +16,7 @@
               └── backups/       (최근 7일 백업)
                     │ 매일 새벽 4시
                     ▼
-              구글 드라이브 (rclone crypt로 암호화, 30일 보관)
+              구글 드라이브 (rclone crypt로 암호화, 7일 보관)
 ```
 
 - 서버 1대 (GCP Compute Engine e2-micro, 서울 asia-northeast3-c, 디스크 20GB, 스왑 2GB, 고정 IP 35.216.67.226) + 도메인 `private-matching.com`

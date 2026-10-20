@@ -22,7 +22,9 @@ HC_PING_URL="${HC_PING_URL:-https://hc-ping.com/0622489b-b82e-4319-81f3-38a68b33
 ping_hc() { curl -fsS -m 10 --retry 3 -o /dev/null "$HC_PING_URL$1" || true; }
 ping_hc /start
 REMOTE="${BACKUP_REMOTE:-gdrive-crypt:}"
-KEEP_REMOTE_DAYS="${KEEP_REMOTE_DAYS:-30}"   # 드라이브에 보관할 기간
+# 드라이브에 보관할 기간 (2026-10-21: 30일 → 7일. 백업 1개가 1.3GB라 30일치가 Workspace 용량을 거의 다 씀)
+# GCP 디스크 스냅샷(7일)도 따로 있다. 더 길게 보관해야 하면 사진은 새것만 올리는 방식으로 바꾼다.
+KEEP_REMOTE_DAYS="${KEEP_REMOTE_DAYS:-7}"
 # 서버에는 최근 백업 N개만 남긴다 (2026-10-06: 7일치 + 배포 전 수동 백업이 8GB 넘게 쌓여 디스크가 가득 참)
 # 사진이 늘수록 백업 1개도 커지므로 '개수'로 제한한다. 오래된 백업은 구글 드라이브에 30일 보관된다.
 KEEP_LOCAL_COUNT="${KEEP_LOCAL_COUNT:-2}"
@@ -77,7 +79,8 @@ rclone copy "$ARCHIVE" "$REMOTE"
 echo "업로드 완료: $REMOTE"
 
 # 4) 오래된 백업 정리
-rclone delete "$REMOTE" --min-age "${KEEP_REMOTE_DAYS}d"
+# --drive-use-trash=false: 드라이브 휴지통을 거치지 않고 바로 지운다 (휴지통에 있어도 용량을 차지함)
+rclone delete "$REMOTE" --min-age "${KEEP_REMOTE_DAYS}d" --drive-use-trash=false
 ls -1t data/backups/sogetiong-*.tar.gz | tail -n +"$((KEEP_LOCAL_COUNT + 1))" | xargs -r rm -f
 
 echo "[$(date -Is)] 백업 끝"
