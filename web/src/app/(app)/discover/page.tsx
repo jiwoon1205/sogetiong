@@ -330,7 +330,8 @@ export default function DiscoverPage() {
             }}
           />
         )}
-        {likes && likes.mode !== "none" && <LikeIntro label={limitLabel(likes)} trial={likes.mode === "trial"} />}
+        {/* "좋아요는 하루 N개" 안내 창은 2026-10-24 삭제. 체험 이용자에게만 체험 좋아요 안내 창을 보여준다 */}
+        {likes && likes.mode === "trial" && <LikeIntro label={limitLabel(likes)} trial />}
 
         <SwipeCard key={current.profile_id} onSwipe={act} disabled={busy}>
           <ProfileCard card={current} />
@@ -603,6 +604,7 @@ const LIKE_INTRO_KEY = "likeIntroSeen";
 
 function LikeIntro({ label, trial }: { label: string; trial?: boolean }) {
   // 체험 안내는 따로 한 번 더 보여준다 (베타 때 하루 5개 안내를 본 사람도 "체험 3개"는 처음이니까)
+  // 2026-10-24부터 체험 이용자에게만 띄운다 (trial=false 문구는 쓰지 않음)
   const key = trial ? `${LIKE_INTRO_KEY}:trial` : LIKE_INTRO_KEY;
   const [show, setShow] = useState(false);
   useEffect(() => {
