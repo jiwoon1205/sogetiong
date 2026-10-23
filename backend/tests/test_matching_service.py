@@ -3,11 +3,25 @@
 import random
 import uuid
 
-from app.services.matching_service import Person, Preferences, Weights, draw, mutually_compatible, rank, score, taste, tier_gap, weight
+from app.services.matching_service import (
+    Person,
+    Preferences,
+    Weights,
+    draw,
+    effort,
+    mutually_compatible,
+    rank,
+    taste,
+    text_chars,
+    tier_gap,
+    weight,
+)
 
 CAMPUS_A, CAMPUS_B = uuid.uuid4(), uuid.uuid4()
 DEPT_BIZ, DEPT_CS = uuid.uuid4(), uuid.uuid4()
-W = Weights(interest=0.60, completeness=0.25, mbti=0.15)
+W = Weights(interest=0.80, completeness=0.0, mbti=0.20)  # 2026-10-24 기본값
+BIO_OK = "주말엔 한강에서 자전거 타고 카페 찾아다니는 걸 좋아해요" * 7  # 띄어쓰기 빼고 150자 넘음
+IDEAL_OK = "대화가 잘 통하고 서로 배려하는 사람이면 좋겠어요" * 5  # 100자 넘음
 
 
 def person(gender="FEMALE", age=22, campus=CAMPUS_A, dept=DEPT_CS, tier="MID", **prefs_kw) -> Person:
@@ -148,17 +162,51 @@ def test_liked_count_factor():
 
 def test_taste_factor():
     viewer = person(tier="LOW", interests={"카페", "영화", "여행"}, mbti="ENFP")
-    best = _plain(tier="HIGH", interests={"카페", "영화", "여행"}, mbti="ENFP", has_bio=True, has_ideal_type=True)
+    best = _plain(tier="HIGH", interests={"카페", "영화", "여행"}, mbti="ENFP")
     assert taste(viewer, best, W) == 1.0
-    assert weight(viewer, best, W) == 2.0
     assert taste(viewer, _plain(tier="HIGH"), W) == 0.0
 
 
-def test_four_factors_are_balanced_max_16_min_1():
+def _careful(**kw) -> Person:
+    return person(bio_chars=text_chars(BIO_OK), ideal_chars=text_chars(IDEAL_OK), mbti="ENFP", has_face_type=True, has_height=True, **kw)
+
+
+def test_effort_factor():
+    viewer = person(tier="LOW")
+    assert effort(_careful()) == 1.0
+    assert weight(viewer, _careful(tier="HIGH"), W) == 2.0
+    assert effort(_plain()) == 0.0
+    # 짧게 쓰면 절반 점수: 자기소개 30~149자 → 0.4의 절반
+    half = person(bio_chars=50)
+    assert abs(effort(half) - 0.2) < 1e-9
+    # MBTI·얼굴상·키는 각 0.1
+    assert abs(effort(person(mbti="INTP", has_height=True)) - 0.2) < 1e-9
+
+
+def test_text_chars_ignores_spaces_and_repeats():
+    assert text_chars("안 녕 하 세 요") == 0  # 서로 다른 글자 5개뿐
+    assert text_chars("ㅋ" * 200) == 0
+    assert text_chars("가나다라마바사아자차 카타파하") == 14
+    assert text_chars(None) == 0 and text_chars("   ") == 0
+
+
+def test_interests_count_only_when_they_overlap():
+    viewer = person(interests={"카페", "영화", "여행"})
+    assert taste(viewer, person(interests={"카페", "영화", "여행"}), W) == 0.8
+    assert abs(taste(viewer, person(interests={"카페"}), W) - 0.8 / 3) < 1e-9
+    assert taste(viewer, person(interests={"게임", "요리", "사진"}), W) == 0.0
+    # 1개만 골랐는데 그게 겹쳐도 만점이 아니다 (예전 방식은 만점)
+    one = person(interests={"카페"})
+    assert abs(taste(one, person(interests={"카페", "영화", "여행"}), W) - 0.8 / 3) < 1e-9
+    # 관심사 개수는 ⑤ 프로필 정성에 안 들어간다
+    assert effort(person(interests={"카페", "영화", "여행"})) == 0.0
+
+
+def test_five_factors_are_balanced_max_32_min_1():
     viewer = person(tier="HIGH", interests={"카페", "영화", "여행"}, mbti="ENFP")
-    top = person(tier="HIGH", activity=1.0, interests={"카페", "영화", "여행"}, mbti="ENFP", has_bio=True, has_ideal_type=True)
+    top = _careful(tier="HIGH", activity=1.0, interests={"카페", "영화", "여행"})
     bottom = person(tier="LOW")
-    assert weight(viewer, top, W, 4) == 16.0
+    assert weight(viewer, top, W, 4) == 32.0
     assert weight(viewer, bottom, W, 0) == 1.0
 
 
@@ -204,20 +252,19 @@ def test_page_is_limited_and_random_each_time():
 
 
 def test_picking_many_interests_is_not_an_advantage():
-    # 예전 방식(합집합으로 나눔)은 관심사를 많이 고를수록 유리했다
+    # 예전에 4개 이상 골라 둔 사람: 많이 골라서 겹친 건 그만큼 나눠서 센다
     viewer = person(interests={"카페", "영화", "여행"})
     focused = person(interests={"카페", "영화", "여행"})
     everything = person(interests={"카페", "영화", "여행", "게임", "요리", "사진", "전시", "공연", "맛집", "등산"})
-    assert score(viewer, focused, W) == score(viewer, everything, W)
-    assert taste(viewer, focused, W) == taste(viewer, everything, W)
+    assert taste(viewer, focused, W) > taste(viewer, everything, W)
 
 
-def test_hiding_department_or_mbti_is_not_penalized_twice():
+def test_hiding_department_is_not_penalized():
+    # 학과 공개 여부는 Person에 없다 (점수에 안 씀)
     viewer = person()
-    a = person(interests={"카페", "영화", "여행"}, has_bio=True)
-    b = person(interests={"카페", "영화", "여행"}, has_bio=True)
-    # 학과 공개 여부는 Person에 없고(점수에 안 씀), MBTI가 없으면 MBTI 유사도만 0
-    assert score(viewer, a, W) == score(viewer, b, W)
+    a = person(interests={"카페", "영화", "여행"}, bio_chars=200)
+    b = person(interests={"카페", "영화", "여행"}, bio_chars=200)
+    assert weight(viewer, a, W) == weight(viewer, b, W)
 
 
 def test_default_weights_sum_to_one():
@@ -227,6 +274,7 @@ def test_default_weights_sum_to_one():
     d = {name: f.default for name, f in Settings.model_fields.items()}
     assert abs(d["weight_interest"] + d["weight_completeness"] + d["weight_mbti"] - 1.0) < 1e-9
     assert d["daily_like_limit"] == 5
-    # 네 요소 모두 최대 2배 (2026-10-24 "고르게")
-    assert d["rec_tier_same"] == d["rec_activity_max"] == d["rec_liked_max"] == d["rec_taste_max"] == 2.0
+    # 다섯 요소 모두 최대 2배 (2026-10-24 "고르게")
+    assert d["rec_tier_same"] == d["rec_activity_max"] == d["rec_liked_max"] == d["rec_taste_max"] == d["rec_effort_max"] == 2.0
+    assert d["weight_completeness"] == 0.0  # 완성도는 ⑤ 프로필 정성으로 옮김
     assert d["like_repeat_hours"] == 48 and d["like_repeat_match_count"] == 5

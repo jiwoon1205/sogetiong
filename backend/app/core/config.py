@@ -83,15 +83,16 @@ class Settings(BaseSettings):
     rec_activity_max: float = 2.0  # ② 최근 14일 매일 접속한 사람의 배수 (한 번도 안 오면 1)
     rec_liked_max: float = 2.0  # ③ 나에게 좋아요를 REC_LIKED_FULL번 보낸 사람의 배수
     rec_liked_full: int = 4  # ③ 이 횟수에서 최대 (5번째 좋아요는 바로 매칭)
-    rec_taste_max: float = 2.0  # ④ 관심사·완성도·MBTI가 가장 잘 맞을 때의 배수
+    rec_taste_max: float = 2.0  # ④ 관심사(겹치는 수)·MBTI가 가장 잘 맞을 때의 배수
+    rec_effort_max: float = 2.0  # ⑤ 프로필을 정성껏 다 채웠을 때의 배수 (matching_service.effort)
     # 좋아요 쌓기 (2026-10-24): 매칭이 안 되면 마지막 좋아요 후 이 시간이 지나 다시 추천에 나온다.
     # 같은 사람에게 이 횟수째 좋아요를 보내면 바로 매칭 (슈퍼 라이크와 같은 효과)
     like_repeat_hours: int = 48
     like_repeat_match_count: int = 5
-    # ④ 취향 점수 안의 비중 (2026-09-30 결정). 합 1
-    weight_interest: float = 0.60
-    weight_completeness: float = 0.25
-    weight_mbti: float = 0.15
+    # ④ 취향 점수 안의 비중. 2026-10-24: 관심사 0.60→0.80, 완성도 0.25→0 (⑤ 프로필 정성으로 옮김), MBTI 0.15→0.20
+    weight_interest: float = 0.80
+    weight_completeness: float = 0.0
+    weight_mbti: float = 0.20
     # 활동 점수 (2026-10-01): 최근 ACTIVITY_WINDOW_DAYS일 중 접속한 날 수 ÷ 일수.
     # 2026-10-24: 0.20 → 0 (사용자 결정). 오래 안 들어온 사람(유령회원)이 같은 등급 안에서 늘 맨 뒤로 밀려
     # 사실상 추천에 안 나왔다 → 접속 빈도와 상관없이 활성 회원과 같은 조건으로 나오게 한다.

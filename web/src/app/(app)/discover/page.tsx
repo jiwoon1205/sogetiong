@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { MatchCelebration } from "@/components/MatchCelebration";
 import { MembershipRenew, OPEN_PAY_KEY } from "@/components/PaymentStep";
 import { ProfileCard } from "@/components/ProfileCard";
+import { RecommendGuideButton } from "@/components/RecommendGuide";
 import { StarIcon, SuperLikeSheet } from "@/components/SuperLike";
 import { Button, ButtonLink, Modal, Notice, Spinner } from "@/components/ui";
 import { ApiError, api, errorMessage } from "@/lib/api";
@@ -306,9 +307,10 @@ export default function DiscoverPage() {
     const [current, next] = state.cards;
     return (
       <div className="mx-auto max-w-app">
-        <div className="mb-3 flex items-baseline justify-between">
+        <div className="mb-3 grid grid-cols-[1fr_auto_1fr] items-baseline">
           <p className="eyebrow">오늘의 추천</p>
-          <p className="text-[12.5px] text-ink-faint">
+          <RecommendGuideButton />
+          <p className="text-right text-[12.5px] text-ink-faint">
             <span className="num">{state.cards.length}</span>명 남음
           </p>
         </div>

@@ -49,6 +49,11 @@ class Person:
     mbti: str | None = None
     has_bio: bool = False
     has_ideal_type: bool = False
+    # ⑤ 프로필 정성 (2026-10-24): 자기소개·이상형 글자 수(띄어쓰기 제외), 얼굴상·키 입력 여부
+    bio_chars: int = 0
+    ideal_chars: int = 0
+    has_face_type: bool = False
+    has_height: bool = False
     tier: str | None = None  # HIGH / MID / LOW (내부 전용)
     # 활동 점수 0~1: 최근 14일 중 접속한 날 수 ÷ 14 (2026-10-01)
     activity: float = 0.0
@@ -73,6 +78,7 @@ class Weights:
     liked_max: float = 2.0
     liked_full: int = 4
     taste_max: float = 2.0
+    effort_max: float = 2.0
 
 
 # ---------- Stage 1: 조건 확인 ----------
@@ -166,15 +172,19 @@ def tier_gap(a: str | None, b: str | None) -> int:
     return abs(TIER_LEVEL[a] - TIER_LEVEL[b])
 
 
-def _interest_similarity(a: set[str], b: set[str]) -> float:
-    """겹친 관심사 수 ÷ 둘 중 적게 고른 사람의 관심사 수.
+INTEREST_MAX = 3  # 관심사는 최대 3개 (2026-10-24)
 
-    (예전 방식은 관심사를 많이 체크할수록 점수가 올라가서, "비슷한 사람"이 아니라
-    "많이 고른 사람"이 유리했다.)
+
+def _interest_similarity(a: set[str], b: set[str]) -> float:
+    """겹친 관심사 수 ÷ 3 (2026-10-24). 3개 모두 겹치면 1, 1개 겹치면 1/3.
+
+    - 많이 고른다고 유리하지 않다: 예전에 4개 이상 골라 둔 사람은 분모가 그 사람이 고른 수가 된다
+      (10개 중 3개 겹침 = 0.3). 프로필을 다시 저장하면 3개로 줄여야 한다.
+    - 1개만 골라서 그게 겹쳐도 1/3 (예전 방식은 "적게 고른 사람 기준"이라 1개만 골라도 만점이 됐다).
     """
     if not a or not b:
         return 0.0
-    return len(a & b) / min(len(a), len(b))
+    return len(a & b) / max(INTEREST_MAX, len(a), len(b))
 
 
 def _mbti_similarity(a: str | None, b: str | None) -> float:
@@ -193,6 +203,45 @@ def _completeness(person: Person) -> float:
     return sum(checks) / len(checks)
 
 
+# ⑤ 프로필 정성 기준 (2026-10-24). 글자 수는 띄어쓰기·줄바꿈을 빼고 센다.
+BIO_FULL, BIO_HALF = 150, 30  # 자기소개: 150자 이상(휴대폰에서 약 5줄) 만점, 30자 이상 절반
+IDEAL_FULL, IDEAL_HALF = 100, 30  # 이상형: 100자 이상(약 3~4줄) 만점, 30자 이상 절반
+MIN_DISTINCT_CHARS = 10  # "ㅋㅋㅋㅋ…"처럼 서로 다른 글자가 10개 미만이면 0점
+EFFORT_PARTS = {"bio": 0.40, "ideal": 0.30, "mbti": 0.10, "face": 0.10, "height": 0.10}
+
+
+def text_chars(text: str | None) -> int:
+    """정성 점수용 글자 수: 띄어쓰기·줄바꿈 제외. 같은 글자 반복(서로 다른 글자 10개 미만)은 0."""
+    if not text:
+        return 0
+    chars = [c for c in text if not c.isspace()]
+    if len(set(chars)) < MIN_DISTINCT_CHARS:
+        return 0
+    return len(chars)
+
+
+def _length_score(chars: int, full: int, half: int) -> float:
+    if chars >= full:
+        return 1.0
+    if chars >= half:
+        return 0.5
+    return 0.0
+
+
+def effort(person: Person) -> float:
+    """⑤ 프로필 정성 0~1. 관심사 개수는 넣지 않는다 (관심사는 ④에서 "겹치는 수"만 본다).
+    학과 공개 여부도 넣지 않는다 (공개는 본인 선택)."""
+    parts = EFFORT_PARTS
+    return round(
+        parts["bio"] * _length_score(person.bio_chars, BIO_FULL, BIO_HALF)
+        + parts["ideal"] * _length_score(person.ideal_chars, IDEAL_FULL, IDEAL_HALF)
+        + parts["mbti"] * (1.0 if person.mbti else 0.0)
+        + parts["face"] * (1.0 if person.has_face_type else 0.0)
+        + parts["height"] * (1.0 if person.has_height else 0.0),
+        6,
+    )
+
+
 def score(viewer: Person, candidate: Person, weights: Weights) -> float:
     """같은 등급 차이 안에서의 세부 점수 (0~1). 가중치는 설정(.env)에서 바꿀 수 있다."""
     total = (
@@ -205,7 +254,8 @@ def score(viewer: Person, candidate: Person, weights: Weights) -> float:
 
 
 def taste(viewer: Person, candidate: Person, weights: Weights) -> float:
-    """④ 취향 점수 0~1 (관심사·프로필 완성도·MBTI). 활동은 넣지 않는다 (② 따로)."""
+    """④ 취향 점수 0~1 (관심사가 겹치는 정도·MBTI 비슷한 정도). 활동은 ②, 프로필 정성은 ⑤에서 따로 곱한다.
+    (WEIGHT_COMPLETENESS는 2026-10-24부터 기본 0 — 완성도는 ⑤ 프로필 정성으로 옮김)"""
     total = weights.interest + weights.completeness + weights.mbti
     if total <= 0:
         return 0.0
@@ -218,14 +268,15 @@ def taste(viewer: Person, candidate: Person, weights: Weights) -> float:
 
 
 def weight(viewer: Person, candidate: Person, weights: Weights, liked_count: int = 0) -> float:
-    """추첨 가중치 = ① 등급 × ② 활동 × ③ 나를 좋아요한 횟수 × ④ 취향 (2026-10-24). 항상 0보다 크다."""
+    """추첨 가중치 = ① 등급 × ② 활동 × ③ 나를 좋아요한 횟수 × ④ 취향 × ⑤ 프로필 정성 (2026-10-24). 항상 0보다 크다."""
     gap = tier_gap(viewer.tier, candidate.tier)
     tier = {0: weights.tier_same, 1: weights.tier_one}.get(gap, weights.tier_two)
     activity = 1 + (weights.activity_max - 1) * min(max(candidate.activity, 0.0), 1.0)
     full = max(weights.liked_full, 1)
     liked = 1 + (weights.liked_max - 1) * min(max(liked_count, 0), full) / full
     pref = 1 + (weights.taste_max - 1) * taste(viewer, candidate, weights)
-    return max(tier, 0.01) * max(activity, 0.01) * max(liked, 0.01) * max(pref, 0.01)
+    care = 1 + (weights.effort_max - 1) * effort(candidate)
+    return max(tier, 0.01) * max(activity, 0.01) * max(liked, 0.01) * max(pref, 0.01) * max(care, 0.01)
 
 
 def draw(

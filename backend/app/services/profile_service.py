@@ -25,7 +25,7 @@ from app.models.profile import Interest, PrivateProfile, PublicProfile, UserInte
 from app.models.university import Campus, Department, University
 from app.models.user import User, UserDailyVisit
 from app.services import vip_service
-from app.services.matching_service import Person, Preferences
+from app.services.matching_service import Person, Preferences, text_chars
 
 
 # ---------- 학교 (2026-10-24 경희대 확장) ----------
@@ -258,6 +258,10 @@ def people_from_profiles(db: Session, profiles: list[PublicProfile]) -> list[Per
                 mbti=p.mbti,
                 has_bio=bool(p.bio),
                 has_ideal_type=bool(p.ideal_type),
+                bio_chars=text_chars(p.bio),
+                ideal_chars=text_chars(p.ideal_type),
+                has_face_type=bool(p.face_type),
+                has_height=p.height_cm is not None,
                 tier=evaluation.tier if evaluation else None,
                 activity=activity.get(p.user_id, 0.0),
                 super_vip=p.user_id in supers,
@@ -463,6 +467,7 @@ def matching_weights():
         liked_max=s.rec_liked_max,
         liked_full=s.rec_liked_full,
         taste_max=s.rec_taste_max,
+        effort_max=s.rec_effort_max,
     )
 
 

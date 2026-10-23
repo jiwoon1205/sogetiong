@@ -192,3 +192,12 @@ def test_delete_account(sent_codes, db):
     assert a.delete("/api/v1/me", json={"password": "goodpass123"}).status_code == 200
     assert a.get("/api/v1/me").status_code == 401
     assert a.profile_id not in discover_ids(b)
+
+
+def test_interests_are_limited_to_three(sent_codes, db):
+    """관심사는 최대 3개 (2026-10-24). 많이 고른다고 추천에 유리하지 않다."""
+    a = signup(sent_codes, db, "a@hufs.ac.kr")
+    r = a.patch("/api/v1/me/profile", json={"interests": ["카페", "영화", "여행", "게임"]})
+    assert r.status_code == 422
+    r = a.patch("/api/v1/me/profile", json={"interests": ["카페", "영화", "여행"]})
+    assert r.status_code == 200 and len(r.json()["interests"]) == 3

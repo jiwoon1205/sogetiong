@@ -5,6 +5,7 @@ import { Button, Field, Input, Notice, Segmented, Select, Tag, Textarea } from "
 import { api, errorMessage } from "@/lib/api";
 import { mailto, useSupportEmail, type CampusWithDepts } from "@/lib/catalog";
 import { FACE_TYPES, HEIGHT_MAX_CM, HEIGHT_MIN_CM, type MyProfile } from "@/lib/types";
+import { BIO_FULL, IDEAL_FULL, INTEREST_MAX, effortChars } from "@/lib/profileEffort";
 
 type Visibility = "" | "show" | "hide";
 const VISIBILITY_OPTIONS: { value: Visibility; label: string }[] = [
@@ -61,7 +62,7 @@ export function ProfileForm({
   function toggleInterest(name: string) {
     if (!p) return;
     const has = p.interests.includes(name);
-    if (!has && p.interests.length >= 10) return setError("관심사는 최대 10개까지 고를 수 있어요.");
+    if (!has && p.interests.length >= INTEREST_MAX) return setError(`관심사는 최대 ${INTEREST_MAX}개까지 고를 수 있어요.`);
     setError("");
     set("interests", has ? p.interests.filter((x) => x !== name) : [...p.interests, name]);
   }
@@ -70,6 +71,9 @@ export function ProfileForm({
     e.preventDefault();
     if (!p) return;
     setError("");
+    if (p.interests.length > INTEREST_MAX) {
+      return setError(`관심사는 이제 최대 ${INTEREST_MAX}개까지 고를 수 있어요. ${p.interests.length - INTEREST_MAX}개를 눌러서 빼 주세요.`);
+    }
     if (!p.department_id) return setError("학과를 선택해주세요. 학과는 매칭에만 쓰이고, 다른 학생에게 보여줄지는 직접 고를 수 있어요.");
     // 학교가 둘 이상 열려 있으면 캠퍼스는 항상 공개라 학과 공개만 묻는다 (2026-10-24)
     const campusAlways = !!p.campus_always_public;
@@ -247,21 +251,31 @@ export function ProfileForm({
         </div>
       </Field>
       <p className="-mt-3 text-[12.5px] leading-relaxed text-ink-faint">
-        얼굴상과 키는 다른 학생에게 &quot;본인이 입력한 정보&quot;로 보여요. 적지 않아도 추천에는 영향이 없어요.
+        얼굴상과 키는 다른 학생에게 &quot;본인이 입력한 정보&quot;로 보여요. 적으면 추천에 조금 더 자주 나와요.
       </p>
 
       <Field label="자기소개" htmlFor="bio" hint={`${(p.bio ?? "").length}/500`}>
-        <Textarea id="bio" maxLength={500} value={p.bio ?? ""} onChange={(e) => set("bio", e.target.value)} placeholder="어떤 하루를 보내는지, 요즘 빠져 있는 것, 대화하고 싶은 주제…" rows={4} />
+        <Textarea id="bio" maxLength={500} value={p.bio ?? ""} onChange={(e) => set("bio", e.target.value)} placeholder="어떤 하루를 보내는지, 요즘 빠져 있는 것, 대화하고 싶은 주제…" rows={5} />
+        <EffortHint text={p.bio} full={BIO_FULL} />
       </Field>
 
       <Field label="이상형" htmlFor="ideal" hint={`${(p.ideal_type ?? "").length}/300`}>
-        <Textarea id="ideal" maxLength={300} value={p.ideal_type ?? ""} onChange={(e) => set("ideal_type", e.target.value)} placeholder="외모보다 대화가 잘 통하는 사람이면 좋겠어요." rows={3} />
+        <Textarea id="ideal" maxLength={300} value={p.ideal_type ?? ""} onChange={(e) => set("ideal_type", e.target.value)} placeholder="외모보다 대화가 잘 통하는 사람이면 좋겠어요." rows={4} />
+        <EffortHint text={p.ideal_type} full={IDEAL_FULL} />
       </Field>
 
       <div className="space-y-2">
         <p className="text-[13px] font-medium text-ink-soft">
-          관심사 <span className="num text-ink-faint">{p.interests.length}/10</span>
+          관심사 <span className="num text-ink-faint">{p.interests.length}/{INTEREST_MAX}</span>
         </p>
+        <p className="text-[12.5px] leading-relaxed text-ink-faint">
+          나와 관심사가 겹치는 사람이 추천에 더 자주 나와요. 꼭 맞는 {INTEREST_MAX}개만 골라 주세요.
+        </p>
+        {p.interests.length > INTEREST_MAX && (
+          <Notice tone="error">
+            관심사는 이제 최대 {INTEREST_MAX}개까지예요. 지금 {p.interests.length}개 → {p.interests.length - INTEREST_MAX}개를 눌러서 빼 주세요.
+          </Notice>
+        )}
         <div className="flex flex-wrap gap-2">
           {interests.map((name) => (
             <Tag key={name} active={p.interests.includes(name)} onClick={() => toggleInterest(name)}>
@@ -277,5 +291,17 @@ export function ProfileForm({
         {submitLabel}
       </Button>
     </form>
+  );
+}
+
+
+/** 자기소개·이상형 아래 안내: 띄어쓰기 빼고 몇 자인지, 기준을 넘었는지 (⑤ 프로필 정성). */
+function EffortHint({ text, full }: { text: string | null | undefined; full: number }) {
+  const n = effortChars(text);
+  const done = n >= full;
+  return (
+    <p className={`mt-1.5 text-[12px] leading-relaxed ${done ? "text-brick" : "text-ink-faint"}`}>
+      {done ? `✓ 충분해요! 정성 들인 프로필은 추천에 더 자주 나와요.` : `띄어쓰기 빼고 ${n}자 · ${full}자 넘게 쓰면 추천에 더 자주 나와요`}
+    </p>
   );
 }

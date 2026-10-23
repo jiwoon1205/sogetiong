@@ -26,7 +26,8 @@ class ProfileUpdateRequest(BaseModel):
     mbti: str | None = Field(default=None, pattern=r"^[EIei][NSns][TFtf][JPjp]$")
     bio: str | None = Field(default=None, max_length=500)
     ideal_type: str | None = Field(default=None, max_length=300)
-    interests: list[str] | None = Field(default=None, max_length=10)
+    # 관심사는 최대 3개 (2026-10-24, 예전 10개). 많이 고른다고 유리하지 않고 "겹치는 수"만 추천에 반영
+    interests: list[str] | None = Field(default=None, max_length=3)
     # 선택사항: null을 보내면 지운다 (안 보내면 그대로)
     face_type: FaceType | None = None
     height_cm: int | None = Field(default=None, ge=HEIGHT_MIN_CM, le=HEIGHT_MAX_CM)
