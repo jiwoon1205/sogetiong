@@ -285,12 +285,12 @@ def test_school_notice_before_and_after_open(monkeypatch, sent_codes, db):
     assert a.post("/api/v1/me/announcement/seen", json={"key": "khu-notice-2026-10"}).status_code == 200
     assert a.get("/api/v1/me").json()["announcement"] is None
     # 오픈 공지는 아직 "봤음"으로 보낼 수 없다
-    assert a.post("/api/v1/me/announcement/seen", json={"key": "khu-open-2026-10"}).status_code == 404
+    assert a.post("/api/v1/me/announcement/seen", json={"key": "khu-event-2026-10"}).status_code == 404
 
     # 스위치를 켜면 배포 없이 오픈 공지가 한 번 더 뜬다
     _open_khu(monkeypatch, db)
-    assert a.get("/api/v1/me").json()["announcement"] == "khu-open-2026-10"
-    assert a.post("/api/v1/me/announcement/seen", json={"key": "khu-open-2026-10"}).status_code == 200
+    assert a.get("/api/v1/me").json()["announcement"] == "khu-event-2026-10"
+    assert a.post("/api/v1/me/announcement/seen", json={"key": "khu-event-2026-10"}).status_code == 200
     assert a.get("/api/v1/me").json()["announcement"] is None
     # 오픈 공지를 끄면 아무것도 안 뜬다 (사전 공지가 다시 뜨지 않음)
     monkeypatch.setattr(announcement_service, "SCHOOL_OPEN_NOTICE", None)
@@ -322,4 +322,4 @@ def test_open_notice_shows_even_if_last_seen_was_payment_notice(monkeypatch, sen
     db.query(User).filter(User.email == "a@hufs.ac.kr").update({"announcement_seen": "payment-open:2026-10-07-15"})
     db.commit()
     _open_khu(monkeypatch, db)
-    assert a.get("/api/v1/me").json()["announcement"] == "khu-open-2026-10"
+    assert a.get("/api/v1/me").json()["announcement"] == "khu-event-2026-10"

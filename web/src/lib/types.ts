@@ -59,6 +59,8 @@ export type Me = {
   university_id: string;
   /** 2026-10-24 경희대 확장 */
   university_name?: string;
+  /** 친구 초대 이벤트 (2026-10-24): 맨 윗줄 배너용 */
+  referral_event?: { active: boolean; end: string | null };
   multi_school?: boolean;
   onboarding: {
     profile_done: boolean;

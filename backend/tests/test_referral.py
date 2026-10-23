@@ -101,18 +101,33 @@ def test_signed_up_in_event_rewarded_even_if_approved_after(monkeypatch, sent_co
     assert _super_likes(db, "a@hufs.ac.kr") == 1
 
 
-def test_rejoin_is_not_a_referral(monkeypatch, sent_codes, db):
+def test_rejoin_within_7_days_is_not_a_referral(monkeypatch, sent_codes, db):
     _event_on(monkeypatch)
     a = signup(sent_codes, db, "a@hufs.ac.kr")
     code = _code(a)
     old = signup(sent_codes, db, "old@hufs.ac.kr")
     assert old.delete("/api/v1/me", json={"password": "goodpass123"}).status_code == 200
-    again = _signup_with(sent_codes, db, "old@hufs.ac.kr", code)
+    _signup_with(sent_codes, db, "old@hufs.ac.kr", code)  # 탈퇴 직후 재가입
     db.expire_all()
     me = db.query(User).filter(User.email == "old@hufs.ac.kr").one()
     assert me.referred_by_id is None
     assert a.get("/api/v1/me/referral").json()["invited"] == 0
-    assert again is not None
+
+
+def test_rejoin_after_7_days_counts(monkeypatch, sent_codes, db):
+    """2026-10-24 변경: 탈퇴하고 7일이 지난 뒤 다시 가입하면 초대로 인정한다."""
+    _event_on(monkeypatch)
+    admin = admin_login(db)
+    a = signup(sent_codes, db, "a@hufs.ac.kr")
+    code = _code(a)
+    old = signup(sent_codes, db, "old@hufs.ac.kr")
+    assert old.delete("/api/v1/me", json={"password": "goodpass123"}).status_code == 200
+    db.query(User).filter(User.deleted_at.isnot(None)).update({"deleted_at": utcnow() - timedelta(days=8)})
+    db.commit()
+    again = _signup_with(sent_codes, db, "old@hufs.ac.kr", code)
+    assert a.get("/api/v1/me/referral").json()["invited"] == 1
+    _finish(again, db, admin)
+    assert _super_likes(db, "a@hufs.ac.kr") == 1
 
 
 def test_suspended_referrer_gets_nothing_and_cap(monkeypatch, sent_codes, db):

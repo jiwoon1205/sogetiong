@@ -123,6 +123,11 @@ def get_me(current: CurrentUser = Depends(get_current_user), db: Session = Depen
         "survey": {"pending": survey_service.pending(db, current.id)},
         # 한 번만 보여주는 공지 팝업 (2026-10-05). 아직 안 본 공지 이름, 없으면 null
         "announcement": announcement_service.pending(current.user, multi_school=profile_service.multi_school(db)),
+        # 친구 초대 이벤트 (2026-10-24): 화면 맨 윗줄 배너용. 기간 안이면 active, end = 끝나는 시각
+        "referral_event": {
+            "active": referral_service.active(),
+            "end": get_settings().referral_end_utc.isoformat() if get_settings().referral_end_utc else None,
+        },
     }
 
 

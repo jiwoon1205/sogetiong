@@ -1,8 +1,8 @@
 """친구 초대 이벤트 (2026-10-24). 설계: 프로젝트 문서 "친구 초대 이벤트 설계 (2026-10-24)".
 
 - 사람마다 초대 링크 코드(무작위 6글자)가 있다: private-matching.com/?ref=K7PX2M
-- 이벤트 기간(REFERRAL_START ~ REFERRAL_END)에 그 링크로 **처음** 가입하면 "누구의 초대인지" 기록한다.
-  (탈퇴 후 재가입은 초대로 치지 않는다)
+- 이벤트 기간(REFERRAL_START ~ REFERRAL_END)에 그 링크로 가입하면 "누구의 초대인지" 기록한다.
+  탈퇴 후 7일(REFERRAL_REJOIN_EXCLUDE_DAYS) 안에 다시 가입한 계정은 초대로 치지 않는다 (2026-10-24 변경, 예전: 재가입 전부 제외)
 - 초대받은 사람의 사진이 처음 승인되면 초대한 사람에게 슈퍼 라이크 1개 (한 사람당 한 번만).
   기간 안에 가입했으면 승인이 기간 뒤여도 준다. 초대한 사람이 정지·탈퇴 상태면 주지 않는다.
 - 초대받은 사람에게는 혜택이 없다. 누가 초대했는지 화면에 보여주지 않는다 (초대한 사람에게도 숫자만).
@@ -10,13 +10,13 @@
 
 import secrets
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
-from app.core.time import utcnow
+from app.core.time import as_utc, utcnow
 from app.models.user import User
 from app.services import audit_service, super_like_service
 from app.services.notification_service import notify
@@ -62,10 +62,24 @@ def code_for(db: Session, user: User) -> str:
     raise RuntimeError("초대 코드를 만들지 못했습니다")
 
 
-def attach(db: Session, new_user: User, code: str | None, *, rejoined: bool) -> bool:
-    """가입할 때: 이벤트 기간에 초대 링크로 처음 가입한 사람이면 초대한 사람을 기록한다."""
+def rejoined_recently(previous: list[User], now: datetime | None = None) -> bool:
+    """예전 계정(같은 학교 메일로 가입했다가 탈퇴한 계정) 중에 최근 N일 안에 탈퇴한 것이 있나."""
+    now = now or utcnow()
+    days = get_settings().referral_rejoin_exclude_days
+    cutoff = now - timedelta(days=days)
+    for u in previous:
+        if u.deleted_at is None:
+            return True  # 탈퇴하지 않은 예전 계정 (보통 없음) → 안전하게 제외
+        if as_utc(u.deleted_at) > cutoff:
+            return True
+    return False
+
+
+def attach(db: Session, new_user: User, code: str | None, *, previous: list[User] | None = None) -> bool:
+    """가입할 때: 이벤트 기간에 초대 링크로 가입한 사람이면 초대한 사람을 기록한다.
+    previous = 같은 메일로 예전에 가입했던 계정들. 그중 7일 안에 탈퇴한 계정이 있으면 초대로 치지 않는다."""
     code = normalize(code)
-    if code is None or rejoined or not active():
+    if code is None or not active() or rejoined_recently(previous or []):
         return False
     referrer = db.query(User).filter(User.referral_code == code).first()
     if referrer is None or referrer.id == new_user.id or referrer.status != "ACTIVE" or referrer.deleted_at is not None:

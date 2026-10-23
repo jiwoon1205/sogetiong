@@ -75,6 +75,39 @@ function findNotice(key: string): Notice | undefined {
   return NOTICES[key];
 }
 
+/** 친구 초대 이벤트 안내 상자 (2026-10-24, 공지 팝업 맨 위). 차분한 바탕 + 큰 글씨 + 3단계, 포인트 색은 글자에만 */
+function InviteEventHero() {
+  const steps = ["내 초대 링크 복사", "친구가 링크로 가입", "슈퍼 라이크 1개 받기"];
+  return (
+    <div className="mb-5 overflow-hidden rounded-card border border-line-strong bg-paper-card">
+      <div className="px-5 pb-4 pt-5 text-center">
+        <p className="inline-block rounded-full border border-brick/25 px-3 py-1 text-[12px] font-semibold tracking-wide text-brick">
+          🎁 친구 초대 이벤트 · 11월 6일까지
+        </p>
+        <p className="mt-3 font-serif text-[23px] font-semibold leading-tight text-ink">
+          친구 1명 가입하면
+          <br />
+          <span className="text-[27px] text-brick">슈퍼 라이크 1개</span>
+        </p>
+        <p className="mt-2 text-[13px] leading-relaxed text-ink-soft">보내면 상대가 좋아요를 안 눌러도 바로 매칭돼요 (1개 1,000원)</p>
+      </div>
+      <ol className="grid grid-cols-3 border-t border-line text-center">
+        {steps.map((step, i) => (
+          <li key={step} className={i > 0 ? "border-l border-line px-2 py-3" : "px-2 py-3"}>
+            <span className="num mx-auto flex h-6 w-6 items-center justify-center rounded-full border border-ink/20 text-[12.5px] font-semibold text-ink">
+              {i + 1}
+            </span>
+            <span className="mt-1.5 block text-[12px] leading-snug text-ink-soft">{step}</span>
+          </li>
+        ))}
+      </ol>
+      <p className="border-t border-line bg-paper-deep/60 px-4 py-2 text-center text-[12px] text-ink-faint">
+        경희대·외대 친구 모두 OK · 인원 제한 없음 · 친구 사진 검수가 끝나면 지급
+      </p>
+    </div>
+  );
+}
+
 /**
  * 공지 팝업 (2026-10-05 한 번만, 2026-10-06 하루 한 번 결제 오픈 공지 추가).
  * 서버 /me 의 announcement(아직 안 본 공지 이름)와 아래 NOTICES의 이름이 같을 때만 뜬다.
@@ -87,13 +120,7 @@ const NOTICES: Record<string, Notice> = {
     title: "오늘부터 경희대 학생도 함께해요",
     body: (
       <>
-        <div className="mb-4 rounded-card border border-brick/30 bg-brick-wash px-4 py-3.5 text-center">
-          <p className="text-[13px] font-semibold text-brick">🎁 친구 초대 이벤트 · 11월 6일까지</p>
-          <p className="mt-1 text-[14.5px] leading-relaxed text-ink">
-            내 초대 링크로 친구가 가입하면 <b className="font-semibold text-brick">슈퍼 라이크 1개</b>!
-          </p>
-          <p className="mt-0.5 text-[12.5px] text-ink-soft">경희대 친구도, 외대 친구도 OK · 인원 제한 없음 · 친구 사진 검수가 끝나면 지급</p>
-        </div>
+        <InviteEventHero />
         <p className="text-[15px] leading-relaxed text-ink">
           <b className="font-semibold">10월 24일(토)</b>부터 <b className="font-semibold">경희대 학생</b>(서울·국제캠퍼스)도 학교 메일 인증을 받고 훕팅을 쓸 수 있어요.
           만날 수 있는 사람이 더 많아져요.
@@ -118,17 +145,12 @@ const NOTICES: Record<string, Notice> = {
     close: "확인",
   },
   // 경희대 오픈 공지 (2026-10-24). 서버 설정 OPEN_SCHOOLS로 경희대를 열면 자동으로 이 공지로 바뀐다
-  "khu-open-2026-10": {
-    title: "경희대 학생도 함께하게 됐어요 🎉",
+  // 2026-10-24 새벽: 이벤트를 더 눈에 띄게 바꾸면서 이름을 바꿈 ("khu-open-2026-10" → 이미 본 사람에게도 한 번 더 뜸)
+  "khu-event-2026-10": {
+    title: "경희대 오픈 기념 친구 초대 이벤트 🎁",
     body: (
       <>
-        <div className="mb-4 rounded-card border border-brick/30 bg-brick-wash px-4 py-3.5 text-center">
-          <p className="text-[13px] font-semibold text-brick">🎁 친구 초대 이벤트 · 11월 6일까지</p>
-          <p className="mt-1 text-[14.5px] leading-relaxed text-ink">
-            내 초대 링크로 친구가 가입하면 <b className="font-semibold text-brick">슈퍼 라이크 1개</b>!
-          </p>
-          <p className="mt-0.5 text-[12.5px] text-ink-soft">경희대 친구도, 외대 친구도 OK · 인원 제한 없음 · 친구 사진 검수가 끝나면 지급</p>
-        </div>
+        <InviteEventHero />
         <p className="text-[15px] leading-relaxed text-ink">
           이제 <b className="font-semibold">경희대 학생</b>(서울·국제캠퍼스)도 훕팅을 써요. 추천 카드에 <b className="font-semibold">학교 이름</b>이 함께 보여요.
         </p>

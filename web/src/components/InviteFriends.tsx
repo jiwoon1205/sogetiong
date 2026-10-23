@@ -81,7 +81,7 @@ export function InviteFriends() {
           <b className="num font-semibold text-brick">{r.rewarded}</b>개
         </p>
         <p className="mt-1 text-[12px] leading-relaxed text-ink-faint">
-          친구에게는 누가 초대했는지 보이지 않아요. 예전에 가입했던 계정(탈퇴 후 재가입)은 초대로 치지 않아요.
+          친구에게는 누가 초대했는지 보이지 않아요. 탈퇴하고 7일 안에 다시 가입한 계정은 초대로 치지 않아요.
         </p>
       </div>
     </section>

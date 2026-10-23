@@ -163,8 +163,8 @@ def register(payload: RegisterRequest, request: Request, response: Response, db:
     auth_service.carry_over_blocks(db, previous_ids, user.id)
     # 탈퇴 후 재가입 (2026-10-05): 사진·외모 점수·재검토 대기·이용권·매칭 정지를 이어받는다
     auth_service.carry_over_account(db, previous, user)
-    # 친구 초대 이벤트 (2026-10-24): 처음 가입한 사람만 초대로 인정 (탈퇴 후 재가입은 아님)
-    referral_service.attach(db, user, payload.referral_code, rejoined=bool(previous))
+    # 친구 초대 이벤트 (2026-10-24): 탈퇴 후 7일 안에 다시 가입한 계정은 초대로 치지 않는다
+    referral_service.attach(db, user, payload.referral_code, previous=previous)
     db.flush()
     membership_service.start_banked(db, user)  # 이어받은 사진·등급으로 추천이 바로 열리면 쌓아 둔 일수 시작
     ticket.consumed_at = now

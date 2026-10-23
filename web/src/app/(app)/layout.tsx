@@ -6,7 +6,7 @@ import { useState } from "react";
 import { AnnouncementModal } from "@/components/AnnouncementModal";
 import { Brand } from "@/components/Brand";
 import { MemberStat } from "@/components/MemberStat";
-import { PushPrompt } from "@/components/PushPrompt";
+import { TopBanner } from "@/components/TopBanner";
 import { Spinner } from "@/components/ui";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/format";
@@ -97,8 +97,8 @@ function Shell({ children }: { children: React.ReactNode }) {
           </div>
         </div>
       </header>
-      {/* 휴대폰 알림 안내 (2026-10-05): 이 기기에서 아직 안 켰으면 한 줄 보여준다 */}
-      <PushPrompt />
+      {/* 머리말 아래 한 줄: 친구 초대 이벤트 기간에는 이벤트 줄(오늘만 닫기), 아니면 휴대폰 알림 안내 (2026-10-24) */}
+      <TopBanner />
       {/* 한 번만 보여주는 공지 팝업 (2026-10-05) */}
       <AnnouncementModal announcement={me.announcement} />
 
