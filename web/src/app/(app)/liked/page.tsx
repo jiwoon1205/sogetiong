@@ -132,7 +132,10 @@ function LikedList({ vip }: { vip: VipInfo }) {
                   <span className="ml-2 text-[13px] text-ink-soft">{[r.age ? `만 ${r.age}세` : null, r.university ? [shortSchoolName(r.university), r.campus].filter(Boolean).join(" ") : r.campus].filter(Boolean).join(" · ")}</span>
                   {r.passed && <span className="ml-2 rounded bg-paper-deep px-1.5 py-0.5 text-[11.5px] text-ink-soft">넘김</span>}
                 </span>
-                <span className="shrink-0 text-[12.5px] text-ink-faint">{timeAgo(r.liked_at)}</span>
+                <span className="shrink-0 text-[12.5px] text-ink-faint">
+                  {(r.like_count ?? 1) > 1 && <b className="mr-1.5 font-semibold text-brick">💌 {r.like_count}번</b>}
+                  {timeAgo(r.liked_at)}
+                </span>
               </button>
             </li>
           ))}

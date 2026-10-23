@@ -18,7 +18,6 @@ from app.models.profile import PublicProfile
 from app.models.user import User
 from app.schemas.matching import SendMessageRequest, TargetRequest
 from app.services import (
-    match_limit_service,
     matching_service,
     membership_service,
     profile_service,
@@ -97,13 +96,7 @@ def discover(
     cooldown = vip_service.pass_cooldown_hours(current.user)
     excluded = profile_service.excluded_user_ids(db, current.id, pass_cooldown_hours=cooldown)
 
-    # 하루 매칭 한도 (2026-10-06): 오늘 매칭이 3번 생겼으면, 오늘은 "나를 이미 LIKE한 사람"을 추천에서 뺀다.
-    # 본인은 모르게 한다 (응답에 아무 표시도 없음). 한국 시간 밤 12시에 자동으로 풀린다.
-    # VIP "받은 LIKE" 목록은 그대로다.
-    limit_reached = match_limit_service.reached_daily_limit(db, current.user)
-    if limit_reached:
-        excluded = set(excluded) | match_limit_service.all_liker_ids(db, current.id)
-
+    # (하루 매칭 한도·좋아요 못 하는 사람 뒤로 보내기는 2026-10-24 추천 재설계 때 없앴다)
     query = profile_service.discoverable_profiles_query(db, current.user).filter(
         PublicProfile.user_id.notin_(excluded)
     )
@@ -116,24 +109,21 @@ def discover(
     like_limit = vip_service.daily_like_limit(current.user)
     access = membership_service.like_access(current.user)
     by_user = {p.user_id: p for p in profiles}
-    # LIKE를 못 하는 사람(체험 다 씀·이용권 끝)은 같은 등급 안에서 뒤로. 단, 이미 나를 LIKE한 사람은 그대로 둔다
-    # (내가 LIKE하면 상대가 아무것도 안 해도 바로 매칭이 되니까)
-    likers = {uid for uid, _ in profile_service.likers_of(db, current.id)}
-    cannot_like = membership_service.cannot_like_ids(db, list(by_user)) - likers
+    # 가중치 추첨 (2026-10-24): 등급 × 활동 × 나를 좋아요한 횟수 × 취향 → matching_service.rank
     ranked = matching_service.rank(
         viewer,
         profile_service.people_from_profiles(db, profiles),
         profile_service.matching_weights(),
         limit or settings.discover_page_size,
-        liked_me=set() if limit_reached else profile_service.liked_me_ids(db, current.id),
-        liked_me_slots=settings.liked_me_slots,
-        liked_me_probability=settings.liked_me_probability,
-        seen_before=profile_service.passed_before_ids(db, current.id, pass_cooldown_hours=cooldown),
-        cannot_like=cannot_like,
+        liked_counts=profile_service.liked_counts(db, current.id),
         super_vip_slots=settings.super_vip_slots,  # 슈퍼 VIP는 페이지 맨 앞 (2026-10-12)
     )
     # 카드에는 외모 등급도, "나를 LIKE했는지"도 들어가지 않는다 (build_cards가 보내는 항목만 나감)
     cards = profile_service.build_cards(db, [by_user[p.user_id] for p in ranked])
+    # 내가 이 사람에게 보낸 좋아요 횟수 (내 행동이라 보여줘도 된다): "좋아요 n번 보냈어요 · 5번이면 바로 매칭" 안내용
+    sent = profile_service.sent_like_counts(db, current.id, [p.user_id for p in ranked])
+    for card, person in zip(cards, ranked):
+        card["my_likes"] = sent.get(person.user_id, 0)
     # 후보가 없을 때 조건을 자동으로 넓히지 않는다 (설계도 §56, §57)
     trial = access != "paid"
     return {
@@ -154,6 +144,8 @@ def discover(
         # 슈퍼 라이크 남은 개수·가격 (2026-10-12)
         "super_likes": super_like_service.view(current.user),
         "super_like_on_sale": membership_service.sales_open(),
+        # 좋아요 쌓기 (2026-10-24): 같은 사람에게 이 횟수째면 바로 매칭
+        "repeat_match_count": settings.like_repeat_match_count,
     }
 
 
@@ -189,9 +181,16 @@ def liked_me(current: CurrentUser = Depends(get_current_user), db: Session = Dep
     ok.sort(key=lambda p: liked_at[p.user_id], reverse=True)
     passed = {to_id for to_id, _ in profile_service._passes(db, current.id)}
     cards = profile_service.build_cards(db, ok)
+    counts = profile_service.liked_counts(db, current.id)
     return {
         "profiles": [
-            {**card, "liked_at": liked_at[p.user_id].isoformat(), "passed": p.user_id in passed}
+            {
+                **card,
+                "liked_at": liked_at[p.user_id].isoformat(),
+                "passed": p.user_id in passed,
+                # 나에게 좋아요를 보낸 횟수 (2026-10-24 좋아요 쌓기). VIP 받은 LIKE 목록에서만 보여준다
+                "like_count": counts.get(p.user_id, 1),
+            }
             for p, card in zip(ok, cards)
         ]
     }
@@ -212,20 +211,30 @@ def _target(db: Session, current: CurrentUser, profile_id: uuid.UUID) -> PublicP
 
 def _upsert_action(
     db: Session, from_id: uuid.UUID, to_id: uuid.UUID, action: str, *, is_trial: bool = False, is_super: bool = False
-) -> None:
+) -> int:
+    """LIKE/PASS 기록. 돌려주는 값 = 이 사람에게 보낸 좋아요 횟수 (2026-10-24 좋아요 쌓기)."""
     row = db.query(Like).filter(Like.from_user_id == from_id, Like.to_user_id == to_id).first()
+    if action == "LIKE":
+        count = (row.like_count or 0) + 1 if row is not None else 1
+        if row is not None:
+            # 다시 LIKE (PASS 48시간 뒤, 또는 LIKE 48시간 뒤 매칭이 안 된 사람): 행을 지우고 새로 만든다.
+            # 하루 LIKE 개수는 created_at으로 세기 때문 (행을 고쳐 쓰면 예전 날짜가 남아서 개수에 안 잡힌다 → 하루 5개 제한을 피할 수 있음)
+            db.delete(row)
+            db.flush()
+        db.add(
+            Like(
+                from_user_id=from_id, to_user_id=to_id, action=action, is_trial=is_trial, is_super=is_super, like_count=count
+            )
+        )
+        return count
     if row is None:
-        db.add(Like(from_user_id=from_id, to_user_id=to_id, action=action, is_trial=is_trial, is_super=is_super))
-    elif action == "LIKE":
-        # PASS 48시간이 지나 다시 나온 사람에게 LIKE하는 경우: PASS 행을 지우고 새로 만든다.
-        # 하루 LIKE 개수는 created_at으로 세기 때문 (행을 고쳐 쓰면 예전 PASS 날짜가 남아서 개수에 안 잡힌다 → 하루 5개 제한을 피할 수 있음)
-        db.delete(row)
-        db.flush()
-        db.add(Like(from_user_id=from_id, to_user_id=to_id, action=action, is_trial=is_trial, is_super=is_super))
-    else:
-        # 다시 PASS: 값이 같으면 SQLAlchemy가 updated_at을 안 바꾸므로 직접 바꾼다 (48시간을 이때부터 다시 셈)
-        row.action = action
-        row.updated_at = utcnow()
+        db.add(Like(from_user_id=from_id, to_user_id=to_id, action=action, like_count=0))
+        return 0
+    # PASS: 쌓인 좋아요 횟수는 그대로 둔다 (다시 좋아요하면 이어서 셈).
+    # 값이 같으면 SQLAlchemy가 updated_at을 안 바꾸므로 직접 바꾼다 (48시간을 이때부터 다시 셈)
+    row.action = action
+    row.updated_at = utcnow()
+    return row.like_count or 0
 
 
 @router.post("/likes")
@@ -262,7 +271,7 @@ def like(payload: TargetRequest, current: CurrentUser = Depends(get_current_user
         if not membership_service.use_trial_like(db, current.user):
             db.rollback()
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=_like_blocked_detail(current.user))
-        _upsert_action(db, current.id, target.user_id, "LIKE", is_trial=True)
+        like_count = _upsert_action(db, current.id, target.user_id, "LIKE", is_trial=True)
         db.flush()
     else:
         # 하루 LIKE 한도 (한국 시간 자정에 다시 채워짐). DB로 세므로 서버를 재시작해도 초기화되지 않는다.
@@ -274,7 +283,7 @@ def like(payload: TargetRequest, current: CurrentUser = Depends(get_current_user
                 detail=f"오늘 LIKE {limit}개를 모두 사용했어요. 자정(한국 시간)에 다시 충전돼요.",
             )
 
-        _upsert_action(db, current.id, target.user_id, "LIKE")
+        like_count = _upsert_action(db, current.id, target.user_id, "LIKE")
         db.flush()
         # 한 번 더 확인: LIKE를 여러 개 "동시에" 보내면 위의 확인을 모두 통과할 수 있다.
         # 방금 기록한 LIKE를 포함해 세고, 한도를 넘으면 취소한다.
@@ -301,6 +310,23 @@ def like(payload: TargetRequest, current: CurrentUser = Depends(get_current_user
         for uid in (a, b):
             # 방금 LIKE를 누른 본인은 화면에서 바로 보므로 휴대폰 알림은 상대에게만
             notify_match_created(db, uid, match.id, push=uid != current.id)
+    elif like_count >= get_settings().like_repeat_match_count:
+        # 좋아요 쌓기 (2026-10-24): 같은 사람에게 5번째 좋아요 → 상대가 좋아요를 안 눌러도 바로 매칭.
+        # 슈퍼 라이크와 같은 효과·안전장치 (super_like_by → 답장 전 메시지 1개), 문구만 "좋아요 5번으로 연결"
+        a, b = profile_service.match_pair(current.id, target.user_id)
+        match = Match(user_a_id=a, user_b_id=b, status="ACTIVE", super_like_by=current.id, by_repeat_likes=True)
+        db.add(match)
+        db.flush()
+        n = get_settings().like_repeat_match_count
+        notify(
+            db,
+            target.user_id,
+            "MATCH_CREATED",
+            f"좋아요 {n}번으로 연결됐어요",
+            f"상대가 좋아요를 {n}번 보내 바로 대화가 열렸어요. 원하지 않으면 대화를 끝내거나 차단할 수 있어요.",
+            match.id,
+        )
+        push_service.queue(db, target.user_id, push_service.MATCH, match.id)
     try:
         db.commit()
     except IntegrityError:
@@ -315,6 +341,8 @@ def like(payload: TargetRequest, current: CurrentUser = Depends(get_current_user
     return {
         "matched": visible,
         "match_id": str(match.id) if visible else None,
+        # 좋아요 5번째로 생긴 매칭이면 true (2026-10-24) → 화면이 "좋아요 5번으로 연결" 축하 화면을 보여준다
+        "by_repeat_likes": bool(visible and match.by_repeat_likes),
         "like_access": membership_service.like_access(current.user),
         "trial_likes_left": membership_service.trial_left(current.user),
         "likes_left_today": membership_service.trial_left(current.user)
@@ -450,6 +478,13 @@ def _super_like_side(match: Match, user_id: uuid.UUID) -> str | None:
     return "sent" if match.super_like_by == user_id else "received"
 
 
+def _super_like_reason(match: Match) -> str | None:
+    """슈퍼 라이크처럼 생긴 매칭의 이유: "super_like" / "repeat_likes"(좋아요 5번, 2026-10-24) / None"""
+    if match.super_like_by is None:
+        return None
+    return "repeat_likes" if match.by_repeat_likes else "super_like"
+
+
 def _unread_counts(db: Session, match_ids: list[uuid.UUID], user_id: uuid.UUID) -> dict[uuid.UUID, int]:
     """대화방마다 안 읽은 상대 메시지 수 (2026-10-08, 쿼리 1번).
     마지막으로 읽은 시각(match_reads)보다 늦게 온 상대 메시지를 센다. 읽은 기록이 없으면 상대 메시지 전부."""
@@ -527,6 +562,7 @@ def list_matches(current: CurrentUser = Depends(get_current_user), db: Session =
                 "partner": cards[partner],
                 "unread_count": unread.get(m.id, 0),  # 안 읽은 상대 메시지 수 (2026-10-08)
                 "super_like": _super_like_side(m, current.id),  # 슈퍼 라이크 매칭 (2026-10-12)
+                "super_like_reason": _super_like_reason(m),  # 좋아요 5번 매칭이면 "repeat_likes" (2026-10-24)
                 "last_message": {
                     "body": last.body,
                     "is_mine": last.sender_user_id == current.id,
@@ -660,6 +696,7 @@ def list_messages(
         ],
         # 슈퍼 라이크 매칭 (2026-10-12): sent(내가 보냄) / received(내가 받음) / null
         "super_like": _super_like_side(match, current.id),
+        "super_like_reason": _super_like_reason(match),
         # true면 상대가 답장할 때까지 메시지를 더 보낼 수 없다 (보낸 사람만, 메시지 1개 보낸 뒤)
         "send_locked": super_like_service.message_locked(db, match, current.id),
     }

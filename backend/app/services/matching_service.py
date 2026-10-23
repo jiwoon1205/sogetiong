@@ -1,15 +1,17 @@
-"""매칭 엔진 (설계도 §18, §19 / 2026-09-30 변경).
+"""매칭 엔진 (설계도 §18, §19 / 2026-09-30 변경 / 2026-10-24 가중치 추첨으로 재설계).
 
-Stage 1 — Hard Filter: 조건에 맞지 않는 후보 제거 (양쪽 조건을 모두 확인)
-Stage 2 — 정렬:
-    ① 외모 등급(상/중/하)이 나와 같은 사람 → 한 단계 차이 → 두 단계 차이 순서
-    ② 같은 등급 차이 안에서는 세부 점수(관심사·프로필 완성도·MBTI·활동)로 정렬
-    ③ 점수까지 같으면 랜덤 (2026-10-01: 예전에는 DB에서 꺼낸 순서 = 가입 순서가 그대로 남아서
-       먼저 가입한 사람이 항상 먼저 떴다)
-Stage 3 — 나를 LIKE한 사람 우대: 한 페이지에 최대 N자리, 위치는 랜덤, 가끔은 우대 안 함
-          (항상 같은 자리에 넣으면 "이 카드 = 나를 좋아하는 사람"이라고 티가 난다)
+Stage 1 — Hard Filter: 조건에 맞지 않는 후보 제거 (양쪽 조건을 모두 확인). 차단·매칭·최근 PASS/LIKE는 API에서 뺀다.
+Stage 2 — 가중치 추첨 (2026-10-24, 프로젝트 문서 "추천 알고리즘 재설계 (2026-10-24)"):
+    조건이 맞는 모든 사람이 추첨 대상. 가중치에 비례해 뽑는다 (가중치가 낮아도 0이 아님).
+    가중치 = ① 외모 등급(같음 2.0 / 한 단계 1.4 / 두 단계 1.0)
+           × ② 활동(1 + 최근 14일 접속한 날 비율)
+           × ③ 나를 좋아요한 횟수(1 + 0.25 × 횟수, 최대 2)
+           × ④ 취향(1 + 관심사·완성도·MBTI 점수)
+    네 요소 모두 최대 2배로 "고르게" 나눴다. 배수는 .env(REC_*)로 바꿀 수 있다.
+    예전 방식(등급 차이로 딱 잘라 줄 세우기 → 뒤쪽 사람은 사실상 안 나옴)은 없앴다.
+Stage 3 — 슈퍼 VIP는 페이지 맨 앞 (최대 SUPER_VIP_SLOTS명).
 
-외모 등급은 내부 데이터라 이 파일 밖으로(API 응답으로) 절대 나가면 안 된다.
+외모 등급과 "나를 좋아요했는지"는 내부 데이터라 이 파일 밖으로(API 응답으로) 절대 나가면 안 된다.
 
 이 파일의 함수는 DB를 모르는 순수 함수라 단위 테스트가 쉽다.
 DB에서 데이터를 모으는 부분은 app/services/profile_service.py에 있다.
@@ -61,9 +63,16 @@ class Weights:
     interest: float
     completeness: float
     mbti: float
-    # 자주 접속하는 사람을 앞으로 (2026-10-01). 너무 크면 관심사가 맞는 사람보다
-    # "자주 오는 사람"만 뜨므로 .env(WEIGHT_ACTIVITY)로 조정한다.
+    # (2026-10-24부터 취향 점수에는 넣지 않는다. 활동은 가중치 ②로 따로 곱한다)
     activity: float = 0.0
+    # 가중치 추첨 배수 (2026-10-24). 기본값 = 설정 기본값
+    tier_same: float = 2.0
+    tier_one: float = 1.4
+    tier_two: float = 1.0
+    activity_max: float = 2.0
+    liked_max: float = 2.0
+    liked_full: int = 4
+    taste_max: float = 2.0
 
 
 # ---------- Stage 1: 조건 확인 ----------
@@ -148,7 +157,7 @@ def mutually_compatible(viewer: Person, candidate: Person) -> bool:
     return satisfies(viewer, candidate) and satisfies(candidate, viewer)
 
 
-# ---------- Stage 2: 정렬 ----------
+# ---------- Stage 2: 가중치 ----------
 
 def tier_gap(a: str | None, b: str | None) -> int:
     """등급 차이 0(같음) / 1(한 단계) / 2(두 단계). 등급을 모르면 가장 뒤로 보낸다."""
@@ -195,84 +204,48 @@ def score(viewer: Person, candidate: Person, weights: Weights) -> float:
     return round(total, 6)
 
 
-def order(
+def taste(viewer: Person, candidate: Person, weights: Weights) -> float:
+    """④ 취향 점수 0~1 (관심사·프로필 완성도·MBTI). 활동은 넣지 않는다 (② 따로)."""
+    total = weights.interest + weights.completeness + weights.mbti
+    if total <= 0:
+        return 0.0
+    value = (
+        weights.interest * _interest_similarity(viewer.interests, candidate.interests)
+        + weights.completeness * _completeness(candidate)
+        + weights.mbti * _mbti_similarity(viewer.mbti, candidate.mbti)
+    ) / total
+    return min(max(value, 0.0), 1.0)
+
+
+def weight(viewer: Person, candidate: Person, weights: Weights, liked_count: int = 0) -> float:
+    """추첨 가중치 = ① 등급 × ② 활동 × ③ 나를 좋아요한 횟수 × ④ 취향 (2026-10-24). 항상 0보다 크다."""
+    gap = tier_gap(viewer.tier, candidate.tier)
+    tier = {0: weights.tier_same, 1: weights.tier_one}.get(gap, weights.tier_two)
+    activity = 1 + (weights.activity_max - 1) * min(max(candidate.activity, 0.0), 1.0)
+    full = max(weights.liked_full, 1)
+    liked = 1 + (weights.liked_max - 1) * min(max(liked_count, 0), full) / full
+    pref = 1 + (weights.taste_max - 1) * taste(viewer, candidate, weights)
+    return max(tier, 0.01) * max(activity, 0.01) * max(liked, 0.01) * max(pref, 0.01)
+
+
+def draw(
     viewer: Person,
     candidates: list[Person],
     weights: Weights,
     rng: random.Random | None = None,
-    seen_before: set[uuid.UUID] | dict[uuid.UUID, float] | None = None,
-    cannot_like: set[uuid.UUID] | None = None,
+    liked_counts: dict[uuid.UUID, int] | None = None,
 ) -> list[Person]:
-    """조건을 통과한 후보를 처음 보는 사람 먼저 → 등급 차이 → 세부 점수 순으로 정렬. 점수가 같으면 랜덤.
+    """조건이 맞는 사람을 가중치에 비례한 확률로 순서대로 뽑는다 (가중치 랜덤 비복원 추출).
 
-    seen_before: 예전에 PASS했다가 48시간이 지나 다시 나온 사람. 처음 보는 사람을 다 본 뒤에 나온다 (2026-10-02).
-      - set으로 주면: 다시 나온 사람끼리는 등급 차이 → 점수 순서 (일반 사용자)
-      - dict(user_id → PASS한 시각 숫자)로 주면: 다시 나온 사람끼리는 **PASS한 지 오래된 사람부터**
-        (VIP 테스트 계정, 2026-10-02 — 새로고침할 때마다 같은 10명만 나오지 않고 돌아가며 나오게)
-
-    cannot_like: 지금 LIKE를 보낼 수 없는 사람 (무료 체험 LIKE를 다 썼거나 이용권이 끝남, 2026-10-06).
-      같은 등급 차이 안에서 뒤로 보낸다 (빼지는 않음) → 돈 낸 사람의 LIKE가 답을 못 받는 일을 줄인다.
-      등급보다 앞에 두지 않는 이유: 유료 시작 뒤에는 이런 사람이 많을 수 있어서, 등급이 안 맞는 사람만 잔뜩 뜰 수 있다.
-
-    먼저 섞은 뒤 정렬한다. 파이썬 정렬은 "같은 값이면 원래 순서 유지"라서,
-    섞어 두면 점수가 같은 사람끼리는 랜덤 순서가 된다 (가입 순서가 결과에 영향을 주지 않음).
+    키 = 난수^(1/가중치) 가 큰 순서 (Efraimidis–Spirakis). 가중치가 2배면 앞에 나올 확률도 그만큼 높다.
+    새로고침할 때마다 다시 뽑으므로 가중치가 낮은 사람도 가끔 앞에 나온다.
     """
+    rng = rng or random.Random()
+    counts = liked_counts or {}
     eligible = [c for c in candidates if mutually_compatible(viewer, c)]
-    (rng or random.Random()).shuffle(eligible)
-    seen = seen_before or set()
-    pass_order = seen if isinstance(seen, dict) else {}
-    blocked_likes = cannot_like or set()
-    eligible.sort(
-        key=lambda c: (
-            c.user_id in seen,
-            pass_order.get(c.user_id, 0.0),  # dict일 때만 의미 있음: 오래 전에 PASS한 사람이 앞
-            tier_gap(viewer.tier, c.tier),
-            c.user_id in blocked_likes,
-            -score(viewer, c, weights),
-        )
-    )
-    return eligible
-
-
-# ---------- Stage 3: 나를 LIKE한 사람 우대 ----------
-
-def _boost_liked_me(
-    viewer: Person,
-    ordered: list[Person],
-    liked_me: set[uuid.UUID],
-    limit: int,
-    slots: int,
-    probability: float,
-    rng: random.Random,
-) -> list[Person]:
-    page = ordered[:limit]
-    if slots <= 0 or not liked_me or rng.random() >= probability:
-        return page
-
-    already = sum(1 for p in page if p.user_id in liked_me)
-    room = slots - already
-    if room <= 0:
-        return page
-    # 등급이 같거나 한 단계 차이인 사람만 우대 (두 단계 차이는 일반 순서대로)
-    extra = [
-        c for c in ordered[limit:]
-        if c.user_id in liked_me and tier_gap(viewer.tier, c.tier) <= 1
-    ][:room]
-    if not extra:
-        return page
-
-    # 자리를 만들기 위해 페이지 뒤쪽의 (나를 LIKE하지 않은) 사람을 빼고, 랜덤한 위치에 끼워 넣는다
-    keep = list(page)
-    for _ in extra:
-        if len(keep) + len(extra) <= limit:
-            break
-        for i in range(len(keep) - 1, -1, -1):
-            if keep[i].user_id not in liked_me:
-                keep.pop(i)
-                break
-    for person in extra:
-        keep.insert(rng.randint(0, len(keep)), person)
-    return keep[:limit]
+    keyed = [(rng.random() ** (1.0 / weight(viewer, c, weights, counts.get(c.user_id, 0))), c) for c in eligible]
+    keyed.sort(key=lambda kc: kc[0], reverse=True)
+    return [c for _, c in keyed]
 
 
 def rank(
@@ -281,26 +254,14 @@ def rank(
     weights: Weights,
     limit: int,
     *,
-    liked_me: set[uuid.UUID] | None = None,
-    liked_me_slots: int = 0,
-    liked_me_probability: float = 0.0,
+    liked_counts: dict[uuid.UUID, int] | None = None,
     rng: random.Random | None = None,
-    seen_before: set[uuid.UUID] | dict[uuid.UUID, float] | None = None,
-    cannot_like: set[uuid.UUID] | None = None,
     super_vip_slots: int = 0,
 ) -> list[Person]:
+    """추천 한 페이지: 가중치 추첨 → 슈퍼 VIP 맨 앞."""
     rng = rng or random.Random()
-    ordered = order(viewer, candidates, weights, rng, seen_before, cannot_like)
-    page = _boost_liked_me(
-        viewer,
-        ordered,
-        liked_me or set(),
-        limit,
-        liked_me_slots,
-        liked_me_probability,
-        rng,
-    )
-    return _put_super_vip_first(ordered, page, limit, super_vip_slots, rng)
+    ordered = draw(viewer, candidates, weights, rng, liked_counts)
+    return _put_super_vip_first(ordered, ordered[:limit], limit, super_vip_slots, rng)
 
 
 def _put_super_vip_first(ordered: list[Person], page: list[Person], limit: int, slots: int, rng: random.Random) -> list[Person]:

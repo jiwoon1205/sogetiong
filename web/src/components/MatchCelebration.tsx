@@ -16,12 +16,15 @@ export function MatchCelebration({
   matchId,
   onClose,
   superLike = false,
+  repeatLikes = false,
 }: {
   partnerName: string;
   matchId: string;
   onClose: () => void;
   /** 슈퍼 라이크로 바로 매칭 (2026-10-12): 문구가 다르다 */
   superLike?: boolean;
+  /** 좋아요 5번째로 생긴 매칭 (2026-10-24). 슈퍼 라이크와 같은 안내, 라벨만 다름 */
+  repeatLikes?: boolean;
 }) {
   useEffect(() => {
     // 짧게 두 번 진동 (지원 안 하는 브라우저는 그냥 넘어감)
@@ -79,7 +82,7 @@ export function MatchCelebration({
         </div>
 
         <div className="mc-text">
-          <p className="eyebrow mb-4 text-brick">{superLike ? "⭐ 슈퍼 라이크" : "서로 좋아요"}</p>
+          <p className="eyebrow mb-4 text-brick">{repeatLikes ? "💌 좋아요 5번" : superLike ? "⭐ 슈퍼 라이크" : "서로 좋아요"}</p>
           <h2 className="font-serif text-[30px] font-semibold leading-snug">
             {partnerName}님과
             <br />

@@ -90,6 +90,9 @@ class Like(Base):
     is_trial: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false(), nullable=False)
     # 슈퍼 라이크로 보낸 LIKE (2026-10-12, 마이그레이션 0025). 하루 LIKE 한도·체험 개수와 따로 센다
     is_super: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false(), nullable=False)
+    # 같은 사람에게 좋아요를 보낸 횟수 (2026-10-24, 마이그레이션 0028). 매칭이 안 되면 마지막 좋아요 48시간 뒤
+    # 다시 보낼 수 있고, 5번째면 바로 매칭 (슈퍼 라이크와 같은 효과). PASS로 바뀌어도 남는다 (다시 좋아요하면 이어서 셈)
+    like_count: Mapped[int] = mapped_column(Integer, default=1, server_default="1", nullable=False)
     created_at: Mapped[datetime] = created_at()
     updated_at: Mapped[datetime] = updated_at()
 
@@ -111,6 +114,9 @@ class Match(Base):
     ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # 슈퍼 라이크로 생긴 매칭이면 보낸 사람 (2026-10-12, 마이그레이션 0025). 받은 사람이 답장하기 전까지 보낸 사람은 메시지 1개만
     super_like_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("users.id"), nullable=True)
+    # 좋아요 5번째로 생긴 매칭 (2026-10-24, 마이그레이션 0028). super_like_by에 보낸 사람이 들어가 슈퍼 라이크와 같은
+    # 안전장치(답장 전 메시지 1개)가 적용되고, 화면 문구만 "좋아요 5번으로 연결됐어요"로 바뀐다
+    by_repeat_likes: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false(), nullable=False)
     created_at: Mapped[datetime] = created_at()
     updated_at: Mapped[datetime] = updated_at()
 

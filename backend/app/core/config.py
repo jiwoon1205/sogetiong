@@ -53,7 +53,8 @@ class Settings(BaseSettings):
 
     # 하루 매칭 한도 (2026-10-06). 한국 시간 0시부터 매칭이 N번 생기면, 그날은 추천 탭에
     # "나를 이미 LIKE한 사람"이 안 나온다. 밤 12시에 자동으로 풀린다. 본인은 모른다. 0이면 끔.
-    daily_match_limit: int = 3
+    # 2026-10-24 추천 재설계: 없앰 (사용자 결정). 추천에서는 더 이상 쓰지 않는다.
+    daily_match_limit: int = 0
 
     # --- 이메일 ---
     # smtp: 실제 발송 / console: 서버 콘솔에 코드 출력 (dev 전용)
@@ -74,9 +75,20 @@ class Settings(BaseSettings):
     # --- 매칭 ---
     discover_page_size: int = 10
     require_approved_photo_to_discover: bool = True
-    # 추천 순서 (2026-09-30 결정)
-    # 1순위: 외모 등급(상/중/하)이 같은 사람 → 한 단계 차이 → 두 단계 차이
-    # 2순위: 같은 등급 안에서는 아래 세부 점수로 정렬 (외모 숫자 점수는 등급과 겹치므로 쓰지 않음)
+    # 추천 = 가중치 추첨 (2026-10-24 재설계, 프로젝트 문서 "추천 알고리즘 재설계 (2026-10-24)")
+    # 조건이 맞는 모든 사람이 추첨 대상. 가중치 = ①등급 × ②활동 × ③나를 좋아요한 횟수 × ④취향, 네 요소 모두 최대 2배.
+    rec_tier_same: float = 2.0  # ① 외모 등급이 같음
+    rec_tier_one: float = 1.4  # ① 한 단계 차이
+    rec_tier_two: float = 1.0  # ① 두 단계 차이
+    rec_activity_max: float = 2.0  # ② 최근 14일 매일 접속한 사람의 배수 (한 번도 안 오면 1)
+    rec_liked_max: float = 2.0  # ③ 나에게 좋아요를 REC_LIKED_FULL번 보낸 사람의 배수
+    rec_liked_full: int = 4  # ③ 이 횟수에서 최대 (5번째 좋아요는 바로 매칭)
+    rec_taste_max: float = 2.0  # ④ 관심사·완성도·MBTI가 가장 잘 맞을 때의 배수
+    # 좋아요 쌓기 (2026-10-24): 매칭이 안 되면 마지막 좋아요 후 이 시간이 지나 다시 추천에 나온다.
+    # 같은 사람에게 이 횟수째 좋아요를 보내면 바로 매칭 (슈퍼 라이크와 같은 효과)
+    like_repeat_hours: int = 48
+    like_repeat_match_count: int = 5
+    # ④ 취향 점수 안의 비중 (2026-09-30 결정). 합 1
     weight_interest: float = 0.60
     weight_completeness: float = 0.25
     weight_mbti: float = 0.15
@@ -87,7 +99,7 @@ class Settings(BaseSettings):
     weight_activity: float = 0.0
     activity_window_days: int = 14
 
-    # 나를 LIKE한 사람 우대: 추천 한 페이지에 최대 이만큼 자리를 준다 (위치는 매번 랜덤)
+    # (2026-10-24 재설계로 안 씀) 예전 "나를 LIKE한 사람 한 페이지 최대 2자리" → 가중치 ③으로 바뀜
     liked_me_slots: int = 2
     # 슈퍼 VIP (2026-10-12): 추천 한 페이지 맨 앞에 넣는 최대 인원. 여러 명이면 그중 랜덤
     super_vip_slots: int = 2

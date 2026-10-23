@@ -37,6 +37,9 @@ export default function ChatPage() {
   const [panel, setPanel] = useState<"none" | "profile" | "menu" | "report">("none");
   // 슈퍼 라이크 매칭 (2026-10-12): sent = 내가 보냄(상대 답장 전 메시지 1개만), received = 내가 받음
   const [superLike, setSuperLike] = useState<"sent" | "received" | null>(null);
+  // 좋아요 5번으로 생긴 매칭이면 "repeat_likes" (2026-10-24): 안전장치는 슈퍼 라이크와 같고 문구만 다름
+  const [superReason, setSuperReason] = useState<string | null>(null);
+  const superVia = superReason === "repeat_likes" ? "💌 좋아요 5번으로" : "⭐ 슈퍼 라이크로";
   const [sendLocked, setSendLocked] = useState(false);
   const [hasNew, setHasNew] = useState(false); // 위로 올려 읽는 중에 상대 메시지가 오면 "새 메시지" 버튼을 띄운다
   const listRef = useRef<HTMLDivElement>(null);
@@ -59,10 +62,11 @@ export default function ChatPage() {
   const loadMessages = useCallback(async () => {
     try {
       const after = lastIdRef.current;
-      const r = await api<{ messages: ChatMessage[]; super_like?: "sent" | "received" | null; send_locked?: boolean }>(
+      const r = await api<{ messages: ChatMessage[]; super_like?: "sent" | "received" | null; super_like_reason?: string | null; send_locked?: boolean }>(
         after ? `/matches/${matchId}/messages?after=${encodeURIComponent(after)}` : `/matches/${matchId}/messages`,
       );
       setSuperLike(r.super_like ?? null);
+      setSuperReason(r.super_like_reason ?? null);
       setSendLocked(Boolean(r.send_locked));
       if (r.messages.length === 0) return; // 새 메시지 없음 → 화면을 다시 그리지 않는다
       setMessages((prev) => mergeMessages(prev, r.messages));
@@ -266,12 +270,12 @@ export default function ChatPage() {
           {error && <p className="mb-2 px-1 text-[13px] text-brick">{error}</p>}
           {superLike === "received" && !messages.some((m) => m.is_mine) && (
             <p className="mb-2 rounded-md bg-brick-wash px-3 py-2 text-[12.5px] leading-relaxed text-ink-soft">
-              <b className="font-semibold text-brick">⭐ 슈퍼 라이크로 연결된 대화예요.</b> 원하지 않으면 오른쪽 위 &lsquo;더보기&rsquo;에서 대화를 끝내거나 차단할 수 있어요.
+              <b className="font-semibold text-brick">{superVia} 연결된 대화예요.</b> 원하지 않으면 오른쪽 위 &lsquo;더보기&rsquo;에서 대화를 끝내거나 차단할 수 있어요.
             </p>
           )}
           {superLike === "sent" && !messages.some((m) => !m.is_mine) && (
             <p className="mb-2 rounded-md bg-brick-wash px-3 py-2 text-[12.5px] leading-relaxed text-ink-soft">
-              <b className="font-semibold text-brick">⭐ 슈퍼 라이크로 연결됐어요.</b>{" "}
+              <b className="font-semibold text-brick">{superVia} 연결됐어요.</b>{" "}
               {sendLocked ? "상대가 답장하면 이어서 대화할 수 있어요." : "상대가 답장하기 전까지 메시지는 1개만 보낼 수 있어요."}
             </p>
           )}

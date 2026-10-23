@@ -47,10 +47,10 @@ def test_vip_sees_passed_profiles_after_24_hours(sent_codes, db):
 
     _age_passes(db, vip, hours=23)
     assert discover_ids(vip) == [b.profile_id]
-    _age_passes(db, vip, hours=2)  # 합계 25시간 → 다시 나옴, 처음 보는 사람(b) 뒤에
-    assert discover_ids(vip) == [b.profile_id, a.profile_id]
+    _age_passes(db, vip, hours=2)  # 합계 25시간 → 다시 나옴 (2026-10-24: 순서는 가중치 추첨)
+    assert set(discover_ids(vip)) == {a.profile_id, b.profile_id}
 
-    # 다시 나온 사람에게 LIKE할 수 있다. LIKE한 사람은 더 이상 안 나온다.
+    # 다시 나온 사람에게 LIKE할 수 있다. LIKE한 사람은 48시간 동안 안 나온다.
     assert vip.post("/api/v1/likes", json={"profile_id": a.profile_id}).status_code == 200
     assert discover_ids(vip) == [b.profile_id]
 

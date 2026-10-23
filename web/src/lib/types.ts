@@ -30,6 +30,8 @@ export type Card = {
   height_cm: number | null;
   interests: string[];
   appearance: Scores | null;
+  /** 추천 카드: 내가 이 사람에게 보낸 좋아요 횟수 (2026-10-24 좋아요 쌓기). 0이면 처음 */
+  my_likes?: number;
 };
 
 /** 얼굴상 목록 (2026-10-02). 서버 app/schemas/profile.py의 FACE_TYPES와 같아야 한다. 1개만 고른다. */
@@ -152,7 +154,7 @@ export type VipInfo = {
 };
 
 /** GET /liked-me — 나를 LIKE한 사람 (VIP 전용) */
-export type LikedMeCard = Card & { liked_at: string; passed: boolean };
+export type LikedMeCard = Card & { liked_at: string; passed: boolean; /** 나에게 좋아요를 보낸 횟수 (2026-10-24) */ like_count?: number };
 
 /** 결제 안내 한 건 (이용권·VIP 공통) */
 export type PaymentDetail = Extract<PaymentInfo, { code: string }>;
@@ -211,6 +213,8 @@ export type MatchItem = {
   unread_count?: number;
   /** 슈퍼 라이크로 생긴 매칭 (2026-10-12): sent = 내가 보냄, received = 내가 받음 */
   super_like?: "sent" | "received" | null;
+  /** 슈퍼 라이크처럼 생긴 매칭의 이유 (2026-10-24): 좋아요 5번이면 "repeat_likes" */
+  super_like_reason?: "super_like" | "repeat_likes" | null;
   last_message: { body: string; is_mine: boolean; sent_at: string } | null;
 };
 

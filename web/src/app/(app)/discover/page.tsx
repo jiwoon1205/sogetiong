@@ -64,7 +64,9 @@ export default function DiscoverPage() {
   const [state, setState] = useState<State>({ kind: "loading" });
   const [busy, setBusy] = useState(false);
   // 방금 서로 좋아요가 된 상대 → 축하 화면
-  const [matched, setMatched] = useState<{ card: Card; matchId: string; superLike?: boolean } | null>(null);
+  const [matched, setMatched] = useState<{ card: Card; matchId: string; superLike?: boolean; repeatLikes?: boolean } | null>(null);
+  // 같은 사람에게 이 횟수째 좋아요면 바로 매칭 (2026-10-24 좋아요 쌓기)
+  const [repeatCount, setRepeatCount] = useState(5);
   const [error, setError] = useState("");
   // 남은 좋아요
   // - paid: 오늘 남은 좋아요 (한국 시간 자정에 다시 충전). VIP는 하루 10개를 "5+5"로 보여준다 (base = 무료 몫, 2026-10-03)
@@ -95,7 +97,9 @@ export default function DiscoverPage() {
         like_access?: LikeAccess;
         super_likes?: SuperLikes;
         super_like_on_sale?: boolean;
+        repeat_match_count?: number;
       }>("/discover");
+      setRepeatCount(res.repeat_match_count ?? 5);
       setSuperLikes(res.super_likes?.count ?? 0);
       setSuperOnSale(Boolean(res.super_like_on_sale));
       setLikes({
@@ -138,7 +142,7 @@ export default function DiscoverPage() {
       setError("");
       try {
         if (action === "like") {
-          const res = await api<{ matched: boolean; match_id: string | null; likes_left_today: number; like_access?: LikeAccess }>(
+          const res = await api<{ matched: boolean; match_id: string | null; likes_left_today: number; like_access?: LikeAccess; by_repeat_likes?: boolean }>(
             "/likes",
             { method: "POST", body: { profile_id: card.profile_id } },
           );
@@ -155,7 +159,8 @@ export default function DiscoverPage() {
           if (res.matched && res.match_id) {
             // 이 기기에서 축하 화면을 이미 봤다고 기록 → 대화 목록에서 한 번 더 뜨지 않게
             markMatchSeen(res.match_id);
-            setMatched({ card, matchId: res.match_id });
+            // 좋아요 5번째로 생긴 매칭이면 슈퍼 라이크와 같은 안내 (2026-10-24)
+            setMatched({ card, matchId: res.match_id, superLike: res.by_repeat_likes, repeatLikes: res.by_repeat_likes });
             if (trialJustEnded) setOutAfterCelebration(true);
           } else if (trialJustEnded) {
             setOutOfLikes(true);
@@ -232,6 +237,7 @@ export default function DiscoverPage() {
       partnerName={matched.card.nickname}
       matchId={matched.matchId}
       superLike={matched.superLike}
+      repeatLikes={matched.repeatLikes}
       onClose={() => {
         markMatchSeen(matched.matchId);
         setMatched(null);
@@ -327,6 +333,19 @@ export default function DiscoverPage() {
         <SwipeCard key={current.profile_id} onSwipe={act} disabled={busy}>
           <ProfileCard card={current} />
         </SwipeCard>
+        {/* 좋아요 쌓기 (2026-10-24): 예전에 좋아요를 보냈는데 아직 매칭이 안 된 사람 */}
+        {(current.my_likes ?? 0) > 0 && (
+          <p className="mt-3 rounded-md border border-line bg-paper-card px-3 py-2 text-center text-[13px] text-ink-soft">
+            💌 이미 좋아요 <b className="num font-semibold text-ink">{current.my_likes}</b>번 보냈어요 ·{" "}
+            {repeatCount - (current.my_likes ?? 0) <= 1 ? (
+              <b className="font-semibold text-brick">이번 좋아요로 바로 매칭돼요</b>
+            ) : (
+              <>
+                <b className="font-semibold text-ink">{repeatCount - (current.my_likes ?? 0)}번</b> 더 보내면 바로 매칭돼요
+              </>
+            )}
+          </p>
+        )}
         {next && <div aria-hidden className="mx-4 -mt-2 h-3 rounded-b-card border border-t-0 border-line bg-paper-deep" />}
 
         {error && <div className="mt-4"><Notice tone="error">{error}</Notice></div>}

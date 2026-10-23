@@ -19,7 +19,7 @@ from tests.conftest import (
 )
 
 PUBLIC_CARD_KEYS = {
-    "profile_id", "nickname", "age", "gender", "university", "campus", "department",
+    "profile_id", "nickname", "age", "gender", "university", "campus", "department", "my_likes",
     "mbti", "bio", "ideal_type", "face_type", "height_cm", "interests", "appearance",
 }
 
@@ -89,6 +89,7 @@ def test_full_flow_signup_to_chat(sent_codes, db):
     assert r.json() == {
         "matched": False,
         "match_id": None,
+        "by_repeat_likes": False,  # 좋아요 5번째 매칭이면 true (2026-10-24)
         "likes_left_today": 4,
         "like_access": "paid",  # 유료화가 꺼져 있으면(베타) 모두 paid
         "trial_likes_left": 3,

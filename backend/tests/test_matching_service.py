@@ -3,7 +3,7 @@
 import random
 import uuid
 
-from app.services.matching_service import Person, Preferences, Weights, mutually_compatible, rank, score, tier_gap
+from app.services.matching_service import Person, Preferences, Weights, draw, mutually_compatible, rank, score, taste, tier_gap, weight
 
 CAMPUS_A, CAMPUS_B = uuid.uuid4(), uuid.uuid4()
 DEPT_BIZ, DEPT_CS = uuid.uuid4(), uuid.uuid4()
@@ -110,33 +110,97 @@ def test_candidate_without_preferences_is_skipped():
     assert not mutually_compatible(a, b)
 
 
-# ---------- 정렬: 외모 등급이 1순위 ----------
+# ---------- 가중치 추첨 (2026-10-24 재설계) ----------
+# 가중치 = ① 등급(같음 2.0 / 한 단계 1.4 / 두 단계 1.0) × ② 활동(1~2) × ③ 나를 좋아요한 횟수(1~2) × ④ 취향(1~2)
+
 
 def test_tier_gap():
     assert tier_gap("MID", "MID") == 0
     assert tier_gap("HIGH", "MID") == 1
     assert tier_gap("LOW", "HIGH") == 2
-    assert tier_gap(None, "MID") == 3  # 등급을 모르면 가장 뒤
+    assert tier_gap(None, "MID") == 3  # 등급을 모르면 가장 먼 것으로
 
 
-def test_same_tier_comes_first_even_with_fewer_shared_interests():
-    viewer = person(tier="MID", interests={"카페", "영화", "여행"})
-    same_tier = person(tier="MID", interests={"게임"})
-    other_tier_similar = person(tier="HIGH", interests={"카페", "영화", "여행"})
-    assert rank(viewer, [other_tier_similar, same_tier], W, 10) == [same_tier, other_tier_similar]
+def _plain(**kw):
+    """다른 요소가 모두 최소(1배)인 사람: 활동 0, 관심사·소개·MBTI 없음."""
+    return person(**kw)
 
 
-def test_tier_order_same_then_one_step_then_two_steps():
+def test_tier_factor():
     viewer = person(tier="HIGH")
-    low, mid, high = person(tier="LOW"), person(tier="MID"), person(tier="HIGH")
-    assert rank(viewer, [low, mid, high], W, 10) == [high, mid, low]
+    assert weight(viewer, _plain(tier="HIGH"), W) == 2.0
+    assert abs(weight(viewer, _plain(tier="MID"), W) - 1.4) < 1e-9
+    assert weight(viewer, _plain(tier="LOW"), W) == 1.0
 
 
-def test_within_same_tier_shared_interests_win():
-    viewer = person(interests={"카페", "영화", "여행"})
-    similar = person(interests={"카페", "영화", "여행"})
-    different = person(interests={"게임"})
-    assert rank(viewer, [different, similar], W, 10) == [similar, different]
+def test_activity_factor():
+    viewer = person(tier="LOW")
+    assert weight(viewer, _plain(tier="HIGH", activity=0.0), W) == 1.0  # 유령회원도 0이 아님
+    assert weight(viewer, _plain(tier="HIGH", activity=0.5), W) == 1.5
+    assert weight(viewer, _plain(tier="HIGH", activity=1.0), W) == 2.0
+
+
+def test_liked_count_factor():
+    viewer = person(tier="LOW")
+    c = _plain(tier="HIGH")
+    assert [weight(viewer, c, W, n) for n in range(6)] == [1.0, 1.25, 1.5, 1.75, 2.0, 2.0]  # 4번에서 최대
+
+
+def test_taste_factor():
+    viewer = person(tier="LOW", interests={"카페", "영화", "여행"}, mbti="ENFP")
+    best = _plain(tier="HIGH", interests={"카페", "영화", "여행"}, mbti="ENFP", has_bio=True, has_ideal_type=True)
+    assert taste(viewer, best, W) == 1.0
+    assert weight(viewer, best, W) == 2.0
+    assert taste(viewer, _plain(tier="HIGH"), W) == 0.0
+
+
+def test_four_factors_are_balanced_max_16_min_1():
+    viewer = person(tier="HIGH", interests={"카페", "영화", "여행"}, mbti="ENFP")
+    top = person(tier="HIGH", activity=1.0, interests={"카페", "영화", "여행"}, mbti="ENFP", has_bio=True, has_ideal_type=True)
+    bottom = person(tier="LOW")
+    assert weight(viewer, top, W, 4) == 16.0
+    assert weight(viewer, bottom, W, 0) == 1.0
+
+
+def test_draw_frequency_follows_weights():
+    """가중치 2 대 1이면 맨 앞에 나오는 비율도 약 2/3 대 1/3."""
+    viewer = person(tier="HIGH")
+    heavy, light = person(tier="HIGH"), person(tier="LOW")
+    rng = random.Random(7)
+    firsts = [draw(viewer, [light, heavy], W, rng)[0] is heavy for _ in range(6000)]
+    share = sum(firsts) / len(firsts)
+    assert 0.63 < share < 0.70
+
+
+def test_everyone_can_come_first():
+    """가중치가 가장 낮은 사람도 가끔은 맨 앞에 나온다 (줄 세우기와 다른 점)."""
+    viewer = person(tier="HIGH")
+    top = [person(tier="HIGH", activity=1.0, has_bio=True, has_ideal_type=True) for _ in range(3)]
+    low = person(tier="LOW")
+    rng = random.Random(3)
+    assert any(draw(viewer, top + [low], W, rng)[0] is low for _ in range(2000))
+
+
+def test_liked_me_appears_more_often():
+    viewer = person()
+    fan, other = person(), person()
+    rng = random.Random(11)
+    fan_first = sum(draw(viewer, [other, fan], W, rng, {fan.user_id: 4})[0] is fan for _ in range(4000))
+    assert fan_first / 4000 > 0.6  # 2 대 1
+
+
+def test_draw_still_needs_hard_filters():
+    viewer = person(want="MALE")
+    fan = person(gender="FEMALE")  # 원하는 성별이 아님
+    assert rank(viewer, [fan], W, 5, liked_counts={fan.user_id: 4}) == []
+
+
+def test_page_is_limited_and_random_each_time():
+    viewer = person()
+    pool = [person() for _ in range(15)]
+    pages = [tuple(p.user_id for p in rank(viewer, pool, W, 5, rng=random.Random(seed))) for seed in range(10)]
+    assert all(len(p) == 5 for p in pages)
+    assert len(set(pages)) > 1
 
 
 def test_picking_many_interests_is_not_an_advantage():
@@ -145,6 +209,7 @@ def test_picking_many_interests_is_not_an_advantage():
     focused = person(interests={"카페", "영화", "여행"})
     everything = person(interests={"카페", "영화", "여행", "게임", "요리", "사진", "전시", "공연", "맛집", "등산"})
     assert score(viewer, focused, W) == score(viewer, everything, W)
+    assert taste(viewer, focused, W) == taste(viewer, everything, W)
 
 
 def test_hiding_department_or_mbti_is_not_penalized_twice():
@@ -155,68 +220,6 @@ def test_hiding_department_or_mbti_is_not_penalized_twice():
     assert score(viewer, a, W) == score(viewer, b, W)
 
 
-# ---------- 나를 LIKE한 사람 우대 ----------
-
-def _pool(n, tier="MID"):
-    return [person(tier=tier) for _ in range(n)]
-
-
-def test_liked_me_gets_a_slot_on_the_first_page():
-    viewer = person()
-    pool = _pool(15)
-    fan = pool[-1]  # 원래 순서로는 1페이지(5명)에 못 들어가는 사람
-    page = rank(viewer, pool, W, 5, liked_me={fan.user_id}, liked_me_slots=2, liked_me_probability=1.0, rng=random.Random(1))
-    assert fan in page
-    assert len(page) == 5
-
-
-def test_liked_me_slots_are_limited():
-    viewer = person()
-    # 점수가 같으면 순서가 랜덤이라, 1페이지 5명은 점수를 높여서 확실히 앞에 오게 한다
-    top = [person(has_bio=True, has_ideal_type=True) for _ in range(5)]
-    pool = top + _pool(10)
-    fans = {p.user_id for p in pool[5:]}
-    page = rank(viewer, pool, W, 5, liked_me=fans, liked_me_slots=2, liked_me_probability=1.0, rng=random.Random(1))
-    assert sum(1 for p in page if p.user_id in fans) == 2
-
-
-def test_liked_me_position_is_random():
-    viewer = person()
-    pool = _pool(15)
-    fan = pool[-1]
-    positions = {
-        rank(viewer, pool, W, 5, liked_me={fan.user_id}, liked_me_slots=1, liked_me_probability=1.0, rng=random.Random(seed)).index(fan)
-        for seed in range(30)
-    }
-    assert len(positions) > 1
-
-
-def test_liked_me_boost_is_sometimes_skipped():
-    viewer = person()
-    pool = _pool(15)
-    fan = pool[-1]
-    shown = [
-        fan in rank(viewer, pool, W, 5, liked_me={fan.user_id}, liked_me_slots=1, liked_me_probability=0.7, rng=random.Random(seed))
-        for seed in range(200)
-    ]
-    assert 0 < sum(shown) < len(shown)
-
-
-def test_liked_me_two_tiers_away_is_not_boosted():
-    viewer = person(tier="HIGH")
-    pool = _pool(10, tier="HIGH")
-    fan = person(tier="LOW")
-    page = rank(viewer, pool + [fan], W, 5, liked_me={fan.user_id}, liked_me_slots=2, liked_me_probability=1.0, rng=random.Random(1))
-    assert fan not in page
-
-
-def test_liked_me_still_needs_hard_filters():
-    viewer = person(want="MALE")
-    fan = person(gender="FEMALE")  # 원하는 성별이 아님
-    page = rank(viewer, [fan], W, 5, liked_me={fan.user_id}, liked_me_slots=2, liked_me_probability=1.0)
-    assert page == []
-
-
 def test_default_weights_sum_to_one():
     from app.core.config import Settings
 
@@ -224,37 +227,6 @@ def test_default_weights_sum_to_one():
     d = {name: f.default for name, f in Settings.model_fields.items()}
     assert abs(d["weight_interest"] + d["weight_completeness"] + d["weight_mbti"] - 1.0) < 1e-9
     assert d["daily_like_limit"] == 5
-
-
-# ---------- 활동 점수·같은 점수일 때 랜덤 (2026-10-01) ----------
-
-W_ACT = Weights(interest=0.60, completeness=0.25, mbti=0.15, activity=0.20)
-
-
-def test_frequent_visitor_comes_first_when_other_scores_tie():
-    viewer = person()
-    rare = person(activity=1 / 14)
-    frequent = person(activity=10 / 14)
-    # 가입 순서(목록 순서)와 상관없이 자주 오는 사람이 먼저
-    for seed in range(20):
-        assert rank(viewer, [rare, frequent], W_ACT, 10, rng=random.Random(seed)) == [frequent, rare]
-
-
-def test_activity_does_not_beat_tier():
-    viewer = person(tier="HIGH")
-    same_tier_inactive = person(tier="HIGH", activity=0.0)
-    other_tier_daily = person(tier="MID", activity=1.0)
-    assert rank(viewer, [other_tier_daily, same_tier_inactive], W_ACT, 10) == [same_tier_inactive, other_tier_daily]
-
-
-def test_activity_weight_zero_means_no_effect():
-    viewer = person()
-    a, b = person(activity=0.0), person(activity=1.0)
-    assert score(viewer, a, W) == score(viewer, b, W)
-
-
-def test_ties_are_random_not_signup_order():
-    viewer = person()
-    pool = _pool(10)  # 점수가 모두 같은 사람들 (목록 순서 = 가입 순서라고 가정)
-    firsts = {rank(viewer, pool, W_ACT, 10, rng=random.Random(seed))[0].user_id for seed in range(30)}
-    assert len(firsts) > 1  # 먼저 가입한 사람이 항상 1등이 아니다
+    # 네 요소 모두 최대 2배 (2026-10-24 "고르게")
+    assert d["rec_tier_same"] == d["rec_activity_max"] == d["rec_liked_max"] == d["rec_taste_max"] == 2.0
+    assert d["like_repeat_hours"] == 48 and d["like_repeat_match_count"] == 5

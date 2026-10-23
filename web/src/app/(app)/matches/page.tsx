@@ -78,7 +78,7 @@ export default function MatchesPage() {
                         <span className="truncate text-[15.5px] font-semibold">{m.partner.nickname}</span>
                         {m.super_like && (
                           <span className="shrink-0 rounded bg-brick-wash px-1.5 py-0.5 text-[11px] font-semibold text-brick">
-                            ⭐ 슈퍼 라이크
+                            {m.super_like_reason === "repeat_likes" ? "💌 좋아요 5번" : "⭐ 슈퍼 라이크"}
                           </span>
                         )}
                       </p>

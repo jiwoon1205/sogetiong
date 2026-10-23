@@ -377,7 +377,10 @@ def _passes(db: Session, user_id: uuid.UUID):
 def excluded_user_ids(
     db: Session, user_id: uuid.UUID, *, pass_cooldown_hours: int | None = None, include_passed: bool = True
 ) -> set[uuid.UUID]:
-    """추천에서 빼야 할 사람: 이미 LIKE한 사람, 최근에 PASS한 사람, 차단 관계(양방향), 매칭 이력이 있는 사람.
+    """추천에서 빼야 할 사람: 최근에 LIKE한 사람, 최근에 PASS한 사람, 차단 관계(양방향), 매칭 이력이 있는 사람.
+
+    LIKE (2026-10-24 재설계): 예전에는 한 번 LIKE한 사람은 영원히 뺐다. 지금은 마지막 LIKE 후
+    LIKE_REPEAT_HOURS(48시간) 동안만 빼고, 그때까지 매칭이 안 됐으면 다시 나온다 (다시 LIKE 가능 → 횟수가 쌓임).
 
     PASS는 영원히 빼지 않는다 (2026-10-02). 베타라 사람이 적어서 추천이 금방 바닥나기 때문.
     - 보통: PASS 후 48시간 동안만 뺀다. 내가 VIP면 24시간 (pass_cooldown_hours로 받음)
@@ -386,7 +389,13 @@ def excluded_user_ids(
     include_passed=False: PASS는 따지지 않는다 (VIP "받은 LIKE" 목록 — PASS한 사람도 보여줌).
     """
     ids: set[uuid.UUID] = {user_id}
-    ids.update(r[0] for r in db.query(Like.to_user_id).filter(Like.from_user_id == user_id, Like.action == "LIKE"))
+    like_cutoff = utcnow() - timedelta(hours=get_settings().like_repeat_hours)
+    ids.update(
+        r[0]
+        for r in db.query(Like.to_user_id).filter(
+            Like.from_user_id == user_id, Like.action == "LIKE", Like.created_at > like_cutoff
+        )
+    )
     if include_passed:
         vip_ids = vip_service.vip_user_ids(db)
         cutoff = _pass_cutoff(pass_cooldown_hours)
@@ -447,6 +456,13 @@ def matching_weights():
         completeness=s.weight_completeness,
         mbti=s.weight_mbti,
         activity=s.weight_activity,
+        tier_same=s.rec_tier_same,
+        tier_one=s.rec_tier_one,
+        tier_two=s.rec_tier_two,
+        activity_max=s.rec_activity_max,
+        liked_max=s.rec_liked_max,
+        liked_full=s.rec_liked_full,
+        taste_max=s.rec_taste_max,
     )
 
 
@@ -480,6 +496,24 @@ def liked_me_ids(db: Session, user_id: uuid.UUID) -> set[uuid.UUID]:
         if target == user_id and rank[(sender, day)] <= limit:
             boosted.add(sender)
     return boosted
+
+
+def liked_counts(db: Session, user_id: uuid.UUID) -> dict[uuid.UUID, int]:
+    """나에게 좋아요를 보낸 사람 → 보낸 횟수 (2026-10-24 가중치 ③). 사용자에게는 절대 알려주지 않는다 (VIP 받은 LIKE 목록 제외)."""
+    return dict(
+        db.query(Like.from_user_id, Like.like_count).filter(Like.to_user_id == user_id, Like.action == "LIKE").all()
+    )
+
+
+def sent_like_counts(db: Session, user_id: uuid.UUID, to_ids: list[uuid.UUID]) -> dict[uuid.UUID, int]:
+    """내가 보낸 좋아요 횟수 (2026-10-24). 넘기기로 바뀐 행도 쌓인 횟수는 남아 있다."""
+    if not to_ids:
+        return {}
+    return dict(
+        db.query(Like.to_user_id, Like.like_count)
+        .filter(Like.from_user_id == user_id, Like.to_user_id.in_(to_ids), Like.like_count > 0)
+        .all()
+    )
 
 
 def likers_of(db: Session, user_id: uuid.UUID) -> list[tuple[uuid.UUID, datetime]]:

@@ -100,13 +100,15 @@ def test_tier_is_never_sent_to_users(sent_codes, db):
         assert "tier" not in text and "HIGH" not in text, url
 
 
-def test_same_tier_is_recommended_first(sent_codes, db):
+def test_every_tier_is_drawn(sent_codes, db):
+    """2026-10-24 재설계: 등급이 같으면 더 자주 나오지만(가중치), 다른 등급도 추첨 대상이라 맨 앞에 나올 수 있다."""
     admin = admin_login(db)
     viewer = ready_user(sent_codes, db, admin, "v@hufs.ac.kr", gender="FEMALE", want="MALE", tier="HIGH")
     low = ready_user(sent_codes, db, admin, "l@hufs.ac.kr", gender="MALE", want="FEMALE", tier="LOW")
     mid = ready_user(sent_codes, db, admin, "m@hufs.ac.kr", gender="MALE", want="FEMALE", tier="MID")
     high = ready_user(sent_codes, db, admin, "h@hufs.ac.kr", gender="MALE", want="FEMALE", tier="HIGH")
-    assert discover_ids(viewer) == [high.profile_id, mid.profile_id, low.profile_id]
+    firsts = [discover_ids(viewer)[0] for _ in range(50)]
+    assert set(firsts) == {low.profile_id, mid.profile_id, high.profile_id}
 
 
 def test_user_without_tier_cannot_discover_and_is_hidden(sent_codes, db):
@@ -135,8 +137,9 @@ def test_user_without_tier_cannot_discover_and_is_hidden(sent_codes, db):
 # ---------- 나를 LIKE한 사람 우대 ----------
 
 def test_someone_who_liked_me_gets_onto_my_first_page(sent_codes, db, monkeypatch):
+    """2026-10-24 재설계: 나를 좋아요한 사람은 가중치 ③으로 더 자주 뽑힌다 (확실히 보려고 배수를 크게)."""
     settings = get_settings()
-    monkeypatch.setattr(settings, "liked_me_probability", 1.0)
+    monkeypatch.setattr(settings, "rec_liked_max", 1000.0)
     monkeypatch.setattr(settings, "discover_page_size", 2)
     admin = admin_login(db)
     viewer = ready_user(sent_codes, db, admin, "v@hufs.ac.kr", gender="FEMALE", want="MALE", tier="MID")
@@ -147,8 +150,9 @@ def test_someone_who_liked_me_gets_onto_my_first_page(sent_codes, db, monkeypatc
     fan = next(o for o in others if o.profile_id not in first_page)
     assert fan.post("/api/v1/likes", json={"profile_id": viewer.profile_id}).status_code == 200
 
-    page = discover_ids(viewer)
-    assert fan.profile_id in page and len(page) == 2
+    for _ in range(5):
+        page = discover_ids(viewer)
+        assert fan.profile_id in page and len(page) == 2
 
 
 # ---------- 하루 LIKE 5개 ----------

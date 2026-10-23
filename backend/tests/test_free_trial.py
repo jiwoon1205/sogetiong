@@ -159,29 +159,17 @@ def test_trial_count_survives_rejoin(sent_codes, db, world):
 # ---------- 추천 순서 ----------
 
 
-def test_people_who_cannot_like_go_back_within_same_tier():
+def test_people_who_cannot_like_are_not_pushed_back():
+    """2026-10-24 재설계: 좋아요를 못 하는 사람(체험 끝·이용권 끝)도 같은 가중치 (예전에는 같은 등급 안에서 뒤로)."""
     viewer_prefs = matching_service.Preferences("FEMALE", None, None, "ALL")
     cand_prefs = matching_service.Preferences("MALE", None, None, "ALL")
     campus, dept = uuid.uuid4(), uuid.uuid4()
-
-    def person(gender, tier, prefs):
-        return matching_service.Person(uuid.uuid4(), gender, 22, campus, dept, prefs, tier=tier)
-
-    viewer = person("MALE", "MID", viewer_prefs)
-    same_tier_free = person("FEMALE", "MID", cand_prefs)
-    same_tier_paid = person("FEMALE", "MID", cand_prefs)
-    other_tier_paid = person("FEMALE", "HIGH", cand_prefs)
-    weights = matching_service.Weights(0, 0, 0, 0)
-    for seed in range(20):
-        ordered = matching_service.order(
-            viewer,
-            [same_tier_free, other_tier_paid, same_tier_paid],
-            weights,
-            random.Random(seed),
-            cannot_like={same_tier_free.user_id},
-        )
-        # 같은 등급 안에서는 LIKE 가능한 사람이 먼저, 등급 순서는 그대로
-        assert [p.user_id for p in ordered] == [same_tier_paid.user_id, same_tier_free.user_id, other_tier_paid.user_id]
+    viewer = matching_service.Person(uuid.uuid4(), "MALE", 22, campus, dept, viewer_prefs, tier="MID")
+    a = matching_service.Person(uuid.uuid4(), "FEMALE", 22, campus, dept, cand_prefs, tier="MID")
+    b = matching_service.Person(uuid.uuid4(), "FEMALE", 22, campus, dept, cand_prefs, tier="MID")
+    weights = matching_service.Weights(0.6, 0.25, 0.15)
+    assert matching_service.weight(viewer, a, weights) == matching_service.weight(viewer, b, weights)
+    assert "cannot_like" not in matching_service.rank.__code__.co_varnames
 
 
 def test_cannot_like_ids(sent_codes, db, world):
