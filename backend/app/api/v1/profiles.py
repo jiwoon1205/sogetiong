@@ -121,7 +121,7 @@ def get_me(current: CurrentUser = Depends(get_current_user), db: Session = Depen
         # 설문 (2026-10-05). pending = 설문을 받는 중이고 아직 안 답함 → 화면이 설문만 보여준다
         "survey": {"pending": survey_service.pending(db, current.id)},
         # 한 번만 보여주는 공지 팝업 (2026-10-05). 아직 안 본 공지 이름, 없으면 null
-        "announcement": announcement_service.pending(current.user),
+        "announcement": announcement_service.pending(current.user, multi_school=profile_service.multi_school(db)),
     }
 
 

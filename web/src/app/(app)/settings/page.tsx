@@ -33,8 +33,10 @@ export default function SettingsPage() {
 
   return (
     <div className="mx-auto max-w-app">
-      <PageTitle eyebrow="설정" title="매칭 조건" desc="바꾼 조건은 다음 추천부터 반영돼요." />
-      <PreferencesForm campuses={campuses} />
+      <section id="preferences" className="scroll-mt-20">
+        <PageTitle eyebrow="설정" title="매칭 조건" desc="바꾼 조건은 다음 추천부터 반영돼요." />
+        <PreferencesForm campuses={campuses} />
+      </section>
 
       <MyMembership onActivated={() => void refresh()} />
 

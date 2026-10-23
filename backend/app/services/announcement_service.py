@@ -11,6 +11,9 @@
   하루 공지가 떠 있는 동안에는 CURRENT보다 먼저 보여준다.
 - 화면 내용은 web/src/components/AnnouncementModal.tsx (이름 또는 이름 앞부분으로 찾는다).
 - 새 한 번 공지를 하려면 CURRENT 이름을 바꾼다. 끄려면 None.
+- 학교 확장 공지 (2026-10-24, 경희대): 학교가 하나만 열려 있으면 CURRENT(오픈 전 사전 공지),
+  둘 이상 열리면(OPEN_SCHOOLS를 켜면) 자동으로 SCHOOL_OPEN_NOTICE(오픈 공지)로 바뀐다 → 오픈 날 따로 배포할 필요 없음.
+  사전 공지를 본 사람에게도 오픈 공지는 한 번 더 뜬다 (이름이 달라서). 오픈 공지를 끄려면 SCHOOL_OPEN_NOTICE = None.
 """
 
 from datetime import datetime
@@ -19,8 +22,17 @@ from app.core.time import KST, kst_today, utcnow
 from app.models.user import User
 from app.services import membership_service, vip_service
 
-# 휴대폰 알림 출시 공지 (한 번만)
-CURRENT: str | None = "push-alerts-2026-10"
+# 한 번만 보여주는 공지. 2026-10-24: 휴대폰 알림 출시 공지("push-alerts-2026-10") → 경희대 오픈 사전 공지
+CURRENT: str | None = "khu-notice-2026-10"
+# 학교가 둘 이상 열려 있을 때 CURRENT 대신 보여주는 공지 (경희대 오픈 공지)
+SCHOOL_OPEN_NOTICE: str | None = "khu-open-2026-10"
+
+
+def current_key(multi_school: bool = False) -> str | None:
+    """지금 보여줄 한 번 공지 이름."""
+    if multi_school and SCHOOL_OPEN_NOTICE:
+        return SCHOOL_OPEN_NOTICE
+    return CURRENT
 
 # 결제 시스템 오픈 공지 (하루 한 번, 정식 배포 전까지)
 PAYMENT_DAILY_PREFIX = "payment-open:"
@@ -45,19 +57,20 @@ def daily_payment_key(user: User, now: datetime | None = None) -> str | None:
     return key
 
 
-def pending(user: User, now: datetime | None = None) -> str | None:
-    """아직 안 본 공지 이름. 없으면 None. 하루 공지가 먼저."""
+def pending(user: User, now: datetime | None = None, *, multi_school: bool = False) -> str | None:
+    """아직 안 본 공지 이름. 없으면 None. 하루 공지가 먼저. multi_school = 학교가 둘 이상 열려 있음."""
     daily = daily_payment_key(user, now)
     if daily is not None and user.announcement_seen != daily:
         return daily
-    if CURRENT is None or user.announcement_seen == CURRENT:
+    current = current_key(multi_school)
+    if current is None or user.announcement_seen == current:
         return None
     # 하루 공지를 본 뒤(announcement_seen에 하루 공지 이름이 들어감)에도 한 번 공지는 이미 봤으면 다시 띄우지 않는다
     if user.announcement_seen and user.announcement_seen.startswith(PAYMENT_DAILY_PREFIX):
         return None
-    return CURRENT
+    return current
 
 
-def is_showable(user: User, key: str, now: datetime | None = None) -> bool:
+def is_showable(user: User, key: str, now: datetime | None = None, *, multi_school: bool = False) -> bool:
     """화면이 "봤음"으로 보낸 이름이 지금 보여줄 수 있는 공지인가."""
-    return key == CURRENT or key == daily_payment_key(user, now)
+    return key == current_key(multi_school) or key == daily_payment_key(user, now)

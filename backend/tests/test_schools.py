@@ -23,6 +23,7 @@ from tests.conftest import (
     discover_ids,
     ready_user,
     set_preferences,
+    signup,
 )
 from tests.test_super_vip import _make_super
 
@@ -271,3 +272,43 @@ def test_verify_tells_school_and_school_list_order(monkeypatch, sent_codes, db):
     r = client.post("/api/v1/auth/email/verify", json={"email": "v@khu.ac.kr", "code": sent_codes["v@khu.ac.kr"]})
     assert r.status_code == 200
     assert r.json()["university_name"] == "경희대학교" and r.json()["university_id"] == str(_khu(db).id)
+
+
+# ---------- 경희대 공지 (2026-10-24) ----------
+
+def test_school_notice_before_and_after_open(monkeypatch, sent_codes, db):
+    from app.services import announcement_service
+
+    a = signup(sent_codes, db, "a@hufs.ac.kr")
+    # 오픈 전: 사전 공지
+    assert a.get("/api/v1/me").json()["announcement"] == "khu-notice-2026-10"
+    assert a.post("/api/v1/me/announcement/seen", json={"key": "khu-notice-2026-10"}).status_code == 200
+    assert a.get("/api/v1/me").json()["announcement"] is None
+    # 오픈 공지는 아직 "봤음"으로 보낼 수 없다
+    assert a.post("/api/v1/me/announcement/seen", json={"key": "khu-open-2026-10"}).status_code == 404
+
+    # 스위치를 켜면 배포 없이 오픈 공지가 한 번 더 뜬다
+    _open_khu(monkeypatch, db)
+    assert a.get("/api/v1/me").json()["announcement"] == "khu-open-2026-10"
+    assert a.post("/api/v1/me/announcement/seen", json={"key": "khu-open-2026-10"}).status_code == 200
+    assert a.get("/api/v1/me").json()["announcement"] is None
+    # 오픈 공지를 끄면 아무것도 안 뜬다 (사전 공지가 다시 뜨지 않음)
+    monkeypatch.setattr(announcement_service, "SCHOOL_OPEN_NOTICE", None)
+    b = signup(sent_codes, db, "b@hufs.ac.kr")
+    assert b.get("/api/v1/me").json()["announcement"] == "khu-notice-2026-10"
+
+
+def test_selected_all_own_campuses_stays_own_school_after_open(monkeypatch, sent_codes, db):
+    """오픈 전에 '경희대가 열려도 외대생만'을 고른 사람 (= 외대 캠퍼스 전부를 SELECTED로 저장)."""
+    admin = admin_login(db)
+    only_hufs = [campus_id(db, "서울캠퍼스"), campus_id(db, "글로벌캠퍼스")]
+    hufs = ready_user(
+        sent_codes, db, admin, "h@hufs.ac.kr", gender="MALE", want="FEMALE",
+        prefs={"campus_mode": "SELECTED", "campus_ids": only_hufs},
+    )
+    other = ready_user(sent_codes, db, admin, "o@hufs.ac.kr", gender="FEMALE", want="MALE")
+    assert other.profile_id in discover_ids(hufs)  # 오픈 전에는 "모든 캠퍼스"와 똑같이 외대생 모두 추천
+    _open_khu(monkeypatch, db)
+    khu = ready_user(sent_codes, db, admin, "k@khu.ac.kr", gender="FEMALE", want="MALE", school=KHU)
+    ids = discover_ids(hufs)
+    assert other.profile_id in ids and khu.profile_id not in ids

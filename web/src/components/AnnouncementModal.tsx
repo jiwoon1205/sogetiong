@@ -82,6 +82,56 @@ function findNotice(key: string): Notice | undefined {
  * 새 공지: 서버 services/announcement_service.py 의 CURRENT와 여기 NOTICES에 같은 이름으로 추가.
  */
 const NOTICES: Record<string, Notice> = {
+  // 경희대 오픈 사전 공지 (2026-10-24). 학교가 하나만 열려 있는 동안 뜬다
+  "khu-notice-2026-10": {
+    title: "10월 25일부터 경희대 학생도 함께해요",
+    body: (
+      <>
+        <p className="text-[15px] leading-relaxed text-ink">
+          <b className="font-semibold">10월 25일(일)</b>부터 <b className="font-semibold">경희대 학생</b>(서울·국제캠퍼스)도 학교 메일 인증을 받고 훕팅을 쓸 수 있어요.
+          만날 수 있는 사람이 더 많아져요.
+        </p>
+        <ul className="mt-4 space-y-2 text-[14px] leading-relaxed text-ink-soft">
+          <li>
+            🎯 매칭 조건이 <b className="font-semibold text-ink">모든 캠퍼스</b>로 되어 있으면 경희대 학생도 <b className="font-semibold text-ink">자동으로</b> 추천돼요.
+          </li>
+          <li>
+            🙋 외대생만 만나고 싶다면 오픈 전에 <b className="font-semibold text-ink">설정 → 매칭 조건</b>에서 &lsquo;경희대가 열려도 외대생만 만나기&rsquo;를 체크해 주세요. 오픈 뒤에도 언제든 바꿀 수 있어요.
+          </li>
+          <li>
+            🏫 오픈하면 프로필에 <b className="font-semibold text-ink">학교와 캠퍼스가 항상 보여요</b> (지금 캠퍼스를 비공개로 해 둔 분도 공개로 바뀌어요). 학과 공개 여부는 지금처럼 직접 고를 수 있어요.
+          </li>
+          <li>🔒 사진은 지금처럼 누구에게도 공개되지 않고, 실명·학번도 보이지 않아요.</li>
+          <li>🧾 &lsquo;같은 과 제외&rsquo;는 같은 학교의 같은 과에만 적용돼요. 이용권·좋아요 규칙은 그대로예요.</li>
+        </ul>
+      </>
+    ),
+    action: { label: "매칭 조건 보러 가기", href: "/settings#preferences" },
+    close: "확인",
+  },
+  // 경희대 오픈 공지 (2026-10-24). 서버 설정 OPEN_SCHOOLS로 경희대를 열면 자동으로 이 공지로 바뀐다
+  "khu-open-2026-10": {
+    title: "경희대 학생도 함께하게 됐어요 🎉",
+    body: (
+      <>
+        <p className="text-[15px] leading-relaxed text-ink">
+          이제 <b className="font-semibold">경희대 학생</b>(서울·국제캠퍼스)도 훕팅을 써요. 추천 카드에 <b className="font-semibold">학교 이름</b>이 함께 보여요.
+        </p>
+        <ul className="mt-4 space-y-2 text-[14px] leading-relaxed text-ink-soft">
+          <li>
+            🎯 매칭 조건에서 학교·캠퍼스를 <b className="font-semibold text-ink">모두 체크</b>해 둔 분은 경희대 학생도 추천돼요.
+          </li>
+          <li>
+            🙋 외대생만 만나고 싶다면 <b className="font-semibold text-ink">설정 → 매칭 조건</b>에서 경희대 캠퍼스 체크를 풀어 주세요. 조건은 양쪽 모두 맞아야 추천돼요.
+          </li>
+          <li>🏫 학교와 캠퍼스는 모든 프로필에 보여요. 학과 공개 여부는 지금처럼 직접 고를 수 있어요.</li>
+          <li>🔒 사진은 지금처럼 누구에게도 공개되지 않아요.</li>
+        </ul>
+      </>
+    ),
+    action: { label: "매칭 조건 보러 가기", href: "/settings#preferences" },
+    close: "확인",
+  },
   "push-alerts-2026-10": {
     title: "휴대폰 알림이 생겼어요 🔔",
     body: (

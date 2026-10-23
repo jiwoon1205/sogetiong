@@ -55,6 +55,9 @@ export function PreferencesForm({
   // 학교별 캠퍼스 목록. 학교가 하나면 예전처럼 캠퍼스만 한 줄로 보여준다 (multi_school=false)
   const [schools, setSchools] = useState<SchoolCampuses[] | null>(null);
   const [multiSchool, setMultiSchool] = useState(false);
+  // "다른 학교가 열려도 우리 학교 학생만" (2026-10-24, 경희대 오픈 전). 우리 학교 캠퍼스를 전부 골라도
+  // "모든 캠퍼스(ALL)" 대신 "고른 캠퍼스(SELECTED)"로 저장 → 경희대가 열려도 자동으로 포함되지 않는다
+  const [ownOnly, setOwnOnly] = useState(false);
 
   useEffect(() => {
     api<{ multi_school: boolean; schools: SchoolCampuses[] }>("/me/preferences/campuses")
@@ -99,6 +102,8 @@ export function PreferencesForm({
         }
         const mode = res.configured ? res.campus_mode : "ALL";
         // 예전 방식("내 캠퍼스만")도 체크박스로 보여준다
+        // 우리 학교 캠퍼스를 전부 SELECTED로 저장해 둔 사람 = "우리 학교 학생만"을 고른 사람
+        setOwnOnly(mode === "SELECTED" && allCampuses.every((c) => res.campus_ids.includes(c.id)));
         if (mode === "ALL") setCampusIds(allCampuses.map((c) => c.id));
         else if (mode === "MY") setCampusIds([profile.campus_id]);
         else setCampusIds(res.campus_ids);
@@ -127,7 +132,8 @@ export function PreferencesForm({
     e.preventDefault();
     setError("");
     if (campusIds.length === 0) return setError("만날 캠퍼스를 하나 이상 골라주세요.");
-    const all = allCampuses.every((c) => campusIds.includes(c.id));
+    // 학교가 하나일 때 "우리 학교 학생만"을 체크했으면 전부 골라도 ALL로 저장하지 않는다
+    const all = allCampuses.every((c) => campusIds.includes(c.id)) && !(ownOnly && !multiSchool);
     // 상관없음 → 둘 다 비움. 오른쪽 끝("35세 이상") → 최대 나이 비움 (위쪽 제한 없음)
     const [lo, hi] = ageRange;
     const min_age = ageAny ? null : lo;
@@ -252,6 +258,24 @@ export function PreferencesForm({
           <p className="text-[12.5px] leading-relaxed text-ink-faint">
             모두 체크하면 앞으로 새로 열리는 학교·캠퍼스도 자동으로 포함돼요. 학교·캠퍼스는 프로필에 항상 보여요.
           </p>
+        )}
+        {!multiSchool && schools !== null && (
+          <>
+            <div className="rounded-md border border-line bg-paper-card px-4 py-2">
+              <Checkbox
+                checked={ownOnly}
+                onChange={(v) => {
+                  setSaved(false);
+                  setOwnOnly(v);
+                }}
+              >
+                경희대가 열려도 외대생만 만나기
+              </Checkbox>
+            </div>
+            <p className="text-[12.5px] leading-relaxed text-ink-faint">
+              10월 25일부터 경희대 학생도 함께해요. 체크하지 않으면 &lsquo;모든 캠퍼스&rsquo;인 분에게는 경희대 학생도 추천되고, 나도 경희대 학생에게 추천돼요.
+            </p>
+          </>
         )}
       </div>
 
