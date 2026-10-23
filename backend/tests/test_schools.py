@@ -312,3 +312,14 @@ def test_selected_all_own_campuses_stays_own_school_after_open(monkeypatch, sent
     khu = ready_user(sent_codes, db, admin, "k@khu.ac.kr", gender="FEMALE", want="MALE", school=KHU)
     ids = discover_ids(hufs)
     assert other.profile_id in ids and khu.profile_id not in ids
+
+
+def test_open_notice_shows_even_if_last_seen_was_payment_notice(monkeypatch, sent_codes, db):
+    """2026-10-24 수정: 10/8 전에 결제 오픈 하루 공지를 마지막으로 본 사람에게도 경희대 오픈 공지가 뜬다."""
+    from app.models.user import User
+
+    a = signup(sent_codes, db, "a@hufs.ac.kr")
+    db.query(User).filter(User.email == "a@hufs.ac.kr").update({"announcement_seen": "payment-open:2026-10-07-15"})
+    db.commit()
+    _open_khu(monkeypatch, db)
+    assert a.get("/api/v1/me").json()["announcement"] == "khu-open-2026-10"

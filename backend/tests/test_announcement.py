@@ -59,7 +59,8 @@ def test_payment_notice_once_a_day_before_open(sent_codes, db, paid_world, monke
     key = a.get("/api/v1/me").json()["announcement"]
     assert key and key.startswith(announcement_service.PAYMENT_DAILY_PREFIX)
     assert a.post("/api/v1/me/announcement/seen", json={"key": key}).status_code == 200
-    assert a.get("/api/v1/me").json()["announcement"] is None  # 오늘은 끝 (예전 한 번 공지도 다시 안 뜸)
+    # 오늘 하루 공지는 끝 (2026-10-24: 그 뒤에는 한 번 공지가 뜰 수 있다 → 결제 공지만 아니면 된다)
+    assert not (a.get("/api/v1/me").json()["announcement"] or "").startswith(announcement_service.PAYMENT_DAILY_PREFIX)
 
     # 다음 날이 되면 다시 뜬다
     tomorrow = time_mod.kst_today() + timedelta(days=1)
@@ -109,6 +110,6 @@ def test_payment_notice_again_from_3pm(sent_codes, db, paid_world, monkeypatch):
     user.announcement_seen = k_am
     assert announcement_service.pending(user, pm) == k_pm
     user.announcement_seen = k_pm
-    assert announcement_service.pending(user, night) is None
+    assert not (announcement_service.pending(user, night) or "").startswith(announcement_service.PAYMENT_DAILY_PREFIX)
     # 오후에 "봤음"으로 보내는 이름도 받아준다
     assert announcement_service.is_showable(user, k_pm, pm)

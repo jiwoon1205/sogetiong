@@ -65,9 +65,10 @@ def pending(user: User, now: datetime | None = None, *, multi_school: bool = Fal
     current = current_key(multi_school)
     if current is None or user.announcement_seen == current:
         return None
-    # 하루 공지를 본 뒤(announcement_seen에 하루 공지 이름이 들어감)에도 한 번 공지는 이미 봤으면 다시 띄우지 않는다
-    if user.announcement_seen and user.announcement_seen.startswith(PAYMENT_DAILY_PREFIX):
-        return None
+    # 2026-10-24 수정: 예전에는 "마지막으로 본 공지가 결제 오픈 하루 공지면 한 번 공지를 띄우지 않는다"는 규칙이 있었다
+    # (휴대폰 알림 공지를 본 뒤 하루 공지를 본 사람에게 알림 공지가 다시 뜨지 않게). 그런데 이 규칙 때문에
+    # 10/8 전에 결제 오픈 공지를 본 사람 전부에게 새 한 번 공지(경희대 오픈 공지)가 안 떴다.
+    # 결제 오픈 하루 공지는 정식 배포(10/8) 뒤로 다시 나오지 않으므로 이 규칙을 없앤다.
     return current
 
 
