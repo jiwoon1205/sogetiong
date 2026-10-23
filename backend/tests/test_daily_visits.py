@@ -88,7 +88,11 @@ def test_admin_user_list_gender_filter(sent_codes, db):
     assert admin.get("/api/v1/admin/users?gender=OTHER").status_code == 422
 
 
-def test_frequent_visitor_is_recommended_first(sent_codes, db):
+def test_frequent_visitor_is_recommended_first_when_activity_weight_on(sent_codes, db, monkeypatch):
+    """2026-10-24부터 활동 점수는 기본으로 꺼져 있다 (유령회원도 같은 조건). WEIGHT_ACTIVITY를 다시 켜면 예전처럼 동작한다."""
+    from app.core.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "weight_activity", 0.20)
     admin = admin_login(db)
     viewer = ready_user(sent_codes, db, admin, "viewer@hufs.ac.kr", gender="MALE", want="FEMALE")
     # 먼저 가입한 사람(rare)과 나중에 가입한 사람(frequent). 다른 점수는 같다.

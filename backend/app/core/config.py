@@ -81,8 +81,10 @@ class Settings(BaseSettings):
     weight_completeness: float = 0.25
     weight_mbti: float = 0.15
     # 활동 점수 (2026-10-01): 최근 ACTIVITY_WINDOW_DAYS일 중 접속한 날 수 ÷ 일수.
-    # 매일 온 사람은 +0.20, 한 번도 안 온 사람은 +0. 외모 등급이 1순위인 것은 그대로다.
-    weight_activity: float = 0.20
+    # 2026-10-24: 0.20 → 0 (사용자 결정). 오래 안 들어온 사람(유령회원)이 같은 등급 안에서 늘 맨 뒤로 밀려
+    # 사실상 추천에 안 나왔다 → 접속 빈도와 상관없이 활성 회원과 같은 조건으로 나오게 한다.
+    # 다시 켜려면 .env에 WEIGHT_ACTIVITY=0.2
+    weight_activity: float = 0.0
     activity_window_days: int = 14
 
     # 나를 LIKE한 사람 우대: 추천 한 페이지에 최대 이만큼 자리를 준다 (위치는 매번 랜덤)
@@ -138,6 +140,8 @@ class Settings(BaseSettings):
     referral_end: datetime | None = datetime(2026, 11, 7, 0, 0, tzinfo=KST)
     # 한 사람이 초대로 받을 수 있는 슈퍼 라이크 최대 개수. 0 = 한도 없음 (2026-10-24 결정)
     referral_max_rewards: int = 0
+    # 탈퇴 후 이 일수 안에 다시 가입한 계정은 초대로 치지 않는다 (2026-10-24: "재가입 전부 제외" → "7일 안 재가입만 제외")
+    referral_rejoin_exclude_days: int = 7
 
     # 매칭 조건은 하루(24시간)에 이 횟수만큼만 바꿀 수 있다 (처음 저장은 세지 않음)
     preferences_changes_per_day: int = 3
