@@ -113,8 +113,15 @@ def carry_over_account(db: Session, previous: list[User], new_user: User) -> Non
 # ---------- 학교 이메일 인증 ----------
 
 def find_university_for_email(db: Session, email: str) -> University | None:
-    """이메일 도메인이 등록된(활성) 학교와 정확히 일치해야 한다."""
-    domain = normalize_email(email).rsplit("@", 1)[-1]
+    """이메일 도메인이 등록된(활성) 학교와 정확히 일치해야 한다.
+
+    예외 (2026-10-24): 설정 SCHOOL_TEST_EMAILS에 적힌 테스트 메일은 적힌 학교 소속으로 본다 (그 학교가 닫혀 있어도).
+    → 경희대 메일이 없는 운영자가 경희대 학생처럼 가입해서 열기 전에 확인하는 용도."""
+    email = normalize_email(email)
+    test_domain = get_settings().school_test_email_map.get(email)
+    if test_domain:
+        return db.query(University).filter(University.email_domain == test_domain).first()
+    domain = email.rsplit("@", 1)[-1]
     return db.query(University).filter(University.email_domain == domain, University.active.is_(True)).first()
 
 

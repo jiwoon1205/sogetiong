@@ -3,7 +3,10 @@
 실행: python -m app.scripts.seed
 여러 번 실행해도 안전하다. 서버가 시작할 때마다 자동으로 실행된다 (Dockerfile).
 
-학과 목록: 프로젝트 문서 "한국외대 학과 목록 초안 (2026-09-29)" 기준.
+학교 (2026-10-24 경희대 추가): 아래 SCHOOLS. 한국외대는 항상 열려 있고, 다른 학교는 설정 OPEN_SCHOOLS에
+메일 주소 뒷부분(khu.ac.kr)을 적어야 열린다 → 서버가 시작할 때 여기서 universities.active를 맞춘다.
+
+한국외대 학과 목록: 프로젝트 문서 "한국외대 학과 목록 초안 (2026-09-29)" 기준.
 - 학교 홈페이지 단과대학 페이지 표기 그대로
 - 2017년 이후 모집중지 학과(통번역대학·국제지역대학·지식콘텐츠학부)는 재학생이 있어 포함
 - 2016년 이전 모집중지 학과, 확인이 필요한 학과는 제외 (문의가 오면 여기에 추가)
@@ -11,17 +14,22 @@
 
 목록에 없는 학과는 삭제하지 않고 비활성화(active=False)한다.
 → 새로 고를 수 없지만, 이미 그 학과를 고른 사용자의 데이터는 깨지지 않는다.
-목록에 학과를 추가하려면 아래 CAMPUSES에 이름을 넣고 서버를 다시 시작하면 된다.
+목록에 학과를 추가하려면 아래 학교의 캠퍼스 목록에 이름을 넣고 서버를 다시 시작하면 된다.
+
+경희대 학과 목록: 프로젝트 문서 "경희대 학과 목록 초안 (2026-10-24)" 기준.
+- 2026·2024학년도 수시모집요강 모집단위 (이름이 바뀐 학과의 재학생도 찾을 수 있게 두 해를 같이 봄)
+- 학부·계열로 들어와 나중에 학과를 고르는 곳은 한 칸 (학과를 바꿀 수 없어서, 1학년 때 고른 이름이 계속 맞아야 함)
+- 이름이 바뀐 학과는 새 이름 옆에 옛 이름을 괄호로. 예과·본과는 한 칸
+- 재직자 전형 학과·대학원은 뺌 (문의가 오면 추가)
 """
 
+from app.core.config import get_settings
 from app.db.session import SessionLocal
 from app.models.admin import ROLE_PERMISSIONS, AdminRole
 from app.models.profile import Interest
 from app.models.university import Campus, Department, University
 
-UNIVERSITY = {"name": "한국외국어대학교", "email_domain": "hufs.ac.kr"}
-
-CAMPUSES: dict[str, list[str]] = {
+HUFS_CAMPUSES: dict[str, list[str]] = {
     "서울캠퍼스": [
         # 영어대학
         "ELLT학과", "영미문학·문화학과", "영어통번역(EICC)학과",
@@ -76,6 +84,67 @@ CAMPUSES: dict[str, list[str]] = {
     ],
 }
 
+KHU_CAMPUSES: dict[str, list[str]] = {
+    "서울캠퍼스": [
+        # 자율전공
+        "자율전공학부(서울)",
+        # 문과대학
+        "국어국문학과", "영어영문학과", "응용영어통번역학과", "사학과", "철학과",
+        # 정경대학
+        "정치외교학과", "행정학과", "사회학과", "경제학과", "무역학과", "미디어학과",
+        # 경영대학
+        "경영학과·회계학과 (경영회계계열, 회계·세무학과)", "빅데이터응용학과",
+        # 호텔관광대학
+        "Hospitality경영학과", "조리&푸드디자인학과", "관광·엔터테인먼트학부 (관광학과·문화엔터테인먼트학과)", "글로벌Hospitality·관광학과",
+        # 생활과학대학
+        "아동가족학과", "주거환경학과", "의상학과", "식품영양학과",
+        # 이과대학
+        "수학과", "물리학과", "화학과", "생물학과", "지리학과", "미래정보디스플레이학부 (정보디스플레이학과)",
+        # 의과대학 · 한의과대학 · 치과대학 (예과·본과 한 칸)
+        "의예과·의학과", "한의예과·한의학과", "치의예과·치의학과",
+        # 약학대학
+        "약학과", "한약학과", "약과학과",
+        # 간호과학대학
+        "간호학과",
+        # 음악대학 (정시만 뽑지만 재학생 있음)
+        "작곡과", "성악과", "기악과",
+        # 미술대학 · 무용학부
+        "미술학부", "무용학부",
+    ],
+    "국제캠퍼스": [
+        # 자유전공
+        "자유전공학부(국제)",
+        # 외국어대학
+        "프랑스어학과", "스페인어학과", "러시아어학과", "중국어학과", "일본어학과", "한국어학과", "글로벌커뮤니케이션학부",
+        # 국제대학
+        "국제학과",
+        # 공과대학
+        "기계공학부 (기계공학과)", "산업경영공학과", "원자력공학과", "화학공학과", "신소재공학과 (정보전자신소재공학과)",
+        "사회기반시스템공학과", "건축공학과", "환경학및환경공학과", "건축학과",
+        # 전자정보대학
+        "전자공학부 (전자공학과·반도체공학과)", "생체의공학과",
+        # 소프트웨어융합대학
+        "컴퓨터공학부 (컴퓨터공학과·인공지능학과)", "소프트웨어융합학과",
+        # 응용과학대학
+        "응용수학과", "응용물리학과", "응용화학과", "우주과학과",
+        # 생명과학대학
+        "유전생명공학과", "식품생명공학과", "스마트팜과학과", "융합바이오·신소재공학과", "한방생명공학과", "식물·환경신소재공학과",
+        # 예술·디자인대학
+        "산업디자인학과", "시각디자인학과", "환경조경디자인학과", "의류디자인학과", "디지털콘텐츠학과", "도예학과", "연극영화학과", "PostModern음악학과",
+        # 체육대학
+        "체육학과", "스포츠의학과", "골프산업학과", "스포츠지도학과", "태권도학과",
+    ],
+}
+
+# always_open: 설정과 상관없이 항상 열림. 아니면 OPEN_SCHOOLS에 email_domain이 있어야 열림.
+SCHOOLS = [
+    {"name": "한국외국어대학교", "email_domain": "hufs.ac.kr", "always_open": True, "campuses": HUFS_CAMPUSES},
+    {"name": "경희대학교", "email_domain": "khu.ac.kr", "always_open": False, "campuses": KHU_CAMPUSES},
+]
+
+# 예전 이름 호환 (한국외대 목록)
+CAMPUSES = HUFS_CAMPUSES
+
 INTERESTS = [
     "카페", "영화", "여행", "운동", "음악", "독서", "게임", "요리", "사진", "전시",
     "공연", "맛집", "등산", "산책", "드라마", "애니메이션", "외국어", "코딩", "반려동물", "패션",
@@ -97,22 +166,30 @@ def sync_departments(db, campus: Campus, names: list[str]) -> None:
             dept.active = False
 
 
-def run() -> None:
-    db = SessionLocal()
-    try:
-        uni = db.query(University).filter(University.email_domain == UNIVERSITY["email_domain"]).first()
+def sync_schools(db) -> None:
+    """학교·캠퍼스·학과를 맞추고, 학교를 열고 닫는다 (OPEN_SCHOOLS)."""
+    open_domains = get_settings().open_school_domains
+    for school in SCHOOLS:
+        uni = db.query(University).filter(University.email_domain == school["email_domain"]).first()
         if uni is None:
-            uni = University(**UNIVERSITY)
+            uni = University(name=school["name"], email_domain=school["email_domain"])
             db.add(uni)
             db.flush()
+        uni.active = school["always_open"] or school["email_domain"] in open_domains
 
-        for campus_name, departments in CAMPUSES.items():
+        for campus_name, departments in school["campuses"].items():
             campus = db.query(Campus).filter(Campus.university_id == uni.id, Campus.name == campus_name).first()
             if campus is None:
                 campus = Campus(university_id=uni.id, name=campus_name)
                 db.add(campus)
                 db.flush()
             sync_departments(db, campus, departments)
+
+
+def run() -> None:
+    db = SessionLocal()
+    try:
+        sync_schools(db)
 
         existing = {name for (name,) in db.query(Interest.name)}
         db.add_all([Interest(name=n) for n in INTERESTS if n not in existing])

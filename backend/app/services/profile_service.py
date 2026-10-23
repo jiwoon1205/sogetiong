@@ -8,7 +8,7 @@ import uuid
 from collections import defaultdict
 from datetime import datetime, timedelta
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
@@ -22,10 +22,52 @@ from app.models.matching import (
 )
 from app.models.photo import AppearanceEvaluation, UserPhoto
 from app.models.profile import Interest, PrivateProfile, PublicProfile, UserInterest
-from app.models.university import Campus, Department
+from app.models.university import Campus, Department, University
 from app.models.user import User, UserDailyVisit
 from app.services import vip_service
 from app.services.matching_service import Person, Preferences
+
+
+# ---------- 학교 (2026-10-24 경희대 확장) ----------
+# 열린 학교(universities.active, 설정 OPEN_SCHOOLS로 켬)끼리는 서로 추천에 나온다.
+# 닫힌 학교 사람(열기 전 테스트 계정)은 같은 학교 사람과 VIP 테스트 계정하고만 서로 보인다.
+
+def open_university_ids(db: Session) -> set[uuid.UUID]:
+    return {uid for (uid,) in db.query(University.id).filter(University.active.is_(True))}
+
+
+def multi_school(db: Session) -> bool:
+    """열린 학교가 둘 이상인가? → 카드에 학교 이름을 보여 주고, 캠퍼스는 항상 공개한다 (2026-10-23 결정)."""
+    return len(open_university_ids(db)) > 1
+
+
+def visible_university_ids(db: Session, viewer: User) -> set[uuid.UUID]:
+    """이 사람이 추천에서 볼 수 있는 학교 (매칭 조건 캠퍼스로 고를 수 있는 학교도 같다)."""
+    open_ids = open_university_ids(db)
+    if viewer.university_id not in open_ids:
+        return {viewer.university_id}  # 닫힌 학교 테스트 계정: 자기 학교만 (+ VIP 테스트 계정, 아래 school_filter)
+    if vip_service.is_test_account(viewer):
+        return {uid for (uid,) in db.query(University.id)}  # 운영자 테스트 계정: 닫힌 학교 테스트 계정도 본다
+    return open_ids
+
+
+def _test_account_emails() -> list[str]:
+    return sorted(get_settings().vip_test_email_set)
+
+
+def school_filter(db: Session, viewer: User):
+    """추천 후보 쿼리에 붙이는 학교 조건 (User 테이블 기준)."""
+    condition = User.university_id.in_(visible_university_ids(db, viewer))
+    if viewer.university_id not in open_university_ids(db) and _test_account_emails():
+        condition = or_(condition, User.email.in_(_test_account_emails()))
+    return condition
+
+
+def school_visible(db: Session, viewer: User, target: User) -> bool:
+    """LIKE·슈퍼 라이크를 ID로 직접 보낼 때도 추천과 같은 학교 규칙을 지킨다."""
+    if target.university_id in visible_university_ids(db, viewer):
+        return True
+    return viewer.university_id not in open_university_ids(db) and vip_service.is_test_account(target)
 
 
 # ---------- 여러 명의 정보를 한 번에 불러오기 ----------
@@ -89,7 +131,16 @@ def build_cards(db: Session, profiles: list[PublicProfile]) -> list[dict]:
     evaluations = latest_evaluations(db, user_ids)
     interests = interests_of(db, user_ids)
     births = birth_dates_of(db, user_ids)
-    campus_ids = {p.campus_id for p in profiles if p.show_campus}
+    # 학교가 둘 이상 열려 있으면 학교 이름을 붙이고 캠퍼스는 항상 공개한다 (2026-10-23 결정).
+    # 학교가 하나일 때는 예전과 똑같다 (학교 이름 없음, 캠퍼스는 본인이 고른 대로).
+    # 닫힌 학교 테스트 계정이 섞여 있으면(운영자 테스트 중) 그때도 학교 이름을 붙인다.
+    open_ids = open_university_ids(db)
+    user_schools = (
+        dict(db.query(User.id, User.university_id).filter(User.id.in_(user_ids)).all()) if user_ids else {}
+    )
+    show_school = len(open_ids) > 1 or any(u not in open_ids for u in user_schools.values())
+    school_names = dict(db.query(University.id, University.name).all()) if show_school else {}
+    campus_ids = {p.campus_id for p in profiles if p.show_campus or show_school}
     campus_names = dict(db.query(Campus.id, Campus.name).filter(Campus.id.in_(campus_ids)).all()) if campus_ids else {}
     dept_ids = {p.department_id for p in profiles if p.department_id and p.show_department}
     dept_names = dict(db.query(Department.id, Department.name).filter(Department.id.in_(dept_ids)).all()) if dept_ids else {}
@@ -103,8 +154,10 @@ def build_cards(db: Session, profiles: list[PublicProfile]) -> list[dict]:
                 "nickname": p.nickname,
                 "age": age_on(births[p.user_id]) if p.user_id in births else None,
                 "gender": p.gender,
-                # 캠퍼스·학과는 본인이 공개로 고른 경우에만 보낸다 (고르지 않았으면 숨김)
-                "campus": campus_names.get(p.campus_id) if p.show_campus else None,
+                # 캠퍼스·학과는 본인이 공개로 고른 경우에만 보낸다 (고르지 않았으면 숨김).
+                # 학교가 둘 이상 열리면 학교·캠퍼스는 항상 공개 (2026-10-23)
+                "university": school_names.get(user_schools.get(p.user_id)) if show_school else None,
+                "campus": campus_names.get(p.campus_id) if (p.show_campus or show_school) else None,
                 "department": dept_names.get(p.department_id) if p.show_department else None,
                 "mbti": p.mbti,
                 "bio": p.bio,
@@ -142,6 +195,10 @@ def preferences_of(db: Session, user_ids: list[uuid.UUID]) -> dict[uuid.UUID, Pr
     campuses = defaultdict(set)
     for uid, cid in db.query(PreferredCampus.user_id, PreferredCampus.campus_id).filter(PreferredCampus.user_id.in_(user_ids)):
         campuses[uid].add(cid)
+    all_campus_ids = set().union(*campuses.values()) if campuses else set()
+    campus_school = (
+        dict(db.query(Campus.id, Campus.university_id).filter(Campus.id.in_(all_campus_ids))) if all_campus_ids else {}
+    )
     return {
         p.user_id: Preferences(
             preferred_gender=genders.get(p.user_id, "ANY"),
@@ -150,6 +207,7 @@ def preferences_of(db: Session, user_ids: list[uuid.UUID]) -> dict[uuid.UUID, Pr
             campus_mode=p.campus_mode,
             campus_ids=campuses[p.user_id],
             exclude_same_department=p.exclude_same_department,
+            university_ids={campus_school[c] for c in campuses[p.user_id] if c in campus_school},
         )
         for p in prefs
     }
@@ -180,7 +238,9 @@ def people_from_profiles(db: Session, profiles: list[PublicProfile]) -> list[Per
     births = birth_dates_of(db, user_ids)
     interests = interests_of(db, user_ids)
     evaluations = latest_evaluations(db, user_ids)
-    supers = {uid for (uid,) in db.query(User.id).filter(User.id.in_(user_ids), User.super_vip.is_(True))} if user_ids else set()
+    user_rows = db.query(User.id, User.super_vip, User.university_id).filter(User.id.in_(user_ids)).all() if user_ids else []
+    supers = {uid for uid, sv, _ in user_rows if sv}
+    schools = {uid: uni for uid, _, uni in user_rows}
     people = []
     for p in profiles:
         if p.user_id not in births:
@@ -201,6 +261,7 @@ def people_from_profiles(db: Session, profiles: list[PublicProfile]) -> list[Per
                 tier=evaluation.tier if evaluation else None,
                 activity=activity.get(p.user_id, 0.0),
                 super_vip=p.user_id in supers,
+                university_id=schools.get(p.user_id),
             )
         )
     return people
@@ -250,8 +311,11 @@ def has_pending_photo(db: Session, user_id: uuid.UUID) -> bool:
     )
 
 
-def discoverable_profiles_query(db: Session, university_id: uuid.UUID, *, members_only: bool = True):
-    """추천 후보가 될 수 있는 프로필: 활성 계정 + 같은 학교 + 승인된 사진 + 외모 등급 + 매칭 조건 설정.
+def discoverable_profiles_query(db: Session, viewer: User, *, members_only: bool = True):
+    """추천 후보가 될 수 있는 프로필: 활성 계정 + 볼 수 있는 학교 + 승인된 사진 + 외모 등급 + 매칭 조건 설정.
+
+    학교 (2026-10-24): 예전에는 "같은 학교만"이었다. 지금은 열린 학교 전체 (school_filter).
+    어느 학교·캠퍼스까지 볼지는 각자의 매칭 조건(캠퍼스)이 양쪽으로 정한다 (matching_service).
 
     외모 등급은 "가장 최근 평가"에 있어야 한다 → 등급 없는 예전 평가만 있는 사람은
     추천 엔진(people_from_profiles → tier=None)에서 가장 뒤로 가고, API에서 한 번 더 거른다.
@@ -264,7 +328,7 @@ def discoverable_profiles_query(db: Session, university_id: uuid.UUID, *, member
         .join(User, User.id == PublicProfile.user_id)
         .filter(
             User.status == "ACTIVE",
-            User.university_id == university_id,
+            school_filter(db, viewer),
             PublicProfile.profile_status == "ACTIVE",
             PublicProfile.user_id.in_(approved),
             PublicProfile.user_id.in_(evaluated),

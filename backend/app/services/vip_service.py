@@ -31,6 +31,12 @@ def is_vip_tester(user: User) -> bool:
     return (user.email or "").strip().lower() in get_settings().vip_test_email_set
 
 
+def is_test_account(user: User) -> bool:
+    """운영자 테스트 계정인가? (VIP_TEST_EMAILS에 적힌 메일. 슈퍼 VIP는 실제 학생이라 아님, 2026-10-24)
+    아직 열지 않은 학교의 사람을 추천에서 볼 수 있다 (profile_service.visible_university_ids)."""
+    return (user.email or "").strip().lower() in get_settings().vip_test_email_set
+
+
 def has_paid_vip(user: User, now: datetime | None = None) -> bool:
     """돈을 내고 산 VIP 기간이 남아 있나 (테스트 계정 제외).
 

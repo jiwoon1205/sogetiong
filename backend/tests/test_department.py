@@ -1,5 +1,7 @@
 """캠퍼스·학과 (A-2): 학과 필수·변경 불가, 공개 여부, 같은 과 제외, 매칭 조건 변경 제한, 학과 목록."""
 
+import uuid
+
 from app.core.config import get_settings
 from app.models import AuditLog, Campus, Department, PublicProfile
 from app.scripts import seed
@@ -28,7 +30,7 @@ def test_real_department_list_is_seeded(db):
 
 
 def test_seed_deactivates_departments_not_in_list(db):
-    campus = db.query(Campus).filter(Campus.name == "서울캠퍼스").one()
+    campus = db.get(Campus, uuid.UUID(campus_id(db, "서울캠퍼스")))
     db.add(Department(campus_id=campus.id, name="예전예시학과"))
     db.commit()
     seed.run()

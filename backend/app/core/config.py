@@ -120,6 +120,17 @@ class Settings(BaseSettings):
     # 여러 개는 쉼표로 구분. 끄려면 .env에 VIP_TEST_EMAILS= (빈 값)
     vip_test_emails: str = "wldns051205@hufs.ac.kr"
 
+    # --- 학교 확장 (2026-10-24, 경희대) ---
+    # 한국외대는 항상 열려 있다. 다른 학교는 여기에 메일 주소 뒷부분을 적어야 열린다 (오픈 스위치).
+    # 예: OPEN_SCHOOLS=khu.ac.kr  (여러 개는 쉼표). 바꾼 뒤 backend를 다시 시작하면 적용된다 (seed가 켜고 끔).
+    # 열리지 않은 학교는 가입할 수 없고, 그 학교 사람은 다른 학생 추천에 나오지 않는다.
+    open_schools: str = ""
+    # 열기 전 테스트용 계정 (2026-10-24). "학교메일뒷부분:가입할메일" 형식, 여러 개는 쉼표.
+    # 예: SCHOOL_TEST_EMAILS=khu.ac.kr:my.personal@gmail.com → 이 메일로 가입하면 경희대 학생으로 가입된다 (학교가 닫혀 있어도).
+    # 닫힌 학교 사람은 같은 학교 사람과 VIP 테스트 계정(VIP_TEST_EMAILS)하고만 서로 추천에 나온다.
+    # 테스트가 끝나면 빈 값으로 되돌리고 테스트 계정은 탈퇴한다.
+    school_test_emails: str = ""
+
     # 매칭 조건은 하루(24시간)에 이 횟수만큼만 바꿀 수 있다 (처음 저장은 세지 않음)
     preferences_changes_per_day: int = 3
 
@@ -240,6 +251,20 @@ class Settings(BaseSettings):
     @property
     def vip_test_email_set(self) -> set[str]:
         return {e.strip().lower() for e in self.vip_test_emails.split(",") if e.strip()}
+
+    @property
+    def open_school_domains(self) -> set[str]:
+        return {d.strip().lower().lstrip("@") for d in self.open_schools.split(",") if d.strip()}
+
+    @property
+    def school_test_email_map(self) -> dict[str, str]:
+        """{가입할 메일: 학교 메일 뒷부분}. 형식이 틀린 항목은 무시한다."""
+        result = {}
+        for item in self.school_test_emails.split(","):
+            domain, sep, email = item.partition(":")
+            if sep and domain.strip() and "@" in email:
+                result[email.strip().lower()] = domain.strip().lower().lstrip("@")
+        return result
 
     def validate_settings(self) -> None:
         if self.activity_window_days < 1:

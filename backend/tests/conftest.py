@@ -35,6 +35,7 @@ from app.db.base import Base  # noqa: E402
 from app.db.session import SessionLocal, engine  # noqa: E402
 from app.main import app  # noqa: E402
 from app.models import AdminRole, AdminUser, Campus, Department  # noqa: E402
+from app.models.university import University  # noqa: E402
 from app.scripts import seed  # noqa: E402
 from app.services import push_service  # noqa: E402
 from app.services.admin_alert_service import reset_photo_alert  # noqa: E402
@@ -125,12 +126,27 @@ class AdminClient(UserClient):
     csrf_cookie = "admin_csrf_token"
 
 
-def campus_id(db, name="서울캠퍼스") -> str:
-    return str(db.query(Campus).filter(Campus.name == name).one().id)
+def campus_id(db, name="서울캠퍼스", school="hufs.ac.kr") -> str:
+    """캠퍼스 ID. 경희대에도 "서울캠퍼스"가 있어서 학교(메일 뒷부분)로 구분한다 (기본 한국외대)."""
+    return str(
+        db.query(Campus)
+        .join(University, University.id == Campus.university_id)
+        .filter(Campus.name == name, University.email_domain == school)
+        .one()
+        .id
+    )
 
 
-def department_id(db, name) -> str:
-    return str(db.query(Department).filter(Department.name == name).one().id)
+def department_id(db, name, school="hufs.ac.kr") -> str:
+    """학과 ID. 경희대에도 같은 이름의 학과(철학과 등)가 있어서 학교로 구분한다 (기본 한국외대)."""
+    return str(
+        db.query(Department)
+        .join(Campus, Campus.id == Department.campus_id)
+        .join(University, University.id == Campus.university_id)
+        .filter(Department.name == name, University.email_domain == school)
+        .one()
+        .id
+    )
 
 
 def jpeg_with_exif() -> bytes:
@@ -145,7 +161,8 @@ def jpeg_with_exif() -> bytes:
 
 
 def signup(
-    sent_codes, db, email, *, gender="FEMALE", want="ANY", birth=date(2003, 5, 1), campus="서울캠퍼스", nickname=None
+    sent_codes, db, email, *, gender="FEMALE", want="ANY", birth=date(2003, 5, 1), campus="서울캠퍼스", nickname=None,
+    school="hufs.ac.kr",
 ) -> UserClient:
     """가입. want = 원하는 성별 (가입할 때 정하고 이후 본인은 못 바꿈)."""
     client = UserClient()
@@ -162,7 +179,7 @@ def signup(
             "gender": gender,
             "preferred_gender": want,
             "birth_date": birth.isoformat(),
-            "campus_id": campus_id(db, campus),
+            "campus_id": campus_id(db, campus, school),
             "agree_terms": True,
             "agree_privacy": True,
             "agree_appearance_public": True,
@@ -224,13 +241,15 @@ def approve(admin: AdminClient, photo_id: str, scores=(7, 7, 7, 7), tier="MID"):
 
 
 DEFAULT_DEPARTMENT = {"서울캠퍼스": "경영학부", "글로벌캠퍼스": "컴퓨터공학부"}
+# 경희대 (2026-10-24)
+KHU_DEFAULT_DEPARTMENT = {"서울캠퍼스": "정치외교학과", "국제캠퍼스": "소프트웨어융합학과"}
 
 
-def choose_department(client: UserClient, db, name: str, *, show_campus=True, show_department=True):
+def choose_department(client: UserClient, db, name: str, *, show_campus=True, show_department=True, school="hufs.ac.kr"):
     """프로필 작성 단계: 학과 + 캠퍼스·학과 공개 여부를 고른다."""
     r = client.patch(
         "/api/v1/me/profile",
-        json={"department_id": department_id(db, name), "show_campus": show_campus, "show_department": show_department},
+        json={"department_id": department_id(db, name, school), "show_campus": show_campus, "show_department": show_department},
     )
     assert r.status_code == 200, r.text
     return r
@@ -243,11 +262,13 @@ def ready_user(sent_codes, db, admin, email, **kw) -> UserClient:
     if "preferred_gender" in prefs:
         kw.setdefault("want", prefs.pop("preferred_gender"))
     tier = kw.pop("tier", "MID")
-    dept = kw.pop("dept", None) or DEFAULT_DEPARTMENT[kw.get("campus", "서울캠퍼스")]
+    school = kw.get("school", "hufs.ac.kr")
+    defaults = KHU_DEFAULT_DEPARTMENT if school == "khu.ac.kr" else DEFAULT_DEPARTMENT
+    dept = kw.pop("dept", None) or defaults[kw.get("campus", "서울캠퍼스")]
     show_campus = kw.pop("show_campus", True)
     show_department = kw.pop("show_department", True)
     client = signup(sent_codes, db, email, **kw)
-    choose_department(client, db, dept, show_campus=show_campus, show_department=show_department)
+    choose_department(client, db, dept, show_campus=show_campus, show_department=show_department, school=school)
     set_preferences(client, **prefs)
     approve(admin, upload_photo(client), tier=tier)
     return client

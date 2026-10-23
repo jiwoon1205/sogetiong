@@ -104,7 +104,7 @@ def discover(
     if limit_reached:
         excluded = set(excluded) | match_limit_service.all_liker_ids(db, current.id)
 
-    query = profile_service.discoverable_profiles_query(db, current.user.university_id).filter(
+    query = profile_service.discoverable_profiles_query(db, current.user).filter(
         PublicProfile.user_id.notin_(excluded)
     )
     # 성별은 DB에서 먼저 거르고(빠름), 나머지 조건은 매칭 엔진에서 양방향으로 확인
@@ -180,7 +180,7 @@ def liked_me(current: CurrentUser = Depends(get_current_user), db: Session = Dep
         return {"profiles": []}
     # 이용권이 끝난 사람도 보여준다 (이미 나를 LIKE했으니, LIKE하면 바로 매칭 → 대화는 이용권 없이도 된다)
     profiles = (
-        profile_service.discoverable_profiles_query(db, current.user.university_id, members_only=False)
+        profile_service.discoverable_profiles_query(db, current.user, members_only=False)
         .filter(PublicProfile.user_id.in_(list(liked_at)))
         .all()
     )
@@ -202,6 +202,10 @@ def liked_me(current: CurrentUser = Depends(get_current_user), db: Session = Dep
 def _target(db: Session, current: CurrentUser, profile_id: uuid.UUID) -> PublicProfile:
     target = profile_service.find_active_profile(db, profile_id)
     if target is None or target.user_id == current.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="프로필을 찾을 수 없습니다.")
+    # 학교 규칙 (2026-10-24): 추천에 나올 수 없는 학교 사람에게는 ID를 직접 넣어도 LIKE·PASS·슈퍼 라이크를 못 한다
+    target_user = db.get(User, target.user_id)
+    if target_user is None or not profile_service.school_visible(db, current.user, target_user):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="프로필을 찾을 수 없습니다.")
     return target
 

@@ -16,7 +16,7 @@ from app.deps import CurrentUser, get_current_user
 from app.models.matching import Match, MatchingPreference, PreferredCampus
 from app.models.photo import AppearanceEvaluation, UserPhoto
 from app.models.profile import Interest, PublicProfile, UserInterest
-from app.models.university import Campus, Department
+from app.models.university import Campus, Department, University
 from app.models.user import User
 from app.schemas.auth import DeleteAccountRequest
 from app.schemas.profile import PreferencesRequest, ProfileUpdateRequest
@@ -86,6 +86,9 @@ def get_me(current: CurrentUser = Depends(get_current_user), db: Session = Depen
         "email": current.user.email,
         "status": current.user.status,
         "university_id": str(current.user.university_id),
+        # 학교 확장 (2026-10-24): 화면이 학교 이름·"캠퍼스 공개" 선택지를 보여줄지 정할 때 쓴다
+        "university_name": db.get(University, current.user.university_id).name,
+        "multi_school": profile_service.multi_school(db),
         "onboarding": {
             # 프로필 작성 완료 = 학과와 공개 여부까지 고름
             "profile_done": _profile_done(db, current),
@@ -204,6 +207,8 @@ def get_my_profile(current: CurrentUser = Depends(get_current_user), db: Session
     card["campus_name"] = profile.campus.name if profile.campus else None
     card["show_department"] = profile.show_department
     card["show_campus"] = profile.show_campus
+    # 학교가 둘 이상 열리면 캠퍼스는 항상 공개 → 화면에서 "캠퍼스 공개" 선택지를 숨긴다 (2026-10-23)
+    card["campus_always_public"] = profile_service.multi_school(db)
     card["department_locked"] = profile.department_id is not None
     return card
 
@@ -227,6 +232,9 @@ def update_my_profile(
         # 학과는 내 캠퍼스 소속이어야 한다
         if dept is None or dept.campus_id != profile.campus_id or not dept.active:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="학과를 다시 선택해주세요.")
+        # 학교가 둘 이상 열려 있으면 캠퍼스는 항상 공개라서 화면이 묻지 않는다 → 공개로 채운다 (2026-10-24)
+        if payload.show_campus is None and profile.show_campus is None and profile_service.multi_school(db):
+            profile.show_campus = True
         # 학과를 처음 고를 때 캠퍼스·학과 공개 여부도 직접 골라야 한다 (정해진 기본값 없음)
         if payload.show_department is None or (payload.show_campus is None and profile.show_campus is None):
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="캠퍼스와 학과를 다른 학생에게 보여줄지 골라주세요.")
@@ -322,6 +330,36 @@ def _changes_left(db: Session, current: CurrentUser) -> int:
     return max(0, limit - pref.changes_in_window)
 
 
+@router.get("/me/preferences/campuses")
+def preference_campuses(current: CurrentUser = Depends(get_current_user), db: Session = Depends(get_db)):
+    """매칭 조건에서 고를 수 있는 캠퍼스를 학교별로 (2026-10-24 경희대 확장). 내 학교가 맨 앞.
+
+    multi_school: 열린 학교가 둘 이상 → 화면에서 학교 이름으로 묶어 보여 주고, 캠퍼스 공개 선택지를 숨긴다.
+    """
+    schools = profile_service.visible_university_ids(db, current.user)
+    unis = db.query(University).filter(University.id.in_(schools)).all()
+    campuses = (
+        db.query(Campus)
+        .filter(Campus.university_id.in_(schools), Campus.active.is_(True))
+        .order_by(Campus.name)
+        .all()
+    )
+    mine = current.user.university_id
+    unis.sort(key=lambda u: (u.id != mine, u.name))
+    return {
+        "multi_school": profile_service.multi_school(db),
+        "schools": [
+            {
+                "id": str(u.id),
+                "name": u.name,
+                "mine": u.id == mine,
+                "campuses": [{"id": str(c.id), "name": c.name} for c in campuses if c.university_id == u.id],
+            }
+            for u in unis
+        ],
+    }
+
+
 @router.put("/me/preferences")
 def put_my_preferences(
     payload: PreferencesRequest,
@@ -333,10 +371,16 @@ def put_my_preferences(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"최소 나이는 {settings.min_age}세 이상이어야 합니다.")
     min_age, max_age = _normalize_age_range(payload.min_age, payload.max_age)
 
-    uni = current.user.university_id
+    # 고를 수 있는 캠퍼스 = 추천에서 볼 수 있는 학교의 캠퍼스 (2026-10-24: 예전에는 내 학교만)
+    schools = profile_service.visible_university_ids(db, current.user)
     campus_ids = set(payload.campus_ids) if payload.campus_mode == "SELECTED" else set()
     if campus_ids:
-        valid = {c for (c,) in db.query(Campus.id).filter(Campus.id.in_(campus_ids), Campus.university_id == uni)}
+        valid = {
+            c
+            for (c,) in db.query(Campus.id).filter(
+                Campus.id.in_(campus_ids), Campus.university_id.in_(schools), Campus.active.is_(True)
+            )
+        }
         if valid != campus_ids:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="캠퍼스를 다시 선택해주세요.")
 

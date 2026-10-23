@@ -22,7 +22,7 @@ from app.models.matching import Match, MatchingPreference, Message, Report
 from app.models.payment import Payment
 from app.models.photo import AppearanceEvaluation, UserPhoto
 from app.models.profile import PrivateProfile, PublicProfile
-from app.models.university import Department
+from app.models.university import Department, University
 from app.models.user import User, UserDailyVisit
 from app.schemas.admin import (
     GiveLikesRequest,
@@ -122,12 +122,14 @@ def dashboard(admin: CurrentAdmin = Depends(require_permission("dashboard:read")
             q = q.filter(User.id.in_(approved))
         return c(q)
 
-    def gender_count(gender, since=None):
+    def gender_count(gender, since=None, university_id=None):
         q = (
             db.query(User.id)
             .join(PublicProfile, PublicProfile.user_id == User.id)
             .filter(User.status == "ACTIVE", PublicProfile.gender == gender)
         )
+        if university_id is not None:
+            q = q.filter(User.university_id == university_id)
         if since is not None:  # 활성 사용자만: 이 날 이후 접속 + 사진 검수 완료
             q = q.filter(User.id.in_(visitors_since(since)), User.id.in_(approved))
         return c(q)
@@ -163,7 +165,29 @@ def dashboard(admin: CurrentAdmin = Depends(require_permission("dashboard:read")
         "payments_pending": c(db.query(Payment.id).filter(Payment.status == "REQUESTED")),
         # 이용권 (2026-10-04 구독제): 지금 이용 중 / VIP / 7일 안에 끝남 (정상 계정, 테스트 계정 제외)
         **_membership_counts(db, c),
+        # 학교별 숫자 (2026-10-24 경희대 확장): 가입자·활성 사용자(위와 같은 기준)·활성 남녀
+        "schools": [
+            {
+                "name": uni.name,
+                "email_domain": uni.email_domain,
+                "open": uni.active,
+                "users_total": c(db.query(User.id).filter(User.university_id == uni.id)),
+                "users_active": c(
+                    active_users.filter(
+                        User.university_id == uni.id, User.id.in_(visitors_since(week_start)), User.id.in_(approved)
+                    )
+                ),
+                "users_active_male": gender_count("MALE", week_start, uni.id),
+                "users_active_female": gender_count("FEMALE", week_start, uni.id),
+            }
+            for uni in db.query(University).order_by(University.active.desc(), University.name).all()
+        ],
     }
+
+
+def _school_names(db: Session) -> dict:
+    """학교 id → 이름 (학교는 몇 개뿐이라 한 번에 읽는다)."""
+    return dict(db.query(University.id, University.name).all())
 
 
 def _membership_counts(db: Session, c) -> dict:
@@ -437,6 +461,7 @@ def list_users(
     q: str | None = Query(default=None, max_length=20),
     gender: str | None = Query(default=None, pattern="^(MALE|FEMALE)$"),
     membership: str | None = Query(default=None, pattern="^(active|vip|expiring)$"),
+    school: str | None = Query(default=None, max_length=120),  # 학교 메일 뒷부분 (예: khu.ac.kr), 2026-10-24
     admin: CurrentAdmin = Depends(require_permission("users:read")),
     db: Session = Depends(get_db),
 ):
@@ -465,6 +490,9 @@ def list_users(
         query = query.filter(or_(nick_col.contains(term), User.id.in_(code_ids)))
     if gender:
         query = query.filter(gender_col == gender)
+    if school:
+        uni_ids = [uid for (uid,) in db.query(University.id).filter(University.email_domain == school.strip().lower())]
+        query = query.filter(User.university_id.in_(uni_ids))
     if membership:
         # 현황의 "이용권 이용 중" 칸을 누르면 들어온다 (2026-10-06). 숫자와 똑같은 기준(_membership_counts)으로 거른다.
         now = utcnow()
@@ -489,6 +517,7 @@ def list_users(
         query = query.order_by(User.created_at.desc())
     rows = query.limit(USER_LIST_LIMIT).all()
     stages = _onboarding_stages(db, [u.id for u, _, _, _ in rows])
+    schools = _school_names(db)
     return {
         "total": total,
         "users": [
@@ -497,6 +526,7 @@ def list_users(
                 "subject_code": pseudonymous_code(u.id),
                 "nickname": nick,
                 "gender": user_gender,  # MALE / FEMALE / None(프로필 없음)
+                "university": schools.get(u.university_id),  # 학교 이름 (2026-10-24)
                 "status": u.status,
                 "onboarding_stage": stages.get(u.id, "PROFILE"),
                 "reports_received": reports or 0,
@@ -601,6 +631,8 @@ def get_user(
         "profile": profile_service.build_card(db, profile) if profile else None,
         # 카드는 공개 설정에 따라 캠퍼스·학과가 숨겨질 수 있어서, 관리자에게는 실제 값을 따로 보여준다
         "campus": {"id": str(profile.campus_id), "name": profile.campus.name} if profile else None,
+        # 학교 (2026-10-24 경희대 확장)
+        "university": _school_names(db).get(user.university_id),
         "department": (
             {"id": str(profile.department_id), "name": profile.department.name} if profile and profile.department else None
         ),

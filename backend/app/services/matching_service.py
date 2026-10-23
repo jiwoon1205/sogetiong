@@ -31,6 +31,8 @@ class Preferences:
     campus_mode: str  # MY / ALL / SELECTED
     campus_ids: set[uuid.UUID] = field(default_factory=set)
     exclude_same_department: bool = False
+    # SELECTED일 때 고른 캠퍼스들이 속한 학교 (2026-10-24). 슈퍼 VIP도 이 학교 조건은 지킨다 (_school_ok)
+    university_ids: set[uuid.UUID] = field(default_factory=set)
 
 
 @dataclass
@@ -50,6 +52,8 @@ class Person:
     activity: float = 0.0
     # 슈퍼 VIP (2026-10-12, 관리자 지정): 나이·캠퍼스 조건과 무관하게 추천에 나온다 (내부 전용)
     super_vip: bool = False
+    # 학교 (2026-10-24 경희대 확장). None = 모름 (예전 테스트처럼 학교를 안 넣은 경우 → 학교 조건을 보지 않음)
+    university_id: uuid.UUID | None = None
 
 
 @dataclass
@@ -95,13 +99,33 @@ def satisfies(viewer: Person, candidate: Person) -> bool:
     return True
 
 
+def _school_ok(viewer: Person, candidate: Person) -> bool:
+    """viewer가 고른 캠퍼스들이 속한 학교에 candidate가 있는가 (캠퍼스는 따지지 않음, 2026-10-24).
+
+    - ALL(모든 캠퍼스): 학교 상관없음
+    - MY(내 캠퍼스): 내 학교
+    - SELECTED: 고른 캠퍼스들의 학교
+    """
+    prefs = viewer.preferences
+    if prefs is None or candidate.university_id is None:
+        return True
+    if prefs.campus_mode == "MY":
+        return viewer.university_id is None or candidate.university_id == viewer.university_id
+    if prefs.campus_mode == "SELECTED" and prefs.university_ids:
+        return candidate.university_id in prefs.university_ids
+    return True
+
+
 def _basic_ok(viewer: Person, candidate: Person) -> bool:
-    """슈퍼 VIP가 끼어 있을 때도 지키는 조건 (한 방향): 원하는 성별, 학과 있음, 같은 과 제외 (2026-10-12).
+    """슈퍼 VIP가 끼어 있을 때도 지키는 조건 (한 방향): 원하는 성별, 학과 있음, 같은 과 제외 (2026-10-12),
+    학교 (2026-10-24: "외대만" 고른 사람에게 경희대 슈퍼 VIP가 뜨지 않게).
     나이·캠퍼스는 보지 않는다. 차단은 API(excluded_user_ids)에서 따로 뺀다."""
     prefs = viewer.preferences
     if prefs is None:
         return False
     if prefs.preferred_gender != "ANY" and candidate.gender != prefs.preferred_gender:
+        return False
+    if not _school_ok(viewer, candidate):
         return False
     if candidate.department_id is None:
         return False
@@ -119,7 +143,7 @@ def mutually_compatible(viewer: Person, candidate: Person) -> bool:
     if viewer.user_id == candidate.user_id:
         return False
     if viewer.super_vip or candidate.super_vip:
-        # 슈퍼 VIP: 상대의 나이·캠퍼스 조건과 무관 (양쪽 모두 같은 규칙 → 슈퍼 VIP를 LIKE한 사람에게 LIKE로 답할 수도 있다)
+        # 슈퍼 VIP: 상대의 나이·캠퍼스 조건과 무관, 학교 조건은 지킴 (양쪽 모두 같은 규칙 → 슈퍼 VIP를 LIKE한 사람에게 LIKE로 답할 수도 있다)
         return _basic_ok(viewer, candidate) and _basic_ok(candidate, viewer)
     return satisfies(viewer, candidate) and satisfies(candidate, viewer)
 
