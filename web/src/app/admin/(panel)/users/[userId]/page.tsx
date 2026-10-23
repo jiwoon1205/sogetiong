@@ -40,6 +40,8 @@ type Detail = {
   super_likes?: number;
   profile: Card | null;
   campus: { id: string; name: string } | null;
+  /** 학교 이름 (2026-10-24) */
+  university?: string | null;
   department: { id: string; name: string } | null;
   gender: Gender | null;
   preferred_gender: WantGender | null;
@@ -114,7 +116,7 @@ export default function UserDetail() {
             </Notice>}
           {d.campus && (
             <p className="text-[13px] text-ink-soft">
-              실제 소속: {d.campus.name} · {d.department?.name ?? "학과 미선택"}
+              실제 소속: {d.university ? `${d.university} ` : ""}{d.campus.name} · {d.department?.name ?? "학과 미선택"}
               <span className="block text-[12px] text-ink-faint">카드에는 본인 공개 설정에 따라 숨겨질 수 있어요.</span>
             </p>
           )}

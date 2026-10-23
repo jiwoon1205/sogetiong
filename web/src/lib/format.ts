@@ -30,6 +30,13 @@ export function dateTime(iso: string): string {
   });
 }
 
+/** "경희대학교" → "경희대" (버튼·카드에 쓰는 짧은 학교 이름, 2026-10-24) */
+export function shortSchoolName(name: string) {
+  // 흔히 부르는 이름이 따로 있는 학교
+  const common: Record<string, string> = { 한국외국어대학교: "한국외대" };
+  return common[name] ?? name.replace(/학교$/, "");
+}
+
 export function cn(...parts: Array<string | false | null | undefined>): string {
   return parts.filter(Boolean).join(" ");
 }

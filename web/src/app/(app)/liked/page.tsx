@@ -6,7 +6,7 @@ import { PaymentPanel } from "@/components/PaymentStep";
 import { ProfileCard } from "@/components/ProfileCard";
 import { Button, Notice, PageTitle, Spinner } from "@/components/ui";
 import { ApiError, api, errorMessage } from "@/lib/api";
-import { timeAgo, untilDay } from "@/lib/format";
+import { timeAgo, untilDay, shortSchoolName } from "@/lib/format";
 import { usePolling } from "@/lib/polling";
 import { markMatchSeen } from "@/lib/seenMatches";
 import { useSession } from "@/lib/session";
@@ -129,7 +129,7 @@ function LikedList({ vip }: { vip: VipInfo }) {
               <button onClick={() => setOpen(r)} className="flex w-full items-center justify-between gap-3 px-5 py-4 text-left hover:bg-paper-deep/60">
                 <span className="min-w-0">
                   <span className="font-semibold">{r.nickname}</span>
-                  <span className="ml-2 text-[13px] text-ink-soft">{[r.age ? `만 ${r.age}세` : null, r.campus].filter(Boolean).join(" · ")}</span>
+                  <span className="ml-2 text-[13px] text-ink-soft">{[r.age ? `만 ${r.age}세` : null, r.university ? [shortSchoolName(r.university), r.campus].filter(Boolean).join(" ") : r.campus].filter(Boolean).join(" · ")}</span>
                   {r.passed && <span className="ml-2 rounded bg-paper-deep px-1.5 py-0.5 text-[11.5px] text-ink-soft">넘김</span>}
                 </span>
                 <span className="shrink-0 text-[12.5px] text-ink-faint">{timeAgo(r.liked_at)}</span>

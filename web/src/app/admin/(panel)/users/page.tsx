@@ -4,14 +4,17 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
 import { Input, PageTitle, Select, Spinner } from "@/components/ui";
+import { useUniversities } from "@/components/SchoolEmail";
 import { USER_STATUS_LABEL, adminApi } from "@/lib/admin";
-import { cn, dateTime, timeAgo } from "@/lib/format";
+import { cn, dateTime, shortSchoolName, timeAgo } from "@/lib/format";
 
 type UserRow = {
   user_id: string;
   subject_code: string;
   nickname: string | null;
   gender: string | null;
+  /** 학교 이름 (2026-10-24) */
+  university?: string | null;
   status: string;
   onboarding_stage?: string;
   reports_received: number;
@@ -65,6 +68,10 @@ function UsersList() {
     return m && m in MEMBERSHIP_LABEL ? m : "";
   });
   const [q, setQ] = useState("");
+  // 학교 (2026-10-24 경희대 확장): 현황의 "학교별" 표에서 학교 이름을 누르면 ?school=khu.ac.kr 로 들어온다
+  const [school, setSchool] = useState(() => searchParams.get("school") ?? "");
+  const universities = useUniversities();
+  const multiSchool = universities.length > 1 || !!school;
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -72,6 +79,7 @@ function UsersList() {
       if (status) params.set("status", status);
       if (gender) params.set("gender", gender);
       if (membership) params.set("membership", membership);
+      if (school) params.set("school", school);
       if (q.trim()) params.set("q", q.trim());
       adminApi<{ users: UserRow[]; total?: number }>(`/users?${params}`).then((r) => {
         setItems(r.users);
@@ -79,7 +87,7 @@ function UsersList() {
       });
     }, 250);
     return () => clearTimeout(t);
-  }, [status, gender, membership, q]);
+  }, [status, gender, membership, school, q]);
 
   return (
     <>
@@ -108,6 +116,19 @@ function UsersList() {
           ))}
         </Select>
       </div>
+      {multiSchool && (
+        <div className="-mt-2 mb-5 sm:w-56">
+          <Select value={school} onChange={(e) => setSchool(e.target.value)}>
+            <option value="">모든 학교</option>
+            {universities.map((u) => (
+              <option key={u.email_domain} value={u.email_domain}>
+                {u.name}
+              </option>
+            ))}
+            {school && !universities.some((u) => u.email_domain === school) && <option value={school}>{school} (닫힘)</option>}
+          </Select>
+        </div>
+      )}
       {items && (
         <p className="mb-2 text-[12.5px] text-ink-faint">
           {total > items.length ? `${total}명 중 최근 가입한 ${items.length}명` : `${total}명`}
@@ -123,6 +144,7 @@ function UsersList() {
                 <th className="px-5 py-3 font-normal">코드</th>
                 <th className="px-5 py-3 font-normal">닉네임</th>
                 <th className="px-5 py-3 font-normal">성별</th>
+                {multiSchool && <th className="px-5 py-3 font-normal">학교</th>}
                 <th className="px-5 py-3 font-normal">상태</th>
                 <th className="px-5 py-3 font-normal">가입 단계</th>
                 <th className="px-5 py-3 font-normal">이용권 끝</th>
@@ -141,6 +163,7 @@ function UsersList() {
                   </td>
                   <td className="px-5 py-3">{u.nickname ?? <span className="text-ink-faint">—</span>}</td>
                   <td className="px-5 py-3">{u.gender ? GENDER_LABEL[u.gender] ?? u.gender : <span className="text-ink-faint">—</span>}</td>
+                  {multiSchool && <td className="px-5 py-3 text-ink-soft">{u.university ? shortSchoolName(u.university) : "—"}</td>}
                   <td className={cn("px-5 py-3", u.status !== "ACTIVE" && "text-brick")}>{USER_STATUS_LABEL[u.status] ?? u.status}</td>
                   <td className={cn("px-5 py-3", u.onboarding_stage === "DONE" ? "text-ink-soft" : "text-brick")}>
                     {u.onboarding_stage ? STAGE_LABEL[u.onboarding_stage] ?? u.onboarding_stage : "—"}

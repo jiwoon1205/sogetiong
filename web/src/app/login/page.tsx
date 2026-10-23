@@ -4,7 +4,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { AuthFrame } from "@/components/AuthFrame";
-import { Button, EmailInput, Field, Input, Notice, PageTitle } from "@/components/ui";
+import { SchoolEmailField } from "@/components/SchoolEmail";
+import { Button, Field, Input, Notice, PageTitle } from "@/components/ui";
 import { api, errorMessage } from "@/lib/api";
 import { firstStep } from "@/lib/onboarding";
 import type { Me } from "@/lib/types";
@@ -44,9 +45,7 @@ export default function LoginPage() {
     >
       <PageTitle title="다시 오셨네요" desc="학교 이메일과 비밀번호로 로그인하세요." />
       <form onSubmit={submit} className="space-y-5">
-        <Field label="학교 이메일" htmlFor="email">
-          <EmailInput id="email" value={email} onChange={setEmail} required />
-        </Field>
+        <SchoolEmailField value={email} onChange={setEmail} required />
         <Field label="비밀번호" htmlFor="password">
           <Input id="password" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required />
         </Field>

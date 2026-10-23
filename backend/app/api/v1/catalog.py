@@ -9,14 +9,15 @@ from app.core.config import get_settings
 from app.db.session import get_db
 from app.models.profile import Interest
 from app.models.university import Campus, Department, University
-from app.services import stats_service
+from app.services import profile_service, stats_service
 
 router = APIRouter()
 
 
 @router.get("/universities")
 def list_universities(db: Session = Depends(get_db)):
-    rows = db.query(University).filter(University.active.is_(True)).order_by(University.name).all()
+    # 먼저 생긴 학교부터 (한국외대 → 경희대 순서로 버튼이 나오게, 2026-10-24)
+    rows = db.query(University).filter(University.active.is_(True)).order_by(University.created_at, University.name).all()
     return {"universities": [{"id": str(u.id), "name": u.name, "email_domain": u.email_domain} for u in rows]}
 
 
@@ -56,4 +57,5 @@ def list_interests(db: Session = Depends(get_db)):
 @router.get("/stats/members")
 def member_stats(db: Session = Depends(get_db)):
     """첫 화면·머리말의 작은 숫자: 전체 가입자 수 + 활성 사용자 성비(%). 로그인 불필요, 5분마다 새로 센다."""
-    return stats_service.member_stats(db)
+    # 학교가 둘 이상 열려 있으면 화면이 "외대생" 대신 "대학생"으로 쓴다 (2026-10-24)
+    return {**stats_service.member_stats(db), "multi_school": profile_service.multi_school(db)}

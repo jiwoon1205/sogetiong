@@ -180,7 +180,7 @@ def dashboard(admin: CurrentAdmin = Depends(require_permission("dashboard:read")
                 "users_active_male": gender_count("MALE", week_start, uni.id),
                 "users_active_female": gender_count("FEMALE", week_start, uni.id),
             }
-            for uni in db.query(University).order_by(University.active.desc(), University.name).all()
+            for uni in db.query(University).order_by(University.active.desc(), University.created_at, University.name).all()
         ],
     }
 

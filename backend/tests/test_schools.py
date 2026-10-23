@@ -260,3 +260,14 @@ def test_admin_sees_school_numbers_and_filter(monkeypatch, sent_codes, db):
     assert [u["university"] for u in users] == ["경희대학교"]
     detail = admin.get(f"/api/v1/admin/users/{users[0]['user_id']}").json()
     assert detail["university"] == "경희대학교"
+
+
+def test_verify_tells_school_and_school_list_order(monkeypatch, sent_codes, db):
+    _open_khu(monkeypatch, db)
+    unis = UserClient().get("/api/v1/universities").json()["universities"]
+    assert [u["email_domain"] for u in unis] == ["hufs.ac.kr", KHU]  # 한국외대 버튼이 먼저
+    client = UserClient()
+    assert client.post("/api/v1/auth/email/send-code", json={"email": "v@khu.ac.kr"}).status_code == 202
+    r = client.post("/api/v1/auth/email/verify", json={"email": "v@khu.ac.kr", "code": sent_codes["v@khu.ac.kr"]})
+    assert r.status_code == 200
+    assert r.json()["university_name"] == "경희대학교" and r.json()["university_id"] == str(_khu(db).id)

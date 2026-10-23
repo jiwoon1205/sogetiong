@@ -19,7 +19,7 @@ from tests.conftest import admin_login, ready_user, signup
 def test_member_stats_without_login_when_empty():
     r = TestClient(app).get("/api/v1/stats/members")
     assert r.status_code == 200
-    assert r.json() == {"total": 0, "male_per_female": None, "female_pct": None}
+    assert r.json() == {"total": 0, "male_per_female": None, "female_pct": None, "multi_school": False}
 
 
 def test_member_stats_total_includes_all_and_ratio_uses_active_only(sent_codes, db):

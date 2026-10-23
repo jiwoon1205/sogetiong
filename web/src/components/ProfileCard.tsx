@@ -1,10 +1,12 @@
 import { ScoreRow } from "@/components/ui";
 import { SCORE_LABELS, type Card } from "@/lib/types";
-import { cn } from "@/lib/format";
+import { cn, shortSchoolName } from "@/lib/format";
 
 /** 다른 사용자에게 보이는 공개 카드. 사진 대신 글과 외적 평가로 사람을 소개한다. */
 export function ProfileCard({ card, className, compact }: { card: Card; className?: string; compact?: boolean }) {
-  const meta = [card.age ? `만 ${card.age}세` : null, card.campus].filter(Boolean).join(" · ");
+  // 학교가 둘 이상 열려 있으면 "경희대 국제캠퍼스"처럼 학교 이름을 붙인다 (2026-10-24)
+  const place = card.university ? [shortSchoolName(card.university), card.campus].filter(Boolean).join(" ") : card.campus;
+  const meta = [card.age ? `만 ${card.age}세` : null, place].filter(Boolean).join(" · ");
   return (
     <article className={cn("rounded-card border border-line bg-paper-card", className)}>
       <div className="border-b border-line px-6 pb-5 pt-6">

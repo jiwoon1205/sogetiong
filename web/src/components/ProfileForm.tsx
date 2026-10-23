@@ -71,7 +71,11 @@ export function ProfileForm({
     if (!p) return;
     setError("");
     if (!p.department_id) return setError("학과를 선택해주세요. 학과는 매칭에만 쓰이고, 다른 학생에게 보여줄지는 직접 고를 수 있어요.");
-    if (!showCampus || !showDept) return setError("캠퍼스와 학과를 다른 학생에게 보여줄지 골라주세요.");
+    // 학교가 둘 이상 열려 있으면 캠퍼스는 항상 공개라 학과 공개만 묻는다 (2026-10-24)
+    const campusAlways = !!p.campus_always_public;
+    if ((!campusAlways && !showCampus) || !showDept) {
+      return setError(campusAlways ? "학과를 다른 학생에게 보여줄지 골라주세요." : "캠퍼스와 학과를 다른 학생에게 보여줄지 골라주세요.");
+    }
     // 키: 비워 두면 안 적은 것. 적었다면 140~210 사이 정수만
     const heightTrim = heightText.trim();
     const height = heightTrim === "" ? null : Number(heightTrim);
@@ -86,7 +90,7 @@ export function ProfileForm({
           nickname: p.nickname,
           // 학과는 처음 한 번만 보낸다 (이후에는 바꿀 수 없음)
           department_id: p.department_locked ? undefined : p.department_id,
-          show_campus: showCampus === "show",
+          show_campus: campusAlways ? undefined : showCampus === "show",
           show_department: showDept === "show",
           mbti: p.mbti || null,
           bio: p.bio ?? "",
@@ -187,17 +191,28 @@ export function ProfileForm({
           </p>
         ))}
 
-      <div className="grid gap-4 rounded-md border border-line bg-paper-card px-4 py-4 sm:grid-cols-2">
-        <Field label="캠퍼스 공개">
-          <Segmented value={showCampus} onChange={(v) => { setSaved(false); setShowCampus(v); }} options={VISIBILITY_OPTIONS} />
-        </Field>
-        <Field label="학과 공개">
-          <Segmented value={showDept} onChange={(v) => { setSaved(false); setShowDept(v); }} options={VISIBILITY_OPTIONS} />
-        </Field>
-        <p className="text-[12.5px] leading-relaxed text-ink-faint sm:col-span-2">
-          비공개로 해도 매칭 조건(캠퍼스, 같은 과 제외)에는 그대로 쓰여요. 공개 여부는 나중에 바꿀 수 있어요.
-        </p>
-      </div>
+      {p.campus_always_public ? (
+        <div className="grid gap-4 rounded-md border border-line bg-paper-card px-4 py-4">
+          <Field label="학과 공개">
+            <Segmented value={showDept} onChange={(v) => { setSaved(false); setShowDept(v); }} options={VISIBILITY_OPTIONS} />
+          </Field>
+          <p className="text-[12.5px] leading-relaxed text-ink-faint">
+            학교와 캠퍼스는 모든 학생에게 보여요. 학과는 비공개로 해도 매칭 조건(같은 과 제외)에는 그대로 쓰여요. 공개 여부는 나중에 바꿀 수 있어요.
+          </p>
+        </div>
+      ) : (
+        <div className="grid gap-4 rounded-md border border-line bg-paper-card px-4 py-4 sm:grid-cols-2">
+          <Field label="캠퍼스 공개">
+            <Segmented value={showCampus} onChange={(v) => { setSaved(false); setShowCampus(v); }} options={VISIBILITY_OPTIONS} />
+          </Field>
+          <Field label="학과 공개">
+            <Segmented value={showDept} onChange={(v) => { setSaved(false); setShowDept(v); }} options={VISIBILITY_OPTIONS} />
+          </Field>
+          <p className="text-[12.5px] leading-relaxed text-ink-faint sm:col-span-2">
+            비공개로 해도 매칭 조건(캠퍼스, 같은 과 제외)에는 그대로 쓰여요. 공개 여부는 나중에 바꿀 수 있어요.
+          </p>
+        </div>
+      )}
 
       <div className="space-y-2">
         <p className="text-[13px] font-medium text-ink-soft">

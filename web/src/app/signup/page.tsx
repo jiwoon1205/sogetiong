@@ -2,13 +2,13 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { AuthFrame } from "@/components/AuthFrame";
 import { Steps } from "@/components/Steps";
-import { Button, Checkbox, EmailInput, Field, Input, Notice, PageTitle, Segmented, Select } from "@/components/ui";
+import { SchoolEmailField, useUniversities } from "@/components/SchoolEmail";
+import { Button, Checkbox, Field, Input, Notice, PageTitle, Segmented, Select } from "@/components/ui";
 import { api, errorMessage } from "@/lib/api";
 
-type University = { id: string; name: string; email_domain: string };
 type Campus = { id: string; name: string };
 type Gender = "MALE" | "FEMALE";
 type WantGender = Gender | "ANY";
@@ -16,7 +16,9 @@ type WantGender = Gender | "ANY";
 export default function SignupPage() {
   const router = useRouter();
   const [step, setStep] = useState<0 | 1 | 2>(0);
-  const [university, setUniversity] = useState<University | null>(null);
+  const [schoolName, setSchoolName] = useState("");
+  // 학교가 둘 이상 열려 있을 때만 캠퍼스 칸에 학교 이름을 붙인다 (하나면 지금과 같게)
+  const multiSchool = useUniversities().length > 1;
   const [campuses, setCampuses] = useState<Campus[]>([]);
 
   const [email, setEmail] = useState("");
@@ -37,19 +39,6 @@ export default function SignupPage() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [loading, setLoading] = useState(false);
-
-  useEffect(() => {
-    api<{ universities: University[] }>("/universities")
-      .then(async ({ universities }) => {
-        const uni = universities[0] ?? null;
-        setUniversity(uni);
-        if (uni) {
-          const res = await api<{ campuses: Campus[] }>(`/universities/${uni.id}/campuses`);
-          setCampuses(res.campuses);
-        }
-      })
-      .catch((e) => setError(errorMessage(e)));
-  }, []);
 
   async function run(fn: () => Promise<void>) {
     setError("");
@@ -75,7 +64,17 @@ export default function SignupPage() {
   const verify = (e: React.FormEvent) => {
     e.preventDefault();
     run(async () => {
-      const res = await api<{ verification_ticket: string }>("/auth/email/verify", { method: "POST", body: { email, code } });
+      const res = await api<{ verification_ticket: string; university_id: string | null; university_name: string | null }>(
+        "/auth/email/verify",
+        { method: "POST", body: { email, code } },
+      );
+      // 캠퍼스 목록은 메일 주소의 학교 것으로 (2026-10-24 경희대 확장)
+      if (res.university_id) {
+        const list = await api<{ campuses: Campus[] }>(`/universities/${res.university_id}/campuses`);
+        setCampuses(list.campuses);
+        setInfo((prev) => ({ ...prev, campus: "" }));
+      }
+      setSchoolName(res.university_name ?? "");
       setTicket(res.verification_ticket);
       setNotice("");
       setStep(2);
@@ -126,9 +125,7 @@ export default function SignupPage() {
       {step === 0 && (
         <form onSubmit={sendCode} className="space-y-5">
           <PageTitle title="학교 메일로 확인할게요" desc={<>재학생 확인에만 쓰이고, 다른 학생에게는 절대 보이지 않아요.</>} />
-          <Field label="학교 이메일" htmlFor="email">
-            <EmailInput id="email" value={email} onChange={setEmail} domain={university?.email_domain ?? "hufs.ac.kr"} required />
-          </Field>
+          <SchoolEmailField value={email} onChange={setEmail} required />
           {error && <Notice tone="error">{error}</Notice>}
           <Button type="submit" size="lg" className="w-full" loading={loading}>
             인증번호 받기
@@ -196,7 +193,7 @@ export default function SignupPage() {
             <Field label="생년월일" htmlFor="birth">
               <Input id="birth" type="date" value={info.birth} onChange={(e) => setInfo({ ...info, birth: e.target.value })} required />
             </Field>
-            <Field label="캠퍼스" htmlFor="campus">
+            <Field label={multiSchool && schoolName ? `${schoolName} 캠퍼스` : "캠퍼스"} htmlFor="campus">
               <Select id="campus" value={info.campus} onChange={(e) => setInfo({ ...info, campus: e.target.value })} required>
                 <option value="" disabled>
                   선택

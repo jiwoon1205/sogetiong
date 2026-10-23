@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AgeRangeSlider } from "@/components/AgeRangeSlider";
 import { Button, Checkbox, Notice } from "@/components/ui";
 import { api, errorMessage } from "@/lib/api";
@@ -27,6 +27,9 @@ const EMPTY: Preferences = {
   exclude_same_department: false,
 };
 
+/** 매칭 조건에서 고를 수 있는 캠퍼스 (학교별, 2026-10-24 경희대 확장) */
+type SchoolCampuses = { id: string; name: string; mine: boolean; campuses: { id: string; name: string }[] };
+
 /** 매칭 조건. 이 내용은 본인만 볼 수 있다.
  *  원하는 성별은 가입할 때 정해서 여기서는 보여주기만 한다 (바꾸려면 운영진에게 메일). */
 export function PreferencesForm({
@@ -49,8 +52,27 @@ export function PreferencesForm({
   const [error, setError] = useState("");
   const [saved, setSaved] = useState(false);
   const [loading, setLoading] = useState(false);
+  // 학교별 캠퍼스 목록. 학교가 하나면 예전처럼 캠퍼스만 한 줄로 보여준다 (multi_school=false)
+  const [schools, setSchools] = useState<SchoolCampuses[] | null>(null);
+  const [multiSchool, setMultiSchool] = useState(false);
 
   useEffect(() => {
+    api<{ multi_school: boolean; schools: SchoolCampuses[] }>("/me/preferences/campuses")
+      .then((r) => {
+        setSchools(r.schools);
+        setMultiSchool(r.multi_school);
+      })
+      .catch(() => setSchools([])); // 못 받으면 내 학교 캠퍼스(props)로
+  }, []);
+
+  // "전부 체크 = 모든 캠퍼스(ALL)"의 기준. 학교가 둘 이상 열려 있으면 모든 학교의 캠퍼스
+  const allCampuses = useMemo(
+    () => (schools && schools.length ? schools.flatMap((sc) => sc.campuses) : campuses),
+    [schools, campuses],
+  );
+
+  useEffect(() => {
+    if (schools === null || allCampuses.length === 0) return;
     Promise.all([api<Preferences>("/me/preferences"), api<MyProfile>("/me/profile")])
       .then(([res, profile]) => {
         // 설정 전이어도 가입할 때 고른 원하는 성별은 온다
@@ -77,12 +99,12 @@ export function PreferencesForm({
         }
         const mode = res.configured ? res.campus_mode : "ALL";
         // 예전 방식("내 캠퍼스만")도 체크박스로 보여준다
-        if (mode === "ALL") setCampusIds(campuses.map((c) => c.id));
+        if (mode === "ALL") setCampusIds(allCampuses.map((c) => c.id));
         else if (mode === "MY") setCampusIds([profile.campus_id]);
         else setCampusIds(res.campus_ids);
       })
       .catch((e) => setError(errorMessage(e)));
-  }, [campuses]);
+  }, [schools, allCampuses]);
 
   // 화면을 띄워 둔 채 날짜(한국 시간)가 바뀌면 → "오늘 남은 횟수"만 다시 받아온다 (고르던 조건은 그대로 둔다)
   useKstNewDay(() => {
@@ -105,7 +127,7 @@ export function PreferencesForm({
     e.preventDefault();
     setError("");
     if (campusIds.length === 0) return setError("만날 캠퍼스를 하나 이상 골라주세요.");
-    const all = campuses.every((c) => campusIds.includes(c.id));
+    const all = allCampuses.every((c) => campusIds.includes(c.id));
     // 상관없음 → 둘 다 비움. 오른쪽 끝("35세 이상") → 최대 나이 비움 (위쪽 제한 없음)
     const [lo, hi] = ageRange;
     const min_age = ageAny ? null : lo;
@@ -138,7 +160,10 @@ export function PreferencesForm({
     <form onSubmit={save} className="space-y-7">
       {/* 매칭 조건은 양쪽 모두 맞아야 추천된다 (서버 규칙). 2026-10-04: 사용자에게 분명히 알리려고 추가 */}
       <Notice>
-        <strong className="font-medium text-ink">내 조건에 맞는 사람에게만 내 프로필이 추천돼요.</strong> 예를 들어 서울캠퍼스만 고르면 서울캠퍼스 학생만 나에게 추천되고, 나도 서울캠퍼스 학생에게만 보여요.
+        <strong className="font-medium text-ink">내 조건에 맞는 사람에게만 내 프로필이 추천돼요.</strong>{" "}
+        {multiSchool
+          ? "예를 들어 우리 학교 캠퍼스만 고르면 우리 학교 학생만 나에게 추천되고, 나도 우리 학교 학생에게만 보여요."
+          : "예를 들어 서울캠퍼스만 고르면 서울캠퍼스 학생만 나에게 추천되고, 나도 서울캠퍼스 학생에게만 보여요."}
       </Notice>
 
       <Notice>
@@ -195,14 +220,39 @@ export function PreferencesForm({
       </div>
 
       <div className="space-y-1.5">
-        <p className="text-[13px] font-medium text-ink-soft">만날 캠퍼스</p>
-        <div className="flex flex-wrap gap-x-6 rounded-md border border-line bg-paper-card px-4 py-2">
-          {campuses.map((c) => (
-            <Checkbox key={c.id} checked={campusIds.includes(c.id)} onChange={() => toggleCampus(c.id)}>
-              {c.name.replace(/캠퍼스$/, "")}
-            </Checkbox>
-          ))}
-        </div>
+        <p className="text-[13px] font-medium text-ink-soft">{multiSchool ? "만날 학교·캠퍼스" : "만날 캠퍼스"}</p>
+        {multiSchool && schools ? (
+          <div className="divide-y divide-line rounded-md border border-line bg-paper-card px-4">
+            {schools.map((sc) => (
+              <div key={sc.id} className="py-2">
+                <p className="pt-1 text-[12.5px] font-medium text-ink-soft">
+                  {sc.name}
+                  {sc.mine && <span className="font-normal text-ink-faint"> · 우리 학교</span>}
+                </p>
+                <div className="flex flex-wrap gap-x-6">
+                  {sc.campuses.map((c) => (
+                    <Checkbox key={c.id} checked={campusIds.includes(c.id)} onChange={() => toggleCampus(c.id)}>
+                      {c.name.replace(/캠퍼스$/, "")}
+                    </Checkbox>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="flex flex-wrap gap-x-6 rounded-md border border-line bg-paper-card px-4 py-2">
+            {allCampuses.map((c) => (
+              <Checkbox key={c.id} checked={campusIds.includes(c.id)} onChange={() => toggleCampus(c.id)}>
+                {c.name.replace(/캠퍼스$/, "")}
+              </Checkbox>
+            ))}
+          </div>
+        )}
+        {multiSchool && (
+          <p className="text-[12.5px] leading-relaxed text-ink-faint">
+            모두 체크하면 앞으로 새로 열리는 학교·캠퍼스도 자동으로 포함돼요. 학교·캠퍼스는 프로필에 항상 보여요.
+          </p>
+        )}
       </div>
 
       <div className="space-y-1.5">
@@ -218,7 +268,7 @@ export function PreferencesForm({
       </div>
 
       <p className="text-[12.5px] leading-relaxed text-ink-faint">
-        캠퍼스·학과를 비공개로 해도, 조건을 바꿔 가며 추천 결과를 보면 짐작될 수 있어요. 그래서 조건 변경 횟수를 제한해요.
+        {multiSchool ? "학과를" : "캠퍼스·학과를"} 비공개로 해도, 조건을 바꿔 가며 추천 결과를 보면 짐작될 수 있어요. 그래서 조건 변경 횟수를 제한해요.
       </p>
 
       {error && <Notice tone="error">{error}</Notice>}

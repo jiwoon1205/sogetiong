@@ -25,9 +25,20 @@ type Stats = {
   members_active?: number;
   members_vip?: number;
   members_expiring_week?: number;
+  /** 학교별 숫자 (2026-10-24 경희대 확장). open = OPEN_SCHOOLS로 열려 있는지 */
+  schools?: {
+    name: string;
+    email_domain: string;
+    open: boolean;
+    users_total: number;
+    users_active: number;
+    users_active_male: number;
+    users_active_female: number;
+  }[];
 };
 
-type Tile = { key: keyof Stats; label: string; hint?: string | ((s: Stats) => string); href?: string; urgent?: boolean; perm?: string };
+type NumberKey = { [K in keyof Stats]-?: Stats[K] extends number | undefined ? K : never }[keyof Stats];
+type Tile = { key: NumberKey; label: string; hint?: string | ((s: Stats) => string); href?: string; urgent?: boolean; perm?: string };
 
 const TILES: Tile[] = [
   { key: "photos_pending", label: "사진 검수 대기", href: "/admin/photos", urgent: true },
@@ -108,6 +119,47 @@ export default function AdminDashboard() {
           <div key={`filler-${i}`} className="hidden bg-paper-card lg:block" aria-hidden />
         ))}
       </div>
+      {(stats.schools?.length ?? 0) > 1 && <SchoolTable schools={stats.schools!} />}
     </>
+  );
+}
+
+/** 학교별 숫자 (2026-10-24). 학교가 둘 이상 있을 때만 보인다. 닫힌 학교 = 아직 가입 불가 (설정 OPEN_SCHOOLS) */
+function SchoolTable({ schools }: { schools: NonNullable<Stats["schools"]> }) {
+  return (
+    <section className="mt-8">
+      <h2 className="mb-3 text-[14px] font-medium text-ink-soft">학교별</h2>
+      <div className="overflow-x-auto rounded-card border border-line bg-paper-card">
+        <table className="w-full min-w-[34rem] text-[14px]">
+          <thead className="border-b border-line text-left text-[12.5px] text-ink-faint">
+            <tr>
+              <th className="px-5 py-3 font-normal">학교</th>
+              <th className="px-5 py-3 font-normal">상태</th>
+              <th className="px-5 py-3 text-right font-normal">전체 가입자</th>
+              <th className="px-5 py-3 text-right font-normal">활성 사용자</th>
+              <th className="px-5 py-3 font-normal">활성 성비</th>
+            </tr>
+          </thead>
+          <tbody>
+            {schools.map((sc) => (
+              <tr key={sc.email_domain} className="border-b border-line last:border-0">
+                <td className="px-5 py-3">
+                  <Link href={`/admin/users?school=${encodeURIComponent(sc.email_domain)}`} className="underline-offset-4 hover:underline">
+                    {sc.name}
+                  </Link>
+                  <span className="ml-2 text-[12px] text-ink-faint">@{sc.email_domain}</span>
+                </td>
+                <td className="px-5 py-3">{sc.open ? "열림" : <span className="text-ink-faint">닫힘 (가입 불가)</span>}</td>
+                <td className="num px-5 py-3 text-right">{sc.users_total.toLocaleString()}</td>
+                <td className="num px-5 py-3 text-right">{sc.users_active.toLocaleString()}</td>
+                <td className="num px-5 py-3 text-ink-soft">
+                  남 {sc.users_active_male.toLocaleString()} · 여 {sc.users_active_female.toLocaleString()}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
   );
 }

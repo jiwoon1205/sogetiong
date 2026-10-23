@@ -91,7 +91,13 @@ def verify_code(payload: VerifyCodeRequest, request: Request, db: Session = Depe
     reason = auth_service.rejoin_block_reason(db, email)
     if reason:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=reason)
-    return VerifyCodeResponse(verification_ticket=ticket, expires_in_minutes=get_settings().verification_ticket_minutes)
+    university = auth_service.find_university_for_email(db, email)
+    return VerifyCodeResponse(
+        verification_ticket=ticket,
+        expires_in_minutes=get_settings().verification_ticket_minutes,
+        university_id=str(university.id) if university else None,
+        university_name=university.name if university else None,
+    )
 
 
 @router.post("/register", status_code=status.HTTP_201_CREATED)

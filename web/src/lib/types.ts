@@ -17,6 +17,8 @@ export type Card = {
   nickname: string;
   age: number | null;
   gender: "MALE" | "FEMALE";
+  /** 학교 이름. 학교가 둘 이상 열려 있을 때만 온다 (2026-10-24 경희대 확장) */
+  university?: string | null;
   campus: string | null;
   department: string | null;
   mbti: string | null;
@@ -47,12 +49,17 @@ export type MyProfile = Card & {
   /** 학과를 한 번 정하면 바꿀 수 없음 (운영진에게 메일로 요청) */
   department_locked: boolean;
   campus_id: string;
+  /** 학교가 둘 이상 열리면 캠퍼스는 항상 공개 → "캠퍼스 공개" 선택지를 숨긴다 (2026-10-24) */
+  campus_always_public?: boolean;
 };
 
 export type Me = {
   email: string;
   status: string;
   university_id: string;
+  /** 2026-10-24 경희대 확장 */
+  university_name?: string;
+  multi_school?: boolean;
   onboarding: {
     profile_done: boolean;
     photo_status: "NOT_SUBMITTED" | "PENDING" | "IN_REVIEW" | "APPROVED" | "REJECTED" | "SUPERSEDED";

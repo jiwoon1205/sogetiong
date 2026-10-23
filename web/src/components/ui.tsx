@@ -93,7 +93,8 @@ export const Input = forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTML
   return <input ref={ref} className={cn("field", className)} {...rest} />;
 });
 
-/** 학교 이메일 입력: 앞부분만 입력받고 "@도메인"은 고정 글자로 보여줌. value/onChange는 전체 주소("abc@hufs.ac.kr")로 주고받음 */
+/** 학교 이메일 입력: 앞부분만 입력받고 "@도메인"은 고정 글자로 보여줌. value/onChange는 전체 주소("abc@hufs.ac.kr")로 주고받음.
+ *  다른 주소를 통째로 넣으면(예: 테스트 계정 개인 메일, 다른 학교 메일) 그 주소를 그대로 쓴다 (2026-10-24). */
 export function EmailInput({
   id,
   value,
@@ -108,7 +109,10 @@ export function EmailInput({
   required?: boolean;
 }) {
   const suffix = `@${domain}`;
-  const local = value.endsWith(suffix) ? value.slice(0, -suffix.length) : value;
+  const own = value.toLowerCase().endsWith(suffix.toLowerCase());
+  // 고정 글자와 다른 주소를 통째로 넣은 경우 → 전체 주소를 그대로 보여 주고 고정 글자는 숨긴다
+  const full = !own && value.includes("@");
+  const local = own ? value.slice(0, -suffix.length) : value;
   return (
     <div className="field flex items-center gap-1 focus-within:border-ink">
       <input
@@ -120,14 +124,17 @@ export function EmailInput({
         spellCheck={false}
         value={local}
         onChange={(e) => {
-          // 전체 주소를 붙여넣어도 "@" 앞부분만 사용
-          const v = e.target.value.split("@")[0].trim();
-          onChange(v ? `${v}${suffix}` : "");
+          const v = e.target.value.trim();
+          if (!v) return onChange("");
+          if (!v.includes("@")) return onChange(`${v}${suffix}`);
+          // 이 학교 주소를 붙여넣었으면 앞부분만, 다른 주소면 통째로
+          if (v.toLowerCase().endsWith(suffix.toLowerCase())) return onChange(v);
+          onChange(v);
         }}
         required={required}
         className="min-w-0 flex-1 bg-transparent focus:outline-none"
       />
-      <span className="shrink-0 select-none text-ink-soft">{suffix}</span>
+      {!full && <span className="shrink-0 select-none text-ink-soft">{suffix}</span>}
     </div>
   );
 }

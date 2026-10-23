@@ -9,7 +9,7 @@ import { api } from "@/lib/api";
 //   활성 여자가 0명이면 서버가 male_per_female=null을 보내고, 이 줄을 숨긴다.
 // 숫자를 못 받아오면(서버 문제 등) 아무것도 그리지 않는다 → 화면이 깨지지 않게.
 
-type Stats = { total: number; male_per_female: number | null; female_pct: number | null };
+type Stats = { total: number; male_per_female: number | null; female_pct: number | null; multi_school?: boolean };
 
 // 1.0 → "1", 1.25 → "1.3" (소수 첫째 자리까지, 끝의 .0은 뺀다)
 const fmtRatio = (x: number) => String(Number(x.toFixed(1)));
@@ -30,14 +30,16 @@ export function MemberStat() {
   if (!stats || stats.total <= 0) return null;
   const { total, male_per_female: r, female_pct: f } = stats;
   const showRatio = r !== null && r !== undefined && f !== null && f !== undefined;
+  // 학교가 둘 이상 열리면 전체 합계를 "대학생"으로 (2026-10-23 결정)
+  const who = stats.multi_school ? "대학생" : "외대생";
 
   return (
     <div
       className="flex animate-fadein flex-col justify-center gap-[5px] whitespace-nowrap border-l border-line pl-3 leading-none"
-      aria-label={`함께하는 외대생 ${total}명${showRatio ? `, 활동 중인 사람 성비 여 1 대 남 ${fmtRatio(r)}` : ""}`}
+      aria-label={`함께하는 ${who} ${total}명${showRatio ? `, 활동 중인 사람 성비 여 1 대 남 ${fmtRatio(r)}` : ""}`}
     >
       <span className="text-[11px] text-ink-faint">
-        <span className="hidden min-[400px]:inline">함께하는 </span>외대생{" "}
+        <span className="hidden min-[400px]:inline">함께하는 </span>{who}{" "}
         <span className="num font-serif text-[12px] font-semibold text-ink-soft">{total.toLocaleString("ko-KR")}</span>명
       </span>
       {showRatio && (

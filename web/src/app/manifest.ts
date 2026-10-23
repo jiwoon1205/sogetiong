@@ -9,7 +9,7 @@ export default function manifest(): MetadataRoute.Manifest {
   return {
     name: "훕팅",
     short_name: "훕팅",
-    description: "외대생끼리, 이름과 얼굴 대신 어떤 사람인지로 먼저 만나는 익명 소개팅.",
+    description: "학교 메일로 확인된 대학생끼리, 이름과 얼굴 대신 어떤 사람인지로 먼저 만나는 익명 소개팅.",
     lang: "ko",
     start_url: "/discover",
     scope: "/",

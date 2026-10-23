@@ -1,5 +1,6 @@
 import { Brand } from "@/components/Brand";
 import { MemberStat } from "@/components/MemberStat";
+import { SchoolsEyebrow } from "@/components/SchoolsEyebrow";
 import { BusinessInfo } from "@/components/BusinessInfo";
 import { SupportContact } from "@/components/SupportContact";
 import { ButtonLink } from "@/components/ui";
@@ -8,7 +9,7 @@ const PRINCIPLES = [
   {
     no: "01",
     title: "학교 메일로 확인된 사람만",
-    body: "재학생 이메일 인증을 마친 같은 학교 학생만 들어올 수 있습니다.",
+    body: "재학생 이메일 인증을 마친 학생만 들어올 수 있습니다.",
   },
   {
     no: "02",
@@ -43,7 +44,7 @@ export default function Landing() {
       <main className="mx-auto max-w-5xl px-5 sm:px-8">
         <section className="grid gap-10 pb-16 pt-10 sm:pt-20 md:grid-cols-[1.25fr_1fr] md:gap-16">
           <div>
-            <p className="eyebrow mb-6">한국외국어대학교 재학생 전용</p>
+            <SchoolsEyebrow />
             <h1 className="font-serif text-[40px] font-semibold leading-[1.18] tracking-tight sm:text-[54px]">
               누군지는 몰라도,
               <br />
@@ -52,7 +53,7 @@ export default function Landing() {
               <span className="text-brick">충분히 알 수 있게.</span>
             </h1>
             <p className="mt-7 max-w-md text-[16px] leading-[1.75] text-ink-soft">
-              같은 학교 학생이라는 것만 확인된 채로 시작합니다. 사진 대신 취향과 이야기로 먼저 만나고,
+              재학생이라는 것만 확인된 채로 시작합니다. 사진 대신 취향과 이야기로 먼저 만나고,
               신뢰가 쌓인 다음에 서로 원하는 만큼만 알아가세요.
             </p>
             <div className="mt-9 flex flex-wrap gap-3">
