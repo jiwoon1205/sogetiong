@@ -131,6 +131,14 @@ class Settings(BaseSettings):
     # 테스트가 끝나면 빈 값으로 되돌리고 테스트 계정은 탈퇴한다.
     school_test_emails: str = ""
 
+    # --- 친구 초대 이벤트 (2026-10-24) ---
+    # 이 기간(한국 시간)에 초대 링크로 가입한 사람의 첫 사진이 승인되면, 초대한 사람에게 슈퍼 라이크 1개.
+    # 기본: 2026-10-24 0시 ~ 2026-11-07 0시 (2주, 11월 6일 밤 12시에 끝). 끄려면 REFERRAL_END를 지난 시각으로.
+    referral_start: datetime | None = datetime(2026, 10, 24, 0, 0, tzinfo=KST)
+    referral_end: datetime | None = datetime(2026, 11, 7, 0, 0, tzinfo=KST)
+    # 한 사람이 초대로 받을 수 있는 슈퍼 라이크 최대 개수. 0 = 한도 없음 (2026-10-24 결정)
+    referral_max_rewards: int = 0
+
     # 매칭 조건은 하루(24시간)에 이 횟수만큼만 바꿀 수 있다 (처음 저장은 세지 않음)
     preferences_changes_per_day: int = 3
 
@@ -243,6 +251,14 @@ class Settings(BaseSettings):
     @property
     def membership_discount_until_utc(self) -> datetime | None:
         return self._to_utc(self.membership_discount_until)
+
+    @property
+    def referral_start_utc(self) -> datetime | None:
+        return self._to_utc(self.referral_start)
+
+    @property
+    def referral_end_utc(self) -> datetime | None:
+        return self._to_utc(self.referral_end)
 
     @property
     def push_enabled(self) -> bool:

@@ -273,7 +273,7 @@ export function PreferencesForm({
               </Checkbox>
             </div>
             <p className="text-[12.5px] leading-relaxed text-ink-faint">
-              10월 25일부터 경희대 학생도 함께해요. 체크하지 않으면 &lsquo;모든 캠퍼스&rsquo;인 분에게는 경희대 학생도 추천되고, 나도 경희대 학생에게 추천돼요.
+              경희대 학생도 곧 함께해요. 체크하지 않으면 &lsquo;모든 캠퍼스&rsquo;인 분에게는 경희대 학생도 추천되고, 나도 경희대 학생에게 추천돼요.
             </p>
           </>
         )}

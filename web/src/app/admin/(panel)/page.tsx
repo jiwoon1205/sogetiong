@@ -25,6 +25,9 @@ type Stats = {
   members_active?: number;
   members_vip?: number;
   members_expiring_week?: number;
+  /** 친구 초대 이벤트 (2026-10-24) */
+  referral_signups?: number;
+  referral_rewards?: number;
   /** 학교별 숫자 (2026-10-24 경희대 확장). open = OPEN_SCHOOLS로 열려 있는지 */
   schools?: {
     name: string;
@@ -59,6 +62,12 @@ const TILES: Tile[] = [
   { key: "users_male", label: "남자", hint: "정상 계정", href: "/admin/users?gender=MALE" },
   { key: "users_female", label: "여자", hint: "정상 계정", href: "/admin/users?gender=FEMALE" },
   { key: "matches_total", label: "누적 매칭" },
+  // 친구 초대 이벤트 (2026-10-24)
+  {
+    key: "referral_signups",
+    label: "초대로 가입",
+    hint: (s) => `사진 승인까지 끝나 슈퍼 라이크 지급 ${(s.referral_rewards ?? 0).toLocaleString()}개`,
+  },
   { key: "users_suspended", label: "정지된 계정" },
   {
     key: "users_deleted",

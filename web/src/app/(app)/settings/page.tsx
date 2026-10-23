@@ -7,6 +7,7 @@ import { AlertSettings } from "@/components/AlertSettings";
 import { BusinessInfo } from "@/components/BusinessInfo";
 import { MembershipRenew, OPEN_PAY_KEY } from "@/components/PaymentStep";
 import { StarIcon, SuperLikeBuy } from "@/components/SuperLike";
+import { InviteFriends } from "@/components/InviteFriends";
 import { PreferencesForm } from "@/components/PreferencesForm";
 import { SupportContact } from "@/components/SupportContact";
 import { Button, Field, Input, Modal, Notice, PageTitle, Spinner } from "@/components/ui";
@@ -37,6 +38,8 @@ export default function SettingsPage() {
         <PageTitle eyebrow="설정" title="매칭 조건" desc="바꾼 조건은 다음 추천부터 반영돼요." />
         <PreferencesForm campuses={campuses} />
       </section>
+
+      <InviteFriends />
 
       <MyMembership onActivated={() => void refresh()} />
 

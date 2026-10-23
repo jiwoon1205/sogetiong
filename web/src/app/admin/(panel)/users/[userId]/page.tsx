@@ -42,6 +42,13 @@ type Detail = {
   campus: { id: string; name: string } | null;
   /** 학교 이름 (2026-10-24) */
   university?: string | null;
+  /** 친구 초대 이벤트 (2026-10-24) */
+  referral?: {
+    invited: number;
+    rewarded: number;
+    referred_by: { user_id: string; subject_code: string } | null;
+    rewarded_referrer_at: string | null;
+  };
   department: { id: string; name: string } | null;
   gender: Gender | null;
   preferred_gender: WantGender | null;
@@ -95,6 +102,21 @@ export default function UserDetail() {
           {d.likes_today ? <> · {likesLabel(d.likes_today)}</> : d.trial_like_limit ? <> · 체험 좋아요 {d.trial_likes_used ?? 0}/{d.trial_like_limit}</> : null}
           {d.vip_until && <> · VIP 끝 {dateTime(d.vip_until)}</>}
           {d.super_likes ? <> · ⭐ 슈퍼 라이크 {d.super_likes}개</> : null}
+          {d.referral && (d.referral.invited > 0 || d.referral.referred_by) && (
+            <>
+              {" · "}🎁 초대
+              {d.referral.invited > 0 && <> {d.referral.invited}명(지급 {d.referral.rewarded})</>}
+              {d.referral.referred_by && (
+                <>
+                  {" "}· 초대한 사람{" "}
+                  <Link href={`/admin/users/${d.referral.referred_by.user_id}`} className="underline underline-offset-4">
+                    {d.referral.referred_by.subject_code}
+                  </Link>
+                  {d.referral.rewarded_referrer_at ? " (지급됨)" : " (사진 승인 전)"}
+                </>
+              )}
+            </>
+          )}
         </p>
       </div>
 

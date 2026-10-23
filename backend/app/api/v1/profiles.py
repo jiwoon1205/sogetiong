@@ -28,6 +28,7 @@ from app.services import (
     membership_service,
     payment_service,
     profile_service,
+    referral_service,
     super_like_service,
     survey_service,
     vip_service,
@@ -328,6 +329,14 @@ def _changes_left(db: Session, current: CurrentUser) -> int:
     if pref is None or _window_expired(pref, utcnow()):
         return limit
     return max(0, limit - pref.changes_in_window)
+
+
+@router.get("/me/referral")
+def my_referral(current: CurrentUser = Depends(get_current_user), db: Session = Depends(get_db)):
+    """친구 초대 이벤트 (2026-10-24): 내 초대 코드·기간·초대한 친구 수 (누구인지는 없음)."""
+    result = referral_service.view(db, current.user)
+    db.commit()  # 처음 보면 코드를 만들어 저장
+    return result
 
 
 @router.get("/me/preferences/campuses")

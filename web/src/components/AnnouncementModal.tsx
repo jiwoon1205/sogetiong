@@ -84,11 +84,18 @@ function findNotice(key: string): Notice | undefined {
 const NOTICES: Record<string, Notice> = {
   // 경희대 오픈 사전 공지 (2026-10-24). 학교가 하나만 열려 있는 동안 뜬다
   "khu-notice-2026-10": {
-    title: "10월 25일부터 경희대 학생도 함께해요",
+    title: "오늘부터 경희대 학생도 함께해요",
     body: (
       <>
+        <div className="mb-4 rounded-card border border-brick/30 bg-brick-wash px-4 py-3.5 text-center">
+          <p className="text-[13px] font-semibold text-brick">🎁 친구 초대 이벤트 · 11월 6일까지</p>
+          <p className="mt-1 text-[14.5px] leading-relaxed text-ink">
+            내 초대 링크로 친구가 가입하면 <b className="font-semibold text-brick">슈퍼 라이크 1개</b>!
+          </p>
+          <p className="mt-0.5 text-[12.5px] text-ink-soft">경희대 친구도, 외대 친구도 OK · 인원 제한 없음 · 친구 사진 검수가 끝나면 지급</p>
+        </div>
         <p className="text-[15px] leading-relaxed text-ink">
-          <b className="font-semibold">10월 25일(일)</b>부터 <b className="font-semibold">경희대 학생</b>(서울·국제캠퍼스)도 학교 메일 인증을 받고 훕팅을 쓸 수 있어요.
+          <b className="font-semibold">10월 24일(토)</b>부터 <b className="font-semibold">경희대 학생</b>(서울·국제캠퍼스)도 학교 메일 인증을 받고 훕팅을 쓸 수 있어요.
           만날 수 있는 사람이 더 많아져요.
         </p>
         <ul className="mt-4 space-y-2 text-[14px] leading-relaxed text-ink-soft">
@@ -106,7 +113,8 @@ const NOTICES: Record<string, Notice> = {
         </ul>
       </>
     ),
-    action: { label: "매칭 조건 보러 가기", href: "/settings#preferences" },
+    action: { label: "친구 초대 링크 받기", href: "/settings#invite" },
+    second: { label: "매칭 조건 보기", href: "/settings#preferences" },
     close: "확인",
   },
   // 경희대 오픈 공지 (2026-10-24). 서버 설정 OPEN_SCHOOLS로 경희대를 열면 자동으로 이 공지로 바뀐다
@@ -114,6 +122,13 @@ const NOTICES: Record<string, Notice> = {
     title: "경희대 학생도 함께하게 됐어요 🎉",
     body: (
       <>
+        <div className="mb-4 rounded-card border border-brick/30 bg-brick-wash px-4 py-3.5 text-center">
+          <p className="text-[13px] font-semibold text-brick">🎁 친구 초대 이벤트 · 11월 6일까지</p>
+          <p className="mt-1 text-[14.5px] leading-relaxed text-ink">
+            내 초대 링크로 친구가 가입하면 <b className="font-semibold text-brick">슈퍼 라이크 1개</b>!
+          </p>
+          <p className="mt-0.5 text-[12.5px] text-ink-soft">경희대 친구도, 외대 친구도 OK · 인원 제한 없음 · 친구 사진 검수가 끝나면 지급</p>
+        </div>
         <p className="text-[15px] leading-relaxed text-ink">
           이제 <b className="font-semibold">경희대 학생</b>(서울·국제캠퍼스)도 훕팅을 써요. 추천 카드에 <b className="font-semibold">학교 이름</b>이 함께 보여요.
         </p>
@@ -129,7 +144,8 @@ const NOTICES: Record<string, Notice> = {
         </ul>
       </>
     ),
-    action: { label: "매칭 조건 보러 가기", href: "/settings#preferences" },
+    action: { label: "친구 초대 링크 받기", href: "/settings#invite" },
+    second: { label: "매칭 조건 보기", href: "/settings#preferences" },
     close: "확인",
   },
   "push-alerts-2026-10": {

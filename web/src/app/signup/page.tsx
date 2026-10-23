@@ -8,6 +8,7 @@ import { Steps } from "@/components/Steps";
 import { SchoolEmailField, useUniversities } from "@/components/SchoolEmail";
 import { Button, Checkbox, Field, Input, Notice, PageTitle, Segmented, Select } from "@/components/ui";
 import { api, errorMessage } from "@/lib/api";
+import { savedRef } from "@/lib/referral";
 
 type Campus = { id: string; name: string };
 type Gender = "MALE" | "FEMALE";
@@ -101,6 +102,8 @@ export default function SignupPage() {
           agree_terms: agree.terms,
           agree_privacy: agree.privacy,
           agree_appearance_public: agree.appearance,
+          // 친구 초대 링크로 들어왔으면 그 코드 (2026-10-24 친구 초대 이벤트)
+          referral_code: savedRef(),
         },
       });
       router.replace("/onboarding");

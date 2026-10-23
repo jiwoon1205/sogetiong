@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
+import { RefCapture } from "@/components/RefCapture";
 
 export const metadata: Metadata = {
   title: { default: "훕팅 — 우리 학교, 익명으로", template: "%s · 훕팅" },
@@ -31,7 +32,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           href="https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@500;600&display=swap"
         />
       </head>
-      <body>{children}</body>
+      <body>
+        <RefCapture />
+        {children}
+      </body>
     </html>
   );
 }

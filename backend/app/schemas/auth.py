@@ -49,6 +49,8 @@ class RegisterRequest(BaseModel):
     agree_terms: bool
     agree_privacy: bool
     agree_appearance_public: bool  # 외적 평가 점수 공개 동의
+    # 친구 초대 링크로 들어왔으면 그 코드 (2026-10-24). 틀린 코드·기간 밖이면 조용히 무시한다
+    referral_code: str | None = Field(default=None, max_length=20)
 
     @field_validator("password")
     @classmethod

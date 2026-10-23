@@ -37,7 +37,7 @@ from app.schemas.admin import (
     UserGenderRequest,
     UserStatusRequest,
 )
-from app.services import admin_alert_service, audit_service, match_limit_service, membership_service, payment_service, profile_service, super_like_service, vip_service, withdrawal_service
+from app.services import admin_alert_service, audit_service, match_limit_service, membership_service, payment_service, profile_service, referral_service, super_like_service, vip_service, withdrawal_service
 from app.services.email_service import EmailDeliveryError, EmailService
 from app.services.notification_service import notify, notify_match_created
 from app.services.session_service import (
@@ -165,6 +165,9 @@ def dashboard(admin: CurrentAdmin = Depends(require_permission("dashboard:read")
         "payments_pending": c(db.query(Payment.id).filter(Payment.status == "REQUESTED")),
         # 이용권 (2026-10-04 구독제): 지금 이용 중 / VIP / 7일 안에 끝남 (정상 계정, 테스트 계정 제외)
         **_membership_counts(db, c),
+        # 친구 초대 이벤트 (2026-10-24): 초대 링크로 가입한 사람 / 그중 초대한 사람에게 슈퍼 라이크가 나간 수
+        "referral_signups": c(db.query(User.id).filter(User.referred_by_id.isnot(None))),
+        "referral_rewards": c(db.query(User.id).filter(User.referral_rewarded_at.isnot(None))),
         # 학교별 숫자 (2026-10-24 경희대 확장): 가입자·활성 사용자(위와 같은 기준)·활성 남녀
         "schools": [
             {
@@ -398,6 +401,9 @@ def evaluate_photo(
         action = "EVALUATION_UPDATE" if before else "EVALUATION_CREATE"
         notify(db, photo.user_id, "PHOTO_REVIEWED", "사진 검수가 완료되었어요", "외적 특징 평가가 프로필에 반영되었습니다.", photo.id)
         _start_membership(db, photo.user_id)
+        # 친구 초대 이벤트 (2026-10-24): 초대로 가입한 사람의 첫 승인 → 초대한 사람에게 슈퍼 라이크 1개 (한 번만)
+        if owner is not None:
+            referral_service.reward_if_due(db, owner, admin_id=admin.id, request=request)
     else:
         photo.review_status = "REJECTED"
         photo.reject_reason = payload.reject_reason
@@ -633,6 +639,19 @@ def get_user(
         "campus": {"id": str(profile.campus_id), "name": profile.campus.name} if profile else None,
         # 학교 (2026-10-24 경희대 확장)
         "university": _school_names(db).get(user.university_id),
+        # 친구 초대 이벤트 (2026-10-24): 이 사람이 초대한 수·보상 받은 수, 이 사람을 초대한 사람(코드)
+        "referral": {
+            "invited": db.query(User.id).filter(User.referred_by_id == user.id).count(),
+            "rewarded": db.query(User.id)
+            .filter(User.referred_by_id == user.id, User.referral_rewarded_at.isnot(None))
+            .count(),
+            "referred_by": (
+                {"user_id": str(user.referred_by_id), "subject_code": pseudonymous_code(user.referred_by_id)}
+                if user.referred_by_id
+                else None
+            ),
+            "rewarded_referrer_at": user.referral_rewarded_at.isoformat() if user.referral_rewarded_at else None,
+        },
         "department": (
             {"id": str(profile.department_id), "name": profile.department.name} if profile and profile.department else None
         ),
