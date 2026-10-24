@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { Button, Field, Input, Notice, Segmented, Select, Tag, Textarea } from "@/components/ui";
 import { api, errorMessage } from "@/lib/api";
 import { mailto, useSupportEmail, type CampusWithDepts } from "@/lib/catalog";
-import { FACE_TYPES, HEIGHT_MAX_CM, HEIGHT_MIN_CM, type MyProfile } from "@/lib/types";
+import { FACE_TYPES, HEIGHT_MAX_CM, HEIGHT_MIN_CM, RELATIONSHIP_GOALS, type MyProfile } from "@/lib/types";
 import { BIO_FULL, IDEAL_FULL, INTEREST_MAX, effortChars } from "@/lib/profileEffort";
 
 type Visibility = "" | "show" | "hide";
@@ -74,6 +74,7 @@ export function ProfileForm({
     if (p.interests.length > INTEREST_MAX) {
       return setError(`관심사는 이제 최대 ${INTEREST_MAX}개까지 고를 수 있어요. ${p.interests.length - INTEREST_MAX}개를 눌러서 빼 주세요.`);
     }
+    if (!p.relationship_goal) return setError("내가 찾는 관계를 골라주세요.");
     if (!p.department_id) return setError("학과를 선택해주세요. 학과는 매칭에만 쓰이고, 다른 학생에게 보여줄지는 직접 고를 수 있어요.");
     // 학교가 둘 이상 열려 있으면 캠퍼스는 항상 공개라 학과 공개만 묻는다 (2026-10-24)
     const campusAlways = !!p.campus_always_public;
@@ -101,6 +102,7 @@ export function ProfileForm({
           ideal_type: p.ideal_type ?? "",
           face_type: p.face_type ?? null,
           height_cm: height,
+          relationship_goal: p.relationship_goal,
           interests: p.interests,
         },
       });
@@ -217,6 +219,27 @@ export function ProfileForm({
           </p>
         </div>
       )}
+
+      <div className="space-y-2">
+        <p className="text-[13px] font-medium text-ink-soft">
+          내가 찾는 관계 <span className="text-ink-faint">· 필수, 1개</span>
+        </p>
+        <div className="flex flex-wrap gap-2">
+          {RELATIONSHIP_GOALS.map((g) => (
+            <Tag key={g.value} active={p.relationship_goal === g.value} onClick={() => set("relationship_goal", g.value)}>
+              {g.label}
+            </Tag>
+          ))}
+        </div>
+        <p className="text-[12.5px] leading-relaxed text-ink-faint">다른 학생 카드에 보여요. 추천에는 영향이 없어요.</p>
+        {/* 2026-10-24 사용자 결정: 캐주얼한 만남을 고르지 않고 불건전한 만남을 요구하다 신고로 확인되면 영구 정지 */}
+        <div className="rounded-card border border-brick/30 bg-brick-wash px-4 py-3 text-[12.5px] leading-relaxed text-ink-soft">
+          <b className="font-semibold text-brick-deep">⚠️ 꼭 읽어주세요</b>
+          <br />
+          &lsquo;캐주얼한 만남&rsquo;을 고르지 않고 <b className="font-semibold text-ink">파트너·FWB·원나잇</b> 같은 불건전한 만남을 요구하다 신고로
+          확인되면 <b className="font-semibold text-ink">영구 정지</b>돼요.
+        </div>
+      </div>
 
       <div className="space-y-2">
         <p className="text-[13px] font-medium text-ink-soft">

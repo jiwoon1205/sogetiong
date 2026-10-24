@@ -6,6 +6,9 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 # 얼굴상 목록 (2026-10-02). 1개만 고르거나 안 고른다. 순서대로 화면에 보인다.
 FACE_TYPES = ("강아지상", "고양이상", "여우상", "토끼상", "곰상", "공룡상", "사슴상", "늑대상", "다람쥐상", "햄스터상")
+# 내가 찾는 관계 (2026-10-24). 화면 이름: 진지한 연애 / 대학교 친구 / 캐주얼한 만남. 추천에는 영향 없음
+RELATIONSHIP_GOALS = ("SERIOUS", "FRIEND", "CASUAL")
+RelationshipGoal = Literal["SERIOUS", "FRIEND", "CASUAL"]
 FaceType = Literal["강아지상", "고양이상", "여우상", "토끼상", "곰상", "공룡상", "사슴상", "늑대상", "다람쥐상", "햄스터상"]
 HEIGHT_MIN_CM = 140
 HEIGHT_MAX_CM = 210
@@ -31,6 +34,7 @@ class ProfileUpdateRequest(BaseModel):
     # 선택사항: null을 보내면 지운다 (안 보내면 그대로)
     face_type: FaceType | None = None
     height_cm: int | None = Field(default=None, ge=HEIGHT_MIN_CM, le=HEIGHT_MAX_CM)
+    relationship_goal: RelationshipGoal | None = None
 
     @field_validator("mbti")
     @classmethod

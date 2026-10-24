@@ -167,6 +167,7 @@ REPORT_REASON_LABELS = {
     "IMPERSONATION": "사칭",
     "MONEY_REQUEST": "금전 요구",
     "PERSONAL_INFO_REQUEST": "개인정보 요구",
+    "UNWHOLESOME_MEETING": "불건전한 만남 요구",
     "SPAM": "스팸",
     "OTHER": "기타",
 }

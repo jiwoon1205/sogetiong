@@ -31,6 +31,9 @@ class PublicProfile(Base):
     # 본인이 고른 얼굴상·키 (2026-10-02, 둘 다 선택사항). 걸러보기·추천 순서에는 쓰지 않는다.
     face_type: Mapped[str | None] = mapped_column(String(20), nullable=True)  # FACE_TYPES 중 하나
     height_cm: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # 내가 찾는 관계 (2026-10-24): SERIOUS 진지한 연애 / FRIEND 대학교 친구 / CASUAL 캐주얼한 만남.
+    # 카드에 보이기만 하고 추천·매칭에는 쓰지 않는다. None = 아직 안 고름 (예전 회원)
+    relationship_goal: Mapped[str | None] = mapped_column(String(20), nullable=True)
     profile_status: Mapped[str] = mapped_column(String(30), default="ACTIVE", nullable=False)
     created_at: Mapped[datetime] = created_at()
     updated_at: Mapped[datetime] = updated_at()

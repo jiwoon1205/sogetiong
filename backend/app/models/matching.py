@@ -173,6 +173,7 @@ REPORT_REASONS = (
     "IMPERSONATION",  # 사칭
     "MONEY_REQUEST",  # 금전 요구
     "PERSONAL_INFO_REQUEST",  # 개인정보 요구
+    "UNWHOLESOME_MEETING",  # 불건전한 만남 요구 (파트너·FWB·원나잇) — 2026-10-24
     "SPAM",  # 스팸
     "OTHER",  # 기타
 )

@@ -165,6 +165,8 @@ def build_cards(db: Session, profiles: list[PublicProfile]) -> list[dict]:
                 # 본인이 고른 값 (AI 평가가 아님). 안 골랐으면 null
                 "face_type": p.face_type,
                 "height_cm": p.height_cm,
+                # 내가 찾는 관계 (2026-10-24, 본인이 고른 값. 추천에는 안 씀)
+                "relationship_goal": p.relationship_goal,
                 "interests": interests.get(p.user_id, []),
                 "appearance": evaluation.scores() if evaluation else None,
             }

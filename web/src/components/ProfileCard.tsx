@@ -1,5 +1,5 @@
 import { ScoreRow } from "@/components/ui";
-import { SCORE_LABELS, type Card } from "@/lib/types";
+import { RELATIONSHIP_LABEL, SCORE_LABELS, type Card } from "@/lib/types";
 import { cn, shortSchoolName } from "@/lib/format";
 
 /** 다른 사용자에게 보이는 공개 카드. 사진 대신 글과 외적 평가로 사람을 소개한다. */
@@ -34,6 +34,12 @@ export function ProfileCard({ card, className, compact }: { card: Card; classNam
       )}
 
       <div className={cn("space-y-5 px-6 py-5", compact && "space-y-4")}>
+        {card.relationship_goal && (
+          <section>
+            <p className="eyebrow mb-2">찾는 관계</p>
+            <p className="text-[15px] text-ink">{RELATIONSHIP_LABEL[card.relationship_goal]}</p>
+          </section>
+        )}
         {(card.face_type || card.height_cm) && (
           <section>
             {/* AI 평가와 헷갈리지 않게 "본인 입력"을 분명히 적는다 */}
@@ -61,7 +67,7 @@ export function ProfileCard({ card, className, compact }: { card: Card; classNam
             <p className="text-[14.5px] leading-relaxed text-ink-soft">{card.interests.join("  ·  ")}</p>
           </section>
         )}
-        {!card.bio && !card.interests.length && !card.ideal_type && !card.face_type && !card.height_cm && (
+        {!card.bio && !card.interests.length && !card.ideal_type && !card.face_type && !card.height_cm && !card.relationship_goal && (
           <p className="text-[14px] text-ink-faint">아직 소개를 작성하지 않았어요.</p>
         )}
       </div>

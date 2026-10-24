@@ -28,11 +28,22 @@ export type Card = {
   face_type: FaceType | null;
   /** 본인이 입력한 키 (cm). 안 적었으면 null */
   height_cm: number | null;
+  /** 내가 찾는 관계 (2026-10-24). 안 골랐으면 null (예전 회원) */
+  relationship_goal?: RelationshipGoal | null;
   interests: string[];
   appearance: Scores | null;
   /** 추천 카드: 내가 이 사람에게 보낸 좋아요 횟수 (2026-10-24 좋아요 쌓기). 0이면 처음 */
   my_likes?: number;
 };
+
+/** 내가 찾는 관계 (2026-10-24). 서버 app/schemas/profile.py의 RELATIONSHIP_GOALS와 같아야 한다. 추천에는 영향 없음. */
+export const RELATIONSHIP_GOALS = [
+  { value: "SERIOUS", label: "진지한 연애" },
+  { value: "FRIEND", label: "대학교 친구" },
+  { value: "CASUAL", label: "캐주얼한 만남" },
+] as const;
+export type RelationshipGoal = (typeof RELATIONSHIP_GOALS)[number]["value"];
+export const RELATIONSHIP_LABEL: Record<RelationshipGoal, string> = { SERIOUS: "진지한 연애", FRIEND: "대학교 친구", CASUAL: "캐주얼한 만남" };
 
 /** 얼굴상 목록 (2026-10-02). 서버 app/schemas/profile.py의 FACE_TYPES와 같아야 한다. 1개만 고른다. */
 export const FACE_TYPES = ["강아지상", "고양이상", "여우상", "토끼상", "곰상", "공룡상", "사슴상", "늑대상", "다람쥐상", "햄스터상"] as const;
@@ -239,6 +250,7 @@ export const REPORT_REASONS: { value: string; label: string }[] = [
   { value: "IMPERSONATION", label: "사칭" },
   { value: "MONEY_REQUEST", label: "금전 요구" },
   { value: "PERSONAL_INFO_REQUEST", label: "개인정보 요구" },
+  { value: "UNWHOLESOME_MEETING", label: "불건전한 만남 요구 (파트너·FWB·원나잇)" },
   { value: "SPAM", label: "스팸" },
   { value: "OTHER", label: "기타" },
 ];

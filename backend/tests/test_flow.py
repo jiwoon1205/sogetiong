@@ -20,7 +20,7 @@ from tests.conftest import (
 
 PUBLIC_CARD_KEYS = {
     "profile_id", "nickname", "age", "gender", "university", "campus", "department", "my_likes",
-    "mbti", "bio", "ideal_type", "face_type", "height_cm", "interests", "appearance",
+    "mbti", "bio", "ideal_type", "face_type", "height_cm", "relationship_goal", "interests", "appearance",
 }
 
 
@@ -201,3 +201,28 @@ def test_interests_are_limited_to_three(sent_codes, db):
     assert r.status_code == 422
     r = a.patch("/api/v1/me/profile", json={"interests": ["카페", "영화", "여행"]})
     assert r.status_code == 200 and len(r.json()["interests"]) == 3
+
+
+def test_relationship_goal(sent_codes, db):
+    """내가 찾는 관계 (2026-10-24): 세 가지 중 하나, 카드에 보인다, 추천에는 영향 없음."""
+    admin = admin_login(db)
+    a = ready_user(sent_codes, db, admin, "a@hufs.ac.kr", gender="FEMALE")
+    b = ready_user(sent_codes, db, admin, "b@hufs.ac.kr", gender="MALE")
+    assert a.get("/api/v1/me/profile").json()["relationship_goal"] is None  # 예전 회원은 비어 있음
+    for goal in ("SERIOUS", "FRIEND", "CASUAL"):
+        r = a.patch("/api/v1/me/profile", json={"relationship_goal": goal})
+        assert r.status_code == 200 and r.json()["relationship_goal"] == goal
+    assert a.patch("/api/v1/me/profile", json={"relationship_goal": "FWB"}).status_code == 422
+    # 다른 항목만 고쳐도 그대로 남는다
+    a.patch("/api/v1/me/profile", json={"bio": "안녕하세요"})
+    assert a.get("/api/v1/me/profile").json()["relationship_goal"] == "CASUAL"
+    cards = b.get("/api/v1/discover").json()["profiles"]
+    assert [c["relationship_goal"] for c in cards if c["profile_id"] == a.profile_id] == ["CASUAL"]
+
+
+def test_report_unwholesome_meeting(sent_codes, db):
+    admin = admin_login(db)
+    a = ready_user(sent_codes, db, admin, "a@hufs.ac.kr")
+    b = ready_user(sent_codes, db, admin, "b@hufs.ac.kr")
+    r = a.post("/api/v1/reports", json={"profile_id": b.profile_id, "reason": "UNWHOLESOME_MEETING"})
+    assert r.status_code == 201, r.text
