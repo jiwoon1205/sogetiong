@@ -5,8 +5,8 @@ import { api } from "@/lib/api";
 
 // 머리말 로고 옆의 작은 숫자 (2026-10-05)
 // - 위 줄: 전체 가입자 수 (서버가 5분마다 새로 센다)
-// - 아래 줄: 활성 사용자(사진 검수 완료 + 최근 7일 접속) 성비. 얇은 막대 + "여 1 : 남 1.2" (여자를 1로 놓고 표시)
-//   활성 여자가 0명이면 서버가 male_per_female=null을 보내고, 이 줄을 숨긴다.
+// - 아래 줄: 탈퇴하지 않은 전체 가입자 성비 (2026-10-25, 예전: 활성 사용자). 얇은 막대 + "여 1 : 남 1.2" (여자를 1로 놓고 표시)
+//   여자가 0명이면 서버가 male_per_female=null을 보내고, 이 줄을 숨긴다.
 // 숫자를 못 받아오면(서버 문제 등) 아무것도 그리지 않는다 → 화면이 깨지지 않게.
 
 type Stats = { total: number; male_per_female: number | null; female_pct: number | null; multi_school?: boolean };
@@ -36,7 +36,7 @@ export function MemberStat() {
   return (
     <div
       className="flex animate-fadein flex-col justify-center gap-[5px] whitespace-nowrap border-l border-line pl-3 leading-none"
-      aria-label={`함께하는 ${who} ${total}명${showRatio ? `, 활동 중인 사람 성비 여 1 대 남 ${fmtRatio(r)}` : ""}`}
+      aria-label={`함께하는 ${who} ${total}명${showRatio ? `, 가입자 성비 여 1 대 남 ${fmtRatio(r)}` : ""}`}
     >
       <span className="text-[11px] text-ink-faint">
         <span className="hidden min-[400px]:inline">함께하는 </span>{who}{" "}
