@@ -124,7 +124,8 @@ export default function ProfilePage() {
             {!uploading && !needsMembership && (resubmit?.allowed ?? true) && (
               <Button variant="secondary" size="sm" onClick={() => setUploading(true)}>
                 {latest
-                  ? resubmit?.uses_free_rereview || resubmit?.uses_purchase_rereview
+                  ? // 기다리는 기간 안에 혜택을 쓸 때만 "바로 재검토" (기간이 지나 무료 기회를 함께 쓰는 경우는 보통 제출)
+                    (resubmit?.uses_free_rereview || resubmit?.uses_purchase_rereview) && resubmit?.next_available_at
                     ? "바로 재검토 요청"
                     : "새 사진 제출"
                   : "사진 제출"}
@@ -149,6 +150,12 @@ export default function ProfilePage() {
               {resubmit?.uses_purchase_rereview ? (
                 <Notice>
                   이용권을 사서 받은 <b>바로 재검토 1번</b>을 써요. 새 사진이 승인되면 쓴 것으로 처리돼요 (반려되면 다시 쓸 수 있어요). 다음에 이용권을 사면 다시 1번 생겨요.
+                </Notice>
+              ) : resubmit?.uses_free_rereview && !resubmit.next_available_at ? (
+                // 2026-10-25: 결제로 받은 게 아니면 재검토 기회는 쌓이지 않는다
+                <Notice>
+                  기다리는 기간이 지나서 새 사진을 낼 수 있어요. 아직 안 쓴 <b>바로 재검토 기회(계정당 1번)도 이번 제출에 함께 써요</b> — 결제로 받은 기회가
+                  아니면 재검토 기회는 쌓이지 않아요. 새 사진이 승인되면 쓴 것으로 처리돼요 (반려되면 다시 쓸 수 있어요).
                 </Notice>
               ) : resubmit?.uses_free_rereview ? (
                 <Notice>

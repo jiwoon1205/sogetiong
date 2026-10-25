@@ -365,6 +365,28 @@ def test_resubmit_limit_after_evaluation(sent_codes, db):
     assert r.status_code == 201, r.text
 
 
+def test_free_rereview_does_not_stack_with_waiting(sent_codes, db):
+    """2026-10-25: 결제로 받은 게 아니면 재검토 기회가 쌓이지 않는다.
+    무료 바로 재검토를 안 쓴 채 7일이 지나 사진을 내면 그 무료 기회를 쓴 것으로 친다
+    → 승인 직후 다시 바로 재검토를 할 수 없다 (예전: 기다린 기회 + 무료 기회 = 2번)."""
+    from app.models.photo import AppearanceEvaluation
+
+    admin = admin_login(db)
+    a = ready_user(sent_codes, db, admin, "a@hufs.ac.kr")
+    for ev in db.query(AppearanceEvaluation).all():
+        ev.created_at = utcnow() - timedelta(days=7, minutes=1)
+    db.commit()
+    status_ = a.get("/api/v1/me/photos").json()["resubmit"]
+    assert status_["allowed"] and status_["uses_free_rereview"] and status_["free_rereview_left"]
+    r = a.post("/api/v1/me/photos", files={"file": ("x.jpg", jpeg_with_exif(), "image/jpeg")})
+    assert r.status_code == 201 and r.json()["used_free_rereview"] is True
+    approve(admin, r.json()["photo_id"])
+    # 방금 평가를 받았고 무료 기회도 썼으니 7일 뒤까지 막힌다
+    status_ = a.get("/api/v1/me/photos").json()["resubmit"]
+    assert status_["allowed"] is False and status_["free_rereview_left"] is False
+    assert a.post("/api/v1/me/photos", files={"file": ("x.jpg", jpeg_with_exif(), "image/jpeg")}).status_code == 429
+
+
 def test_rejected_free_rereview_is_not_used_up(sent_codes, db):
     """바로 재검토로 낸 사진이 반려되면 기회를 쓴 것으로 치지 않는다."""
     admin = admin_login(db)

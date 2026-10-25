@@ -449,7 +449,9 @@ def _resubmit_status(db: Session, user_id: uuid.UUID, *, vip: bool = False, gran
     """지금 새 사진을 낼 수 있는지 (2026-09-30 규칙, 2026-10-01 기간 30일 → 7일, 2026-10-06 구매 혜택).
 
     - 아직 평가를 받은 적 없음(첫 제출, 반려 뒤 다시 내기 등) → 언제든 가능
-    - 마지막 평가 후 PHOTO_RESUBMIT_DAYS(7일)가 지남 → 가능 (아래 혜택을 깎지 않는다)
+    - 마지막 평가 후 PHOTO_RESUBMIT_DAYS(7일)가 지남 → 가능. 구매 혜택은 깎지 않는다.
+      단, 무료 "바로 재검토"(평생 1번)가 아직 남아 있으면 이 제출에 그 기회를 쓴다 (2026-10-25 사용자 결정:
+      결제로 받은 것이 아니면 재검토 기회가 쌓이지 않는다 → 무료 기회는 기다린 기회와 합쳐 최대 1번).
     - 그 안 → ① 이용권·VIP를 살 때 받은 "바로 재검토 1회"(granted_at = 산 시각)를 먼저 쓴다
               ② 없으면 "바로 재검토"를 계정당 평생 1번만 쓸 수 있다.
     wait_days: 화면 안내 문구용 (기간을 .env로 바꿔도 문구가 따라 바뀌게)
@@ -494,7 +496,8 @@ def _resubmit_status(db: Session, user_id: uuid.UUID, *, vip: bool = False, gran
         return {**base, "allowed": True, "next_available_at": None}
     next_at = as_utc(last_eval.created_at) + timedelta(days=days)
     if utcnow() >= next_at:
-        return {**base, "allowed": True, "next_available_at": None}
+        # 기다려서 생긴 기회와 무료 바로 재검토가 따로 쌓이지 않게: 무료 기회가 남아 있으면 이번 제출에 쓴다 (2026-10-25)
+        return {**base, "allowed": True, "uses_free_rereview": not free_used, "next_available_at": None}
     if purchase_left:
         return {**base, "allowed": True, "uses_purchase_rereview": True, "next_available_at": next_at.isoformat()}
     return {**base, "allowed": not free_used, "uses_free_rereview": not free_used, "next_available_at": next_at.isoformat()}

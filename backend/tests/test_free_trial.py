@@ -248,7 +248,8 @@ def test_waiting_period_over_does_not_use_purchase_rereview(sent_codes, db, worl
         ev.created_at = utcnow() - timedelta(days=8)
     db.commit()
     r = _upload(me)
-    assert r.json()["used_purchase_rereview"] is False and r.json()["used_free_rereview"] is False
+    # 구매 혜택은 남겨 둔다 (결제로 받은 건 쌓일 수 있음). 무료 기회는 쌓이지 않으므로 이 제출에 쓴다 (2026-10-25)
+    assert r.json()["used_purchase_rereview"] is False and r.json()["used_free_rereview"] is True
 
 
 # ---------- 가격 ----------
