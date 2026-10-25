@@ -72,7 +72,8 @@ const PAYMENT_OPEN: Notice = {
 
 function findNotice(key: string): Notice | undefined {
   if (key.startsWith("payment-open:")) return PAYMENT_OPEN;
-  return NOTICES[key];
+  // 하루 한 번 공지 (2026-10-25): 서버가 "khu-event-2026-10@2026-10-25"처럼 날짜를 붙여 보낸다 → "@" 앞부분으로 찾는다
+  return NOTICES[key.split("@")[0]];
 }
 
 /** 친구 초대 이벤트 안내 상자 (2026-10-24, 공지 팝업 맨 위). 차분한 바탕 + 큰 글씨 + 3단계, 포인트 색은 글자에만 */

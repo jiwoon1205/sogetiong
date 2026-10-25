@@ -14,6 +14,9 @@
 - 학교 확장 공지 (2026-10-24, 경희대): 학교가 하나만 열려 있으면 CURRENT(오픈 전 사전 공지),
   둘 이상 열리면(OPEN_SCHOOLS를 켜면) 자동으로 SCHOOL_OPEN_NOTICE(오픈 공지)로 바뀐다 → 오픈 날 따로 배포할 필요 없음.
   사전 공지를 본 사람에게도 오픈 공지는 한 번 더 뜬다 (이름이 달라서). 오픈 공지를 끄려면 SCHOOL_OPEN_NOTICE = None.
+- 하루 한 번 (2026-10-25): DAILY = True면 CURRENT·SCHOOL_OPEN_NOTICE 공지도 이름 뒤에 한국 날짜를 붙인다
+  (예: khu-event-2026-10@2026-10-25). 오늘 "확인"을 누르면 오늘은 안 뜨고, 다음 날 다시 한 번 뜬다.
+  예전처럼 한 번만 보여주려면 DAILY = False. 화면은 "@" 앞부분 이름으로 내용을 찾는다.
 """
 
 from datetime import datetime
@@ -29,11 +32,19 @@ CURRENT: str | None = "khu-notice-2026-10"
 SCHOOL_OPEN_NOTICE: str | None = "khu-event-2026-10"
 
 
-def current_key(multi_school: bool = False) -> str | None:
-    """지금 보여줄 한 번 공지 이름."""
-    if multi_school and SCHOOL_OPEN_NOTICE:
-        return SCHOOL_OPEN_NOTICE
-    return CURRENT
+# 공지를 하루 한 번씩 다시 보여준다 (2026-10-25 사용자 결정). False면 예전처럼 계정당 한 번
+DAILY: bool = True
+DAILY_SEPARATOR = "@"
+
+
+def current_key(multi_school: bool = False, now: datetime | None = None) -> str | None:
+    """지금 보여줄 공지 이름. DAILY면 뒤에 오늘(한국 날짜)이 붙는다."""
+    base = SCHOOL_OPEN_NOTICE if (multi_school and SCHOOL_OPEN_NOTICE) else CURRENT
+    if base is None:
+        return None
+    if DAILY:
+        return f"{base}{DAILY_SEPARATOR}{kst_today(now or utcnow()).isoformat()}"
+    return base
 
 # 결제 시스템 오픈 공지 (하루 한 번, 정식 배포 전까지)
 PAYMENT_DAILY_PREFIX = "payment-open:"
@@ -63,7 +74,7 @@ def pending(user: User, now: datetime | None = None, *, multi_school: bool = Fal
     daily = daily_payment_key(user, now)
     if daily is not None and user.announcement_seen != daily:
         return daily
-    current = current_key(multi_school)
+    current = current_key(multi_school, now)
     if current is None or user.announcement_seen == current:
         return None
     # 2026-10-24 수정: 예전에는 "마지막으로 본 공지가 결제 오픈 하루 공지면 한 번 공지를 띄우지 않는다"는 규칙이 있었다
@@ -75,4 +86,4 @@ def pending(user: User, now: datetime | None = None, *, multi_school: bool = Fal
 
 def is_showable(user: User, key: str, now: datetime | None = None, *, multi_school: bool = False) -> bool:
     """화면이 "봤음"으로 보낸 이름이 지금 보여줄 수 있는 공지인가."""
-    return key == current_key(multi_school) or key == daily_payment_key(user, now)
+    return key == current_key(multi_school, now) or key == daily_payment_key(user, now)

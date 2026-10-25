@@ -1,7 +1,7 @@
-"""한 번만 보여주는 공지 팝업 (2026-10-05).
+"""공지 팝업 (2026-10-05, 2026-10-25부터 하루 한 번).
 
-- /me에 아직 안 본 공지 이름이 나온다.
-- "확인"을 누르면 그 계정에는 다시 안 나온다 (다른 기기에서 로그인해도).
+- /me에 아직 안 본 공지 이름이 나온다 (DAILY면 이름 뒤에 "@한국 날짜").
+- "확인"을 누르면 그날은 그 계정에 다시 안 나온다 (다른 기기에서 로그인해도). 다음 날 다시 한 번 나온다.
 - 지금 공지가 아닌 이름은 받지 않는다. 공지를 끄면(None) 아무것도 안 나온다.
 """
 
@@ -11,7 +11,8 @@ from app.services import announcement_service
 from tests.conftest import UserClient, signup
 
 
-def test_shown_once_per_account(sent_codes, db):
+def test_shown_once_per_account(sent_codes, db, monkeypatch):
+    monkeypatch.setattr(announcement_service, "DAILY", False)  # 예전 방식(계정당 한 번)도 그대로 동작
     a = signup(sent_codes, db, "a@hufs.ac.kr")
     key = announcement_service.CURRENT
     assert a.get("/api/v1/me").json()["announcement"] == key
@@ -28,12 +29,32 @@ def test_shown_once_per_account(sent_codes, db):
 
 
 def test_new_announcement_shows_again_and_can_be_off(sent_codes, db, monkeypatch):
+    monkeypatch.setattr(announcement_service, "DAILY", False)
     a = signup(sent_codes, db, "a@hufs.ac.kr")
     a.post("/api/v1/me/announcement/seen", json={"key": announcement_service.CURRENT})
     monkeypatch.setattr(announcement_service, "CURRENT", "next-notice")
     assert a.get("/api/v1/me").json()["announcement"] == "next-notice"
     monkeypatch.setattr(announcement_service, "CURRENT", None)
     assert a.get("/api/v1/me").json()["announcement"] is None
+
+
+def test_notice_shown_once_a_day(sent_codes, db):
+    """2026-10-25: 공지는 하루 한 번. 오늘 확인하면 오늘은 안 뜨고, 다음 날 다시 뜬다."""
+    from datetime import timedelta
+
+    from app.core.time import kst_today, utcnow
+
+    a = signup(sent_codes, db, "a@hufs.ac.kr")
+    key = a.get("/api/v1/me").json()["announcement"]
+    assert key == f"{announcement_service.CURRENT}@{kst_today().isoformat()}"
+    assert a.post("/api/v1/me/announcement/seen", json={"key": announcement_service.CURRENT}).status_code == 404  # 날짜 없는 이름은 안 받음
+    assert a.post("/api/v1/me/announcement/seen", json={"key": key}).status_code == 200
+    assert a.get("/api/v1/me").json()["announcement"] is None
+
+    db.expire_all()
+    user = db.query(User).filter(User.email == "a@hufs.ac.kr").one()
+    tomorrow = utcnow() + timedelta(days=1)
+    assert announcement_service.pending(user, tomorrow) == f"{announcement_service.CURRENT}@{kst_today(tomorrow).isoformat()}"
 
 
 # ---------- 결제 오픈 공지: 하루 한 번, 정식 배포 전까지 (2026-10-06) ----------
