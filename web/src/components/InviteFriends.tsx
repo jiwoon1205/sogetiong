@@ -13,11 +13,13 @@ type Referral = {
   invited: number;
   rewarded: number;
   max_rewards: number;
+  /** 초대로 인정하는 학교 이름 (빈 목록 = 모든 학교, 2026-11-07) */
+  schools?: string[];
 };
 
 const SHARE_TEXT = "학교 메일로 인증한 대학생끼리 쓰는 익명 소개팅 훕팅이야. 사진은 아무한테도 공개 안 돼! 이 링크로 가입해 줘 🙏";
 
-/** 설정 → "친구 초대" (2026-10-24 친구 초대 이벤트). 이벤트 기간에만 보인다.
+/** 설정 → "친구 초대" (2026-10-24 친구 초대 이벤트, 2026-11-07부터 경희대생 초대만·기간 없음). 이벤트 기간에만 보인다.
  *  초대한 친구의 첫 사진이 승인되면 슈퍼 라이크 1개. 친구가 누구인지는 보여주지 않고 숫자만. */
 export function InviteFriends() {
   const [r, setR] = useState<Referral | null>(null);
@@ -31,6 +33,8 @@ export function InviteFriends() {
 
   if (!r || !r.active || !r.code) return null;
   const link = `${window.location.origin}/?ref=${r.code}`;
+  // "경희대학교" → "경희대" (화면에 짧게)
+  const schoolLabel = (r.schools ?? []).map((n) => n.replace(/학교$/, "")).join("·");
   const canShare = typeof navigator !== "undefined" && typeof navigator.share === "function";
 
   async function copy() {
@@ -57,11 +61,12 @@ export function InviteFriends() {
       <p className="eyebrow mb-4">친구 초대 이벤트</p>
       <div className="rounded-card border border-brick/30 bg-brick-wash px-5 py-5">
         <p className="text-[16px] font-semibold leading-snug text-ink">
-          친구가 내 링크로 가입하면 <span className="text-brick">슈퍼 라이크 1개</span>
+          {schoolLabel ? `${schoolLabel} 친구가` : "친구가"} 내 링크로 가입하면 <span className="text-brick">슈퍼 라이크 1개</span>
         </p>
         <p className="mt-1.5 text-[13.5px] leading-relaxed text-ink-soft">
-          외대생·경희대생 누구든 좋아요. 친구의 사진 검수가 끝나면 바로 받아요. 초대 인원 제한 없어요.
-          {r.end && <> 이벤트는 {untilDay(r.end)}.</>}
+          {schoolLabel ? <>{schoolLabel} 학생이 가입했을 때만 받아요. </> : null}
+          친구의 사진 검수가 끝나면 바로 받아요. 초대 인원 제한 없어요.
+          {r.end ? <> 이벤트는 {untilDay(r.end)}.</> : <> 기간 제한 없는 이벤트예요.</>}
         </p>
         <div className="mt-4 select-all break-all rounded-md border border-line bg-paper-card px-3 py-2.5 text-[14px] text-ink">{link}</div>
         {canShare ? (

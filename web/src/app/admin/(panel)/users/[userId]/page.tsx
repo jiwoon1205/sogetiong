@@ -58,6 +58,8 @@ type Detail = {
   deleted_at: string | null;
   /** 탈퇴한 사람의 예전 닉네임 (공개 프로필이 지워져도 남겨 둔 값) */
   deleted_nickname?: string | null;
+  /** 탈퇴 사유 (사용자가 적은 글, 선택, 2026-11-07) */
+  deleted_reason?: string | null;
   /** 탈퇴자의 프로필·사진이 지워지는(지워진) 시각 */
   data_purge_at?: string | null;
   photos?: { photo_id: string; review_status: string; uploaded_at: string | null; image_url: string }[];
@@ -136,6 +138,12 @@ export default function UserDetail() {
                 </span>
               )}
             </Notice>}
+          {d.deleted_at && (
+            <div className="rounded-card border border-line bg-paper-card px-4 py-3">
+              <p className="text-[12.5px] text-ink-faint">탈퇴 사유</p>
+              <p className="mt-1 whitespace-pre-wrap break-words text-[14px] text-ink">{d.deleted_reason || "적지 않음"}</p>
+            </div>
+          )}
           {d.campus && (
             <p className="text-[13px] text-ink-soft">
               실제 소속: {d.university ? `${d.university} ` : ""}{d.campus.name} · {d.department?.name ?? "학과 미선택"}

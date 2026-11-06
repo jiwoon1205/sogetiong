@@ -26,10 +26,11 @@ from app.models.user import User
 from app.services import membership_service, vip_service
 
 # 한 번만 보여주는 공지. 2026-10-24: 휴대폰 알림 출시 공지("push-alerts-2026-10") → 경희대 오픈 사전 공지
-CURRENT: str | None = "khu-notice-2026-10"
-# 학교가 둘 이상 열려 있을 때 CURRENT 대신 보여주는 공지 (경희대 오픈 공지)
-# 2026-10-24 새벽: "khu-open-2026-10" → 이벤트를 더 눈에 띄게 바꾸면서 이름을 바꿔 이미 본 사람에게도 한 번 더 띄운다
-SCHOOL_OPEN_NOTICE: str | None = "khu-event-2026-10"
+# 2026-11-07: 경희대 오픈·친구 초대(11/6까지) 공지를 내리고 → 여성 회원 무료 + 경희대 친구 초대 이벤트(무기한) 공지
+CURRENT: str | None = "female-free-2026-11"
+# 학교가 둘 이상 열려 있을 때 CURRENT 대신 보여주는 공지. 2026-11-07: 학교 수와 상관없이 같은 공지 → CURRENT와 같게
+# (예전: 경희대 오픈 공지 "khu-event-2026-10")
+SCHOOL_OPEN_NOTICE: str | None = "female-free-2026-11"
 
 
 # 공지를 하루 한 번씩 다시 보여준다 (2026-10-25 사용자 결정). False면 예전처럼 계정당 한 번

@@ -17,6 +17,8 @@ def _event_on(monkeypatch, on=True):
     now = utcnow()
     monkeypatch.setattr(get_settings(), "referral_start", now - timedelta(days=1))
     monkeypatch.setattr(get_settings(), "referral_end", now + (timedelta(days=13) if on else -timedelta(hours=1)))
+    # 예전 테스트(외대생 초대 포함)는 학교 제한 없이 확인. 경희대만·무기한은 아래 2026-11-07 테스트
+    monkeypatch.setattr(get_settings(), "referral_schools", "")
 
 
 def _code(client) -> str:
@@ -33,7 +35,7 @@ def _signup_with(sent_codes, db, email, code, **kw):
         "/api/v1/auth/register",
         json={
             "verification_ticket": t, "password": "goodpass123", "nickname": "n_" + email.split("@")[0], "gender": kw.get("gender", "FEMALE"),
-            "birth_date": "2003-05-01", "campus_id": campus_id(db, kw.get("campus", "서울캠퍼스")),
+            "birth_date": "2003-05-01", "campus_id": campus_id(db, kw.get("campus", "서울캠퍼스"), kw.get("school", "hufs.ac.kr")),
             "agree_terms": True, "agree_privacy": True, "agree_appearance_public": True, "referral_code": code,
         },
     )
@@ -160,7 +162,7 @@ def test_invitee_never_sees_referrer_and_admin_does(monkeypatch, sent_codes, db)
     me = b.get("/api/v1/me").json()
     assert "referred_by" not in str(me) and "a@hufs.ac.kr" not in str(me)
     view = b.get("/api/v1/me/referral").json()
-    assert set(view) == {"active", "start", "end", "code", "invited", "rewarded", "max_rewards"}
+    assert set(view) == {"active", "start", "end", "code", "invited", "rewarded", "max_rewards", "schools"}
     _finish(b, db, admin)
     db.expire_all()
     bid = db.query(User).filter(User.email == "b@hufs.ac.kr").one().id
@@ -168,3 +170,30 @@ def test_invitee_never_sees_referrer_and_admin_does(monkeypatch, sent_codes, db)
     assert detail["referral"]["referred_by"] is not None and detail["referral"]["rewarded_referrer_at"]
     dash = admin.get("/api/v1/admin/dashboard").json()
     assert dash["referral_signups"] == 1 and dash["referral_rewards"] == 1
+
+
+# ---------- 2026-11-07: 경희대생 초대만, 무기한 ----------
+
+
+def test_default_is_endless_and_khu_only(monkeypatch, sent_codes, db):
+    """기본 설정: 끝나는 날 없음 + 초대받은 사람이 경희대생일 때만 초대로 기록."""
+    from tests.test_schools import KHU, _open_khu
+
+    s = get_settings()
+    assert s.referral_end is None and s.referral_school_set == {"khu.ac.kr"}
+    monkeypatch.setattr(s, "referral_start", utcnow() - timedelta(days=1))
+    _open_khu(monkeypatch, db)
+    admin = admin_login(db)
+    a = signup(sent_codes, db, "a@hufs.ac.kr")
+    body = a.get("/api/v1/me/referral").json()
+    assert body["active"] is True and body["end"] is None and body["schools"] == ["경희대학교"]
+    assert a.get("/api/v1/me").json()["referral_event"] == {"active": True, "end": None}
+    code = body["code"]
+
+    _signup_with(sent_codes, db, "h@hufs.ac.kr", code)  # 외대생 → 초대로 안 침
+    k = _signup_with(sent_codes, db, "k@khu.ac.kr", code, school=KHU)  # 경희대생 → 초대
+    assert a.get("/api/v1/me/referral").json()["invited"] == 1
+    choose_department(k, db, "정치외교학과", school=KHU)
+    set_preferences(k)
+    approve(admin, upload_photo(k))
+    assert _super_likes(db, "a@hufs.ac.kr") == 1

@@ -280,6 +280,9 @@ def test_school_notice_before_and_after_open(monkeypatch, sent_codes, db):
     from app.services import announcement_service
 
     monkeypatch.setattr(announcement_service, "DAILY", False)  # 하루 한 번(이름 뒤 날짜)은 test_announcement에서 확인
+    # 2026-11-07에 공지를 바꿨다 → 사전 공지 → 오픈 공지로 바뀌는 구조는 예전 이름으로 확인
+    monkeypatch.setattr(announcement_service, "CURRENT", "khu-notice-2026-10")
+    monkeypatch.setattr(announcement_service, "SCHOOL_OPEN_NOTICE", "khu-event-2026-10")
     a = signup(sent_codes, db, "a@hufs.ac.kr")
     # 오픈 전: 사전 공지
     assert a.get("/api/v1/me").json()["announcement"] == "khu-notice-2026-10"
@@ -318,7 +321,9 @@ def test_selected_all_own_campuses_stays_own_school_after_open(monkeypatch, sent
 def test_open_notice_shows_even_if_last_seen_was_payment_notice(monkeypatch, sent_codes, db):
     """2026-10-24 수정: 10/8 전에 결제 오픈 하루 공지를 마지막으로 본 사람에게도 경희대 오픈 공지가 뜬다."""
     from app.models.user import User
+    from app.services import announcement_service
 
+    monkeypatch.setattr(announcement_service, "SCHOOL_OPEN_NOTICE", "khu-event-2026-10")
     a = signup(sent_codes, db, "a@hufs.ac.kr")
     db.query(User).filter(User.email == "a@hufs.ac.kr").update({"announcement_seen": "payment-open:2026-10-07-15"})
     db.commit()

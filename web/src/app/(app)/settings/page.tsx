@@ -10,7 +10,7 @@ import { StarIcon, SuperLikeBuy } from "@/components/SuperLike";
 import { InviteFriends } from "@/components/InviteFriends";
 import { PreferencesForm } from "@/components/PreferencesForm";
 import { SupportContact } from "@/components/SupportContact";
-import { Button, Field, Input, Modal, Notice, PageTitle, Spinner } from "@/components/ui";
+import { Button, Field, Input, Modal, Notice, PageTitle, Spinner, Textarea } from "@/components/ui";
 import { api, errorMessage } from "@/lib/api";
 import { useCatalog } from "@/lib/catalog";
 import { untilDay } from "@/lib/format";
@@ -182,6 +182,8 @@ function MySuperLikes({ onBought }: { onBought: () => void }) {
 
 function DeleteAccount({ open, onClose, onDone }: { open: boolean; onClose: () => void; onDone: () => void }) {
   const [password, setPassword] = useState("");
+  // 탈퇴 사유 (선택, 2026-11-07). 운영진만 봐요
+  const [reason, setReason] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -190,7 +192,7 @@ function DeleteAccount({ open, onClose, onDone }: { open: boolean; onClose: () =
     setLoading(true);
     setError("");
     try {
-      await api("/me", { method: "DELETE", body: { password } });
+      await api("/me", { method: "DELETE", body: { password, reason: reason.trim() || null } });
       onDone();
     } catch (err) {
       setError(errorMessage(err));
@@ -212,6 +214,16 @@ function DeleteAccount({ open, onClose, onDone }: { open: boolean; onClose: () =
         <p className="text-[13px] leading-relaxed text-ink-faint">
           같은 학교 메일로 <b className="font-semibold text-ink-soft">언제든 다시 가입</b>할 수 있어요. 다시 가입하면 사진 평가 점수, 사진 재검토 대기 기간, 무료 체험 좋아요 사용 개수는 그대로 이어져요. (이용권·VIP 기간은 이어지지 않아요) 차단했던 상대는 다시 가입해도 계속 차단돼요.
         </p>
+        <Field label="탈퇴하는 이유 (선택)" htmlFor="del-reason" hint="더 나은 훕팅을 만드는 데만 써요. 운영진만 볼 수 있어요.">
+          <Textarea
+            id="del-reason"
+            rows={3}
+            maxLength={500}
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            placeholder="예: 추천되는 사람이 적어요 / 이용권 가격이 부담돼요 / 연애를 시작했어요"
+          />
+        </Field>
         <Field label="비밀번호 확인" htmlFor="del-pw">
           <Input id="del-pw" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
         </Field>

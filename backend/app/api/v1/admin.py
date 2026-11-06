@@ -100,6 +100,37 @@ def admin_me(admin: CurrentAdmin = Depends(get_current_admin)):
 
 # ---------- 대시보드 (개인정보 없이 숫자만, 설계도 §59) ----------
 
+@router.get("/withdrawals")
+def recent_withdrawals(
+    limit: int = Query(default=30, ge=1, le=200),
+    admin: CurrentAdmin = Depends(require_permission("users:read")),
+    db: Session = Depends(get_db),
+):
+    """최근 탈퇴한 사람과 탈퇴 사유 (2026-11-07). 사유를 안 적은 사람도 나온다 (reason = null).
+    이메일·실명은 보내지 않는다 (닉네임·성별·학교·날짜만)."""
+    rows = (
+        db.query(User.id, User.deleted_at, User.deleted_nickname, User.deleted_gender, User.deleted_reason, University.name)
+        .outerjoin(University, University.id == User.university_id)
+        .filter(User.deleted_at.isnot(None))
+        .order_by(User.deleted_at.desc())
+        .limit(limit)
+        .all()
+    )
+    return {
+        "withdrawals": [
+            {
+                "user_id": str(uid),
+                "deleted_at": deleted_at.isoformat(),
+                "nickname": nickname,
+                "gender": gender,
+                "school": school,
+                "reason": reason,
+            }
+            for uid, deleted_at, nickname, gender, reason, school in rows
+        ]
+    }
+
+
 @router.get("/dashboard")
 def dashboard(admin: CurrentAdmin = Depends(require_permission("dashboard:read")), db: Session = Depends(get_db)):
     def c(q):
@@ -658,6 +689,8 @@ def get_user(
         "gender": profile.gender if profile else user.deleted_gender,
         # 탈퇴한 사람의 예전 닉네임 (공개 프로필이 지워져서 따로 남겨 둔 값, 관리자만 봄)
         "deleted_nickname": user.deleted_nickname,
+        # 탈퇴 사유 (사용자가 적은 글, 선택, 2026-11-07)
+        "deleted_reason": user.deleted_reason,
         "preferred_gender": private.preferred_gender if private else None,
         # 외모 등급 (내부 전용). None = 아직 없음 → 추천에 나오지 않는다
         "appearance_tier": profile_service.current_tier(db, user.id),

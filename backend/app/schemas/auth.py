@@ -93,3 +93,5 @@ class PasswordResetConfirm(BaseModel):
 
 class DeleteAccountRequest(BaseModel):
     password: str = Field(max_length=128)
+    # 탈퇴 사유 (선택, 2026-11-07). 관리자만 본다
+    reason: str | None = Field(default=None, max_length=500)

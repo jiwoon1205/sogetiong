@@ -191,6 +191,8 @@ def delete_me(
     current.user.email = auth_service.anonymized_email(uid)
     current.user.status = "DELETED"
     current.user.deleted_at = now
+    # 탈퇴 사유 (선택, 2026-11-07). 빈 칸이면 None
+    current.user.deleted_reason = (payload.reason or "").strip() or None
     _end_paid_periods(db, current.user, now)
     revoke_all_user_sessions(db, uid)
     db.commit()

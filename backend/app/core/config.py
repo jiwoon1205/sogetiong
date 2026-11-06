@@ -148,9 +148,12 @@ class Settings(BaseSettings):
 
     # --- 친구 초대 이벤트 (2026-10-24) ---
     # 이 기간(한국 시간)에 초대 링크로 가입한 사람의 첫 사진이 승인되면, 초대한 사람에게 슈퍼 라이크 1개.
-    # 기본: 2026-10-24 0시 ~ 2026-11-07 0시 (2주, 11월 6일 밤 12시에 끝). 끄려면 REFERRAL_END를 지난 시각으로.
+    # 2026-11-07: 무기한 (REFERRAL_END 없음) + 초대받은 사람이 경희대생일 때만 (REFERRAL_SCHOOLS).
+    # 예전: 2026-10-24 0시 ~ 2026-11-07 0시, 모든 학교. 끄려면 .env에 REFERRAL_END를 지난 시각으로 (예: 2026-11-07T00:00:00+09:00).
     referral_start: datetime | None = datetime(2026, 10, 24, 0, 0, tzinfo=KST)
-    referral_end: datetime | None = datetime(2026, 11, 7, 0, 0, tzinfo=KST)
+    referral_end: datetime | None = None
+    # 초대로 인정하는 학교 (초대받은 사람의 학교 메일 도메인, 쉼표로 여러 개). 비우면 모든 학교
+    referral_schools: str = "khu.ac.kr"
     # 한 사람이 초대로 받을 수 있는 슈퍼 라이크 최대 개수. 0 = 한도 없음 (2026-10-24 결정)
     referral_max_rewards: int = 0
     # 탈퇴 후 이 일수 안에 다시 가입한 계정은 초대로 치지 않는다 (2026-10-24: "재가입 전부 제외" → "7일 안 재가입만 제외")
@@ -283,6 +286,10 @@ class Settings(BaseSettings):
     @property
     def referral_end_utc(self) -> datetime | None:
         return self._to_utc(self.referral_end)
+
+    @property
+    def referral_school_set(self) -> set[str]:
+        return {d.strip().lower().lstrip("@") for d in self.referral_schools.split(",") if d.strip()}
 
     @property
     def push_enabled(self) -> bool:

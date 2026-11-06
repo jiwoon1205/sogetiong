@@ -55,8 +55,7 @@ export function TopBanner() {
     <div className="border-b border-line bg-paper-deep">
       <div className="mx-auto flex max-w-3xl items-center justify-between gap-3 px-5 py-2.5">
         <Link href="/settings#invite" className="min-w-0 text-[13.5px] leading-snug text-ink">
-          🎁 친구 초대하면 <b className="font-semibold text-brick">슈퍼 라이크 1개</b>
-          <span className="text-ink-faint"> · 11/6까지</span>{" "}
+          🎁 경희대 친구 초대하면 <b className="font-semibold text-brick">슈퍼 라이크 1개</b>{" "}
           <span className="whitespace-nowrap text-ink-soft underline underline-offset-2">내 링크 받기</span>
         </Link>
         <button onClick={close} aria-label="4시간 동안 숨기기" className="shrink-0 px-1 text-[18px] leading-none text-ink-faint hover:text-ink">

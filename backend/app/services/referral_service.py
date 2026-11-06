@@ -6,6 +6,8 @@
 - 초대받은 사람의 사진이 처음 승인되면 초대한 사람에게 슈퍼 라이크 1개 (한 사람당 한 번만).
   기간 안에 가입했으면 승인이 기간 뒤여도 준다. 초대한 사람이 정지·탈퇴 상태면 주지 않는다.
 - 초대받은 사람에게는 혜택이 없다. 누가 초대했는지 화면에 보여주지 않는다 (초대한 사람에게도 숫자만).
+- 2026-11-07: **무기한**(REFERRAL_END 없음), 초대받은 사람이 **경희대생**(REFERRAL_SCHOOLS=khu.ac.kr)일 때만 초대로 기록한다.
+  초대한 사람은 학교 상관없음. 그 전에 다른 학교 학생이 초대로 가입해 둔 기록은 그대로 두고 승인되면 지급한다.
 """
 
 import secrets
@@ -17,6 +19,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.core.time import as_utc, utcnow
+from app.models.university import University
 from app.models.user import User
 from app.services import audit_service, super_like_service
 from app.services.notification_service import notify
@@ -31,9 +34,27 @@ def active(now: datetime | None = None) -> bool:
     s = get_settings()
     now = now or utcnow()
     start, end = s.referral_start_utc, s.referral_end_utc
-    if start is None or end is None:
+    if start is None:
         return False
-    return start <= now < end
+    # 끝 시각이 없으면 무기한 (2026-11-07)
+    return start <= now and (end is None or now < end)
+
+
+def school_ok(db: Session, user: User) -> bool:
+    """초대로 인정하는 학교의 학생인가 (2026-11-07: 경희대만). REFERRAL_SCHOOLS가 비어 있으면 모든 학교."""
+    schools = get_settings().referral_school_set
+    if not schools:
+        return True
+    university = db.get(University, user.university_id) if user.university_id else None
+    return university is not None and university.email_domain.lower() in schools
+
+
+def school_names(db: Session) -> list[str]:
+    """초대로 인정하는 학교 이름 (화면 안내용). 비어 있으면 모든 학교."""
+    schools = get_settings().referral_school_set
+    if not schools:
+        return []
+    return [u.name for u in db.query(University).filter(University.email_domain.in_(schools)).order_by(University.name)]
 
 
 def normalize(code: str | None) -> str | None:
@@ -80,6 +101,8 @@ def attach(db: Session, new_user: User, code: str | None, *, previous: list[User
     previous = 같은 메일로 예전에 가입했던 계정들. 그중 7일 안에 탈퇴한 계정이 있으면 초대로 치지 않는다."""
     code = normalize(code)
     if code is None or not active() or rejoined_recently(previous or []):
+        return False
+    if not school_ok(db, new_user):  # 경희대생 초대만 (2026-11-07)
         return False
     referrer = db.query(User).filter(User.referral_code == code).first()
     if referrer is None or referrer.id == new_user.id or referrer.status != "ACTIVE" or referrer.deleted_at is not None:
@@ -140,4 +163,6 @@ def view(db: Session, user: User) -> dict:
         "invited": db.query(User.id).filter(User.referred_by_id == user.id).count(),
         "rewarded": _rewards_given(db, user.id),
         "max_rewards": s.referral_max_rewards,
+        # 초대로 인정하는 학교 이름 (빈 목록 = 모든 학교, 2026-11-07)
+        "schools": school_names(db),
     }

@@ -129,6 +129,7 @@ export default function AdminDashboard() {
         ))}
       </div>
       {(stats.schools?.length ?? 0) > 1 && <SchoolTable schools={stats.schools!} />}
+      {admin.can("users:read") && <RecentWithdrawals />}
     </>
   );
 }
@@ -169,6 +170,50 @@ function SchoolTable({ schools }: { schools: NonNullable<Stats["schools"]> }) {
           </tbody>
         </table>
       </div>
+    </section>
+  );
+}
+
+type Withdrawal = { user_id: string; deleted_at: string; nickname: string | null; gender: "MALE" | "FEMALE" | null; school: string | null; reason: string | null };
+
+/** 최근 탈퇴 사유 (2026-11-07). 사유는 사용자가 탈퇴할 때 적은 글 (선택) */
+function RecentWithdrawals() {
+  const [rows, setRows] = useState<Withdrawal[] | null>(null);
+  const [onlyWritten, setOnlyWritten] = useState(true);
+
+  useEffect(() => {
+    adminApi<{ withdrawals: Withdrawal[] }>("/withdrawals?limit=50")
+      .then((r) => setRows(r.withdrawals))
+      .catch(() => setRows([]));
+  }, []);
+
+  if (!rows) return null;
+  const shown = onlyWritten ? rows.filter((w) => w.reason) : rows;
+  return (
+    <section className="mt-8">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <h2 className="text-[14px] font-medium text-ink-soft">최근 탈퇴 사유</h2>
+        <label className="flex items-center gap-1.5 text-[12.5px] text-ink-faint">
+          <input type="checkbox" checked={onlyWritten} onChange={(e) => setOnlyWritten(e.target.checked)} />
+          사유를 적은 사람만
+        </label>
+      </div>
+      {shown.length === 0 ? (
+        <p className="rounded-card border border-line bg-paper-card px-5 py-4 text-[13.5px] text-ink-faint">아직 없어요.</p>
+      ) : (
+        <ul className="divide-y divide-line overflow-hidden rounded-card border border-line bg-paper-card">
+          {shown.map((w) => (
+            <li key={w.user_id} className="px-5 py-3">
+              <Link href={`/admin/users/${w.user_id}`} className="text-[12.5px] text-ink-faint underline-offset-4 hover:underline">
+                {new Date(w.deleted_at).toLocaleDateString("ko-KR", { timeZone: "Asia/Seoul" })} · {w.nickname ?? "—"} ·{" "}
+                {w.gender === "FEMALE" ? "여성" : w.gender === "MALE" ? "남성" : "—"}
+                {w.school ? ` · ${w.school}` : ""}
+              </Link>
+              <p className="mt-1 whitespace-pre-wrap break-words text-[14px] text-ink">{w.reason ?? <span className="text-ink-faint">적지 않음</span>}</p>
+            </li>
+          ))}
+        </ul>
+      )}
     </section>
   );
 }

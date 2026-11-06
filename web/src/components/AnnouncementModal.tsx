@@ -76,17 +76,18 @@ function findNotice(key: string): Notice | undefined {
   return NOTICES[key.split("@")[0]];
 }
 
-/** 친구 초대 이벤트 안내 상자 (2026-10-24, 공지 팝업 맨 위). 차분한 바탕 + 큰 글씨 + 3단계, 포인트 색은 글자에만 */
+/** 친구 초대 이벤트 안내 상자 (2026-10-24, 공지 팝업). 차분한 바탕 + 큰 글씨 + 3단계, 포인트 색은 글자에만
+ *  2026-11-07: 경희대생 친구만, 기간 없음 */
 function InviteEventHero() {
-  const steps = ["내 초대 링크 복사", "친구가 링크로 가입", "슈퍼 라이크 1개 받기"];
+  const steps = ["내 초대 링크 복사", "경희대 친구가 링크로 가입", "슈퍼 라이크 1개 받기"];
   return (
     <div className="mb-5 overflow-hidden rounded-card border border-line-strong bg-paper-card">
       <div className="px-5 pb-4 pt-5 text-center">
         <p className="inline-block rounded-full border border-brick/25 px-3 py-1 text-[12px] font-semibold tracking-wide text-brick">
-          🎁 친구 초대 이벤트 · 11월 6일까지
+          🎁 경희대 친구 초대 이벤트 · 기간 제한 없음
         </p>
         <p className="mt-3 font-serif text-[23px] font-semibold leading-tight text-ink">
-          친구 1명 가입하면
+          경희대 친구 1명 가입하면
           <br />
           <span className="text-[27px] text-brick">슈퍼 라이크 1개</span>
         </p>
@@ -103,7 +104,7 @@ function InviteEventHero() {
         ))}
       </ol>
       <p className="border-t border-line bg-paper-deep/60 px-4 py-2 text-center text-[12px] text-ink-faint">
-        경희대·외대 친구 모두 OK · 인원 제한 없음 · 친구 사진 검수가 끝나면 지급
+        경희대 학생만 인정 · 인원 제한 없음 · 친구 사진 검수가 끝나면 지급
       </p>
     </div>
   );
@@ -116,59 +117,32 @@ function InviteEventHero() {
  * 새 공지: 서버 services/announcement_service.py 의 CURRENT와 여기 NOTICES에 같은 이름으로 추가.
  */
 const NOTICES: Record<string, Notice> = {
-  // 경희대 오픈 사전 공지 (2026-10-24). 학교가 하나만 열려 있는 동안 뜬다
-  "khu-notice-2026-10": {
-    title: "오늘부터 경희대 학생도 함께해요",
-    body: (
+  // 2026-11-07: 경희대 오픈·친구 초대(11/6까지) 공지("khu-notice-2026-10", "khu-event-2026-10")를 내리고 이 공지로 바꿈.
+  // 여성 회원 기본 이용권 무료 + 경희대 친구 초대 이벤트(기간 없음). 받는 사람이 여성이면 무료 안내를 먼저 크게 보여준다
+  "female-free-2026-11": {
+    title: "여성 회원 무료 · 경희대 친구 초대 이벤트",
+    body: (m) => (
       <>
+        <div className="mb-5 rounded-card border border-brick/30 bg-brick-wash px-5 py-4 text-center">
+          <p className="text-[12px] font-semibold tracking-wide text-brick">💝 여성 회원 혜택 · 기간 제한 없음</p>
+          <p className="mt-2 font-serif text-[22px] font-semibold leading-tight text-ink">
+            {m?.female_free ? "이제 이용권 없이 무료로 써요" : "여성 회원은 이제 무료예요"}
+          </p>
+          <p className="mt-2 text-[13px] leading-relaxed text-ink-soft">
+            기본 이용권 혜택(하루 좋아요 5개 · 받은 좋아요에 답하기 · 사진 재검토)을 결제 없이 계속 쓸 수 있어요.
+            <br />
+            VIP도 여성 회원은 <b className="font-semibold text-brick">3,000원</b>이에요.
+          </p>
+        </div>
         <InviteEventHero />
-        <p className="text-[15px] leading-relaxed text-ink">
-          <b className="font-semibold">10월 24일(토)</b>부터 <b className="font-semibold">경희대 학생</b>(서울·국제캠퍼스)도 학교 메일 인증을 받고 훕팅을 쓸 수 있어요.
-          만날 수 있는 사람이 더 많아져요.
-        </p>
-        <ul className="mt-4 space-y-2 text-[14px] leading-relaxed text-ink-soft">
-          <li>
-            🎯 매칭 조건이 <b className="font-semibold text-ink">모든 캠퍼스</b>로 되어 있으면 경희대 학생도 <b className="font-semibold text-ink">자동으로</b> 추천돼요.
-          </li>
-          <li>
-            🙋 외대생만 만나고 싶다면 오픈 전에 <b className="font-semibold text-ink">설정 → 매칭 조건</b>에서 &lsquo;경희대가 열려도 외대생만 만나기&rsquo;를 체크해 주세요. 오픈 뒤에도 언제든 바꿀 수 있어요.
-          </li>
-          <li>
-            🏫 오픈하면 프로필에 <b className="font-semibold text-ink">학교와 캠퍼스가 항상 보여요</b> (지금 캠퍼스를 비공개로 해 둔 분도 공개로 바뀌어요). 학과 공개 여부는 지금처럼 직접 고를 수 있어요.
-          </li>
-          <li>🔒 사진은 지금처럼 누구에게도 공개되지 않고, 실명·학번도 보이지 않아요.</li>
-          <li>🧾 &lsquo;같은 과 제외&rsquo;는 같은 학교의 같은 과에만 적용돼요. 이용권·좋아요 규칙은 그대로예요.</li>
-        </ul>
-      </>
-    ),
-    action: { label: "친구 초대 링크 받기", href: "/settings#invite" },
-    second: { label: "매칭 조건 보기", href: "/settings#preferences" },
-    close: "확인",
-  },
-  // 경희대 오픈 공지 (2026-10-24). 서버 설정 OPEN_SCHOOLS로 경희대를 열면 자동으로 이 공지로 바뀐다
-  // 2026-10-24 새벽: 이벤트를 더 눈에 띄게 바꾸면서 이름을 바꿈 ("khu-open-2026-10" → 이미 본 사람에게도 한 번 더 뜸)
-  "khu-event-2026-10": {
-    title: "경희대 오픈 기념 친구 초대 이벤트 🎁",
-    body: (
-      <>
-        <InviteEventHero />
-        <p className="text-[15px] leading-relaxed text-ink">
-          이제 <b className="font-semibold">경희대 학생</b>(서울·국제캠퍼스)도 훕팅을 써요. 추천 카드에 <b className="font-semibold">학교 이름</b>이 함께 보여요.
-        </p>
-        <ul className="mt-4 space-y-2 text-[14px] leading-relaxed text-ink-soft">
-          <li>
-            🎯 매칭 조건에서 학교·캠퍼스를 <b className="font-semibold text-ink">모두 체크</b>해 둔 분은 경희대 학생도 추천돼요.
-          </li>
-          <li>
-            🙋 외대생만 만나고 싶다면 <b className="font-semibold text-ink">설정 → 매칭 조건</b>에서 경희대 캠퍼스 체크를 풀어 주세요. 조건은 양쪽 모두 맞아야 추천돼요.
-          </li>
-          <li>🏫 학교와 캠퍼스는 모든 프로필에 보여요. 학과 공개 여부는 지금처럼 직접 고를 수 있어요.</li>
+        <ul className="space-y-2 text-[14px] leading-relaxed text-ink-soft">
+          <li>💘 훕팅은 이제 <b className="font-semibold text-ink">이성만 추천</b>해요. 성별은 가입한 뒤 바꿀 수 없어요.</li>
+          <li>🔗 초대 링크는 <b className="font-semibold text-ink">설정 → 친구 초대 이벤트</b>에서 받을 수 있어요.</li>
           <li>🔒 사진은 지금처럼 누구에게도 공개되지 않아요.</li>
         </ul>
       </>
     ),
     action: { label: "친구 초대 링크 받기", href: "/settings#invite" },
-    second: { label: "매칭 조건 보기", href: "/settings#preferences" },
     close: "확인",
   },
   "push-alerts-2026-10": {
