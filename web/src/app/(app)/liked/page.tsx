@@ -209,7 +209,11 @@ function VipShop({ vip, onChange, onActivated }: { vip: VipInfo; onChange: (v: V
       <div className="mb-6 rounded-card border border-line bg-paper-card px-6 py-5">
         <p className="text-[13px] text-ink-soft">VIP {vip.days}일 이용권 · 기본 이용권 포함</p>
         <p className="mt-1.5 flex items-baseline gap-2">
+          {vip.female_free && vip.regular_price && vip.regular_price > vip.price ? (
+            <span className="num text-[15px] text-ink-faint line-through">{vip.regular_price.toLocaleString()}원</span>
+          ) : null}
           <span className="num font-serif text-[30px] font-semibold">{vip.price.toLocaleString()}원</span>
+          {vip.female_free ? <span className="text-[12.5px] font-semibold text-brick">여성 회원가</span> : null}
         </p>
         <p className="mt-2 text-[12.5px] text-ink-faint">자동 결제 없어요. 기간이 끝나면 다시 살 수 있어요.</p>
         {vip.member_days_left ? (

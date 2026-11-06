@@ -23,6 +23,19 @@ from app.core.time import as_utc, kst_today, utcnow
 from app.models.user import User
 
 
+def gender_of(user: User) -> str | None:
+    """이 사람의 성별 (MALE / FEMALE). 프로필이 없으면(탈퇴) 탈퇴할 때 남겨 둔 성별. 성별은 가입 뒤 절대 바뀌지 않는다 (2026-11-07)."""
+    profile = getattr(user, "public_profile", None)
+    if profile is not None and profile.gender:
+        return profile.gender
+    return getattr(user, "deleted_gender", None)
+
+
+def is_female_free(user: User) -> bool:
+    """여성 회원 무료인가 (2026-11-07, 상시). 기본 이용권 없이 기본 이용권 혜택을 쓰고, VIP는 VIP_PRICE_FEMALE원."""
+    return get_settings().female_free and gender_of(user) == "FEMALE"
+
+
 def is_vip_tester(user: User) -> bool:
     """영구 무료 VIP인가? = VIP 테스트 계정(설정 VIP_TEST_EMAILS에 적힌 학교 메일) 또는 슈퍼 VIP (2026-10-12).
     이용권 없이 항상 이용·VIP 혜택·"내 이용권" 칸 숨김·하루 매칭 한도 제외가 모두 같다."""
@@ -92,6 +105,9 @@ def photo_resubmit_days(user: User) -> int:
     return s.vip_photo_resubmit_days if is_vip(user) else s.photo_resubmit_days
 
 
-def price() -> int:
-    """VIP 가격 (기본 포함). 할인 없음 (2026-10-04)."""
-    return get_settings().vip_price
+def price(user: User | None = None) -> int:
+    """VIP 가격 (기본 포함). 할인 없음 (2026-10-04). 여성 회원은 VIP_PRICE_FEMALE원 (2026-11-07)."""
+    s = get_settings()
+    if user is not None and is_female_free(user):
+        return s.vip_price_female
+    return s.vip_price

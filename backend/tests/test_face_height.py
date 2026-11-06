@@ -41,9 +41,9 @@ def test_height_range(sent_codes, db):
 
 def test_card_shows_face_type_and_height_but_does_not_filter(sent_codes, db):
     admin = admin_login(db)
-    a = ready_user(sent_codes, db, admin, "a@hufs.ac.kr")
-    b = ready_user(sent_codes, db, admin, "b@hufs.ac.kr", dept="국제학부")
-    c = ready_user(sent_codes, db, admin, "c@hufs.ac.kr", dept="국제학부")  # 아무것도 안 적은 사람
+    a = ready_user(sent_codes, db, admin, "a@hufs.ac.kr", gender="FEMALE")
+    b = ready_user(sent_codes, db, admin, "b@hufs.ac.kr", dept="국제학부", gender="MALE")
+    c = ready_user(sent_codes, db, admin, "c@hufs.ac.kr", dept="국제학부", gender="MALE")  # 아무것도 안 적은 사람
     b.patch("/api/v1/me/profile", json={"face_type": "공룡상", "height_cm": 181})
 
     cards = {card["profile_id"]: card for card in a.get("/api/v1/discover").json()["profiles"]}

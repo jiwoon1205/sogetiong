@@ -1,6 +1,6 @@
 """2026-09-30 매칭 규칙 변경 테스트.
 
-- 원하는 성별: 가입 때 필수, 본인은 못 바꿈, 관리자만 변경
+- 원하는 성별: 2026-11-07부터 항상 이성. 성별은 가입 뒤 누구도(관리자 포함) 못 바꿈
 - 외모 등급(상/중/하): 관리자가 평가 때 필수로 고름, 사용자에게 절대 안 보임, 같은 등급이 먼저 추천
 - 나를 LIKE한 사람 우대
 - 하루 LIKE 5개 (한국 시간 자정 기준)
@@ -23,15 +23,20 @@ def _user_id(db, client):
 
 # ---------- 원하는 성별 ----------
 
-def test_preferred_gender_is_set_at_signup_and_cannot_be_changed_by_user(sent_codes, db):
-    a = signup(sent_codes, db, "a@hufs.ac.kr", gender="FEMALE", want="MALE")
+def test_preferred_gender_is_always_opposite_and_cannot_be_changed(sent_codes, db):
+    """2026-11-07: '원하는 성별'은 없다 — 가입 때 무엇을 보내도 항상 이성."""
+    a = signup(sent_codes, db, "a@hufs.ac.kr", gender="FEMALE", want="ANY")
     assert a.get("/api/v1/me/preferences").json()["preferred_gender"] == "MALE"
+    b = signup(sent_codes, db, "b@hufs.ac.kr", gender="MALE", want="MALE")
+    assert b.get("/api/v1/me/preferences").json()["preferred_gender"] == "FEMALE"
+    c = signup(sent_codes, db, "c@hufs.ac.kr", gender="MALE")  # 안 보내도 된다
+    assert c.get("/api/v1/me/preferences").json()["preferred_gender"] == "FEMALE"
 
     # 매칭 조건 저장에 원하는 성별을 넣어도 무시된다
     set_preferences(a, preferred_gender="ANY")
     body = a.get("/api/v1/me/preferences").json()
     assert body["preferred_gender"] == "MALE"
-    assert get_settings().support_email in body["gender_locked_message"]
+    assert "운영진도 바꿀 수 없어요" in body["gender_locked_message"]
 
 
 def test_preferred_gender_from_signup_is_used_for_matching(sent_codes, db):
@@ -46,31 +51,36 @@ def test_preferred_gender_from_signup_is_used_for_matching(sent_codes, db):
     assert discover_ids(other_woman) == [man.profile_id]
 
 
-def test_admin_can_change_gender_with_audit_log(sent_codes, db):
+def test_admin_cannot_change_gender(sent_codes, db):
+    """2026-11-07: 성별 변경 API를 없앴다 — 최고 관리자도 바꿀 수 없다."""
     admin = admin_login(db)
-    a = signup(sent_codes, db, "a@hufs.ac.kr", gender="FEMALE", want="MALE")
+    a = signup(sent_codes, db, "a@hufs.ac.kr", gender="FEMALE")
     uid = _user_id(db, a)
-
-    r = admin.patch(f"/api/v1/admin/users/{uid}/gender", json={"preferred_gender": "ANY", "reason": "가입 메일로 요청"})
-    assert r.status_code == 200, r.text
-    assert r.json()["preferred_gender"] == "ANY" and r.json()["gender"] == "FEMALE"
-    assert a.get("/api/v1/me/preferences").json()["preferred_gender"] == "ANY"
-    log = db.query(AuditLog).filter(AuditLog.action == "USER_GENDER_CHANGE").one()
-    assert log.metadata_json["before"]["preferred_gender"] == "MALE"
-    assert log.metadata_json["after"]["preferred_gender"] == "ANY"
-
-    detail = admin.get(f"/api/v1/admin/users/{uid}").json()
-    assert detail["gender"] == "FEMALE" and detail["preferred_gender"] == "ANY"
-
-    # 바꿀 항목이 없으면 거부
-    assert admin.patch(f"/api/v1/admin/users/{uid}/gender", json={"reason": "없음"}).status_code == 422
+    r = admin.patch(f"/api/v1/admin/users/{uid}/gender", json={"gender": "MALE", "reason": "가입 메일로 요청"})
+    assert r.status_code in (404, 405)
+    assert admin.get(f"/api/v1/admin/users/{uid}").json()["gender"] == "FEMALE"
 
 
-def test_only_super_admin_can_change_gender(sent_codes, db):
-    moderator = admin_login(db, role="MODERATOR")
-    a = signup(sent_codes, db, "a@hufs.ac.kr")
-    r = moderator.patch(f"/api/v1/admin/users/{_user_id(db, a)}/gender", json={"gender": "MALE", "reason": "테스트"})
-    assert r.status_code == 403
+def test_rejoin_must_keep_the_same_gender(sent_codes, db):
+    """탈퇴 → 재가입으로 성별을 바꿀 수 없다 (여성 회원 무료 악용 방지, 2026-11-07)."""
+    a = signup(sent_codes, db, "a@hufs.ac.kr", gender="MALE")
+    assert a.delete("/api/v1/me", json={"password": "goodpass123"}).status_code == 200
+    c = UserClient()
+    c.post("/api/v1/auth/email/send-code", json={"email": "a@hufs.ac.kr"})
+    ticket = c.post("/api/v1/auth/email/verify", json={"email": "a@hufs.ac.kr", "code": sent_codes["a@hufs.ac.kr"]}).json()[
+        "verification_ticket"
+    ]
+    from tests.conftest import campus_id
+
+    body = {
+        "verification_ticket": ticket, "password": "goodpass123", "nickname": "다시가입", "gender": "FEMALE",
+        "birth_date": "2003-01-01", "campus_id": campus_id(db),
+        "agree_terms": True, "agree_privacy": True, "agree_appearance_public": True,
+    }
+    r = c.post("/api/v1/auth/register", json=body)
+    assert r.status_code == 400 and "성별은 바꿀 수 없어요" in r.json()["detail"]
+    r = c.post("/api/v1/auth/register", json={**body, "gender": "MALE"})
+    assert r.status_code == 201, r.text
 
 
 # ---------- 외모 등급 ----------
@@ -206,7 +216,7 @@ def test_daily_like_limit_holds_when_likes_are_sent_at_the_same_time(sent_codes,
 
 
 def test_private_profile_keeps_preferred_gender(sent_codes, db):
-    a = signup(sent_codes, db, "a@hufs.ac.kr", want="FEMALE")
+    a = signup(sent_codes, db, "a@hufs.ac.kr", gender="MALE", want="MALE")  # 보낸 값은 무시, 항상 이성
     assert db.query(PrivateProfile).filter(PrivateProfile.user_id == _user_id(db, a)).one().preferred_gender == "FEMALE"
 
 

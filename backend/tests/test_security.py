@@ -125,9 +125,9 @@ def test_7_blocked_users_are_not_recommended(sent_codes, db):
 def test_8_same_department_is_not_recommended_both_ways(sent_codes, db):
     admin = admin_login(db)
     # A만 "같은 과 제외"를 켬. B는 같은 과(학과 비공개), C는 다른 과
-    a = ready_user(sent_codes, db, admin, "a@hufs.ac.kr", dept="경영학부", prefs={"exclude_same_department": True})
-    b = ready_user(sent_codes, db, admin, "b@hufs.ac.kr", dept="경영학부", show_department=False)
-    c = ready_user(sent_codes, db, admin, "c@hufs.ac.kr", dept="국제학부")
+    a = ready_user(sent_codes, db, admin, "a@hufs.ac.kr", dept="경영학부", prefs={"exclude_same_department": True}, gender="FEMALE")
+    b = ready_user(sent_codes, db, admin, "b@hufs.ac.kr", dept="경영학부", show_department=False, gender="MALE")
+    c = ready_user(sent_codes, db, admin, "c@hufs.ac.kr", dept="국제학부", gender="MALE")
     assert b.profile_id not in discover_ids(a)
     assert a.profile_id not in discover_ids(b)  # B는 안 켰어도 A가 켰으므로 서로 안 보임
     assert c.profile_id in discover_ids(a)
@@ -140,7 +140,8 @@ def test_8_same_department_is_not_recommended_both_ways(sent_codes, db):
 def test_gender_age_campus_filters_are_mutual(sent_codes, db):
     admin = admin_login(db)
     a = ready_user(sent_codes, db, admin, "a@hufs.ac.kr", gender="FEMALE", prefs={"preferred_gender": "MALE"})
-    gay_man = ready_user(sent_codes, db, admin, "g@hufs.ac.kr", gender="MALE", prefs={"preferred_gender": "MALE"})
+    # 2026-11-07: '원하는 성별'을 보내도 무시하고 항상 이성 → 여성(a)은 남성만, 다른 여성은 안 보인다
+    woman = ready_user(sent_codes, db, admin, "w@hufs.ac.kr", gender="FEMALE", prefs={"preferred_gender": "FEMALE"})
     man = ready_user(sent_codes, db, admin, "m@hufs.ac.kr", gender="MALE", prefs={"preferred_gender": "FEMALE"})
     older = ready_user(sent_codes, db, admin, "o@hufs.ac.kr", gender="MALE", birth=date(1990, 1, 1), prefs={"preferred_gender": "FEMALE", "max_age": 40})
     glob = ready_user(
@@ -149,7 +150,7 @@ def test_gender_age_campus_filters_are_mutual(sent_codes, db):
     )
     ids = discover_ids(a)
     assert man.profile_id in ids
-    assert gay_man.profile_id not in ids  # 상대 조건 불일치
+    assert woman.profile_id not in ids  # 같은 성별은 추천하지 않음
     assert older.profile_id not in ids  # 내 나이 조건(19~30) 밖
     assert glob.profile_id not in ids  # 상대가 '내 캠퍼스만'
 
@@ -237,10 +238,10 @@ def test_register_rules(sent_codes, db):
     assert r.status_code == 422
     r, _ = _register(sent_codes, db, "noagree@hufs.ac.kr", agree_appearance_public=False)
     assert r.status_code == 400
-    # 성별·원하는 성별은 필수
-    r, _ = _register(sent_codes, db, "nowant@hufs.ac.kr", preferred_gender=None)
+    # 성별은 필수 (원하는 성별은 2026-11-07에 없앴다 — 안 보내도 된다)
+    r, _ = _register(sent_codes, db, "nogender@hufs.ac.kr", gender=None)
     assert r.status_code == 422
-    r, _ = _register(sent_codes, db, "badwant@hufs.ac.kr", preferred_gender="BOTH")
+    r, _ = _register(sent_codes, db, "badgender@hufs.ac.kr", gender="BOTH")
     assert r.status_code == 422
     r, ticket = _register(sent_codes, db, "ok@hufs.ac.kr")
     assert r.status_code == 201

@@ -100,6 +100,24 @@ function MyMembership({ onActivated }: { onActivated: () => void }) {
   const m = me.membership;
   if (!m || !(m.sales_open ?? m.enabled) || m.free) return null;
   const vipUntil = me.vip?.active ? me.vip.until : null;
+  // 여성 회원 (2026-11-07): 기본 이용권은 무료라서 살 수 없다. VIP(받은 LIKE 탭)·슈퍼 라이크만 산다
+  if (m.female_free) {
+    return (
+      <section id="membership" className="mt-14 scroll-mt-20">
+        <p className="eyebrow mb-4">내 이용권</p>
+        <div className="mb-4 rounded-card border border-line bg-paper-card px-5 py-4">
+          <p className="text-[13px] text-ink-faint">여성 회원</p>
+          <p className="mt-0.5 text-[14.5px]">기본 이용권 무료 · 기간 없이 계속 쓸 수 있어요</p>
+          {vipUntil ? (
+            <p className="mt-2 text-[13.5px] text-brick">VIP {untilDay(vipUntil)}</p>
+          ) : (
+            <p className="mt-2 text-[12.5px] text-ink-soft">VIP는 &lsquo;받은 LIKE&rsquo; 탭에서 여성 회원가로 살 수 있어요.</p>
+          )}
+        </div>
+        <MySuperLikes onBought={onActivated} />
+      </section>
+    );
+  }
   let line: string;
   if (m.status === "active" && m.until) line = `${untilDay(m.until)} · ${m.days_left}일 남음`;
   else if (m.status === "banked") line = `사진 검수가 끝나 추천이 열리는 날부터 ${m.banked_days}일 이용할 수 있어요.`;

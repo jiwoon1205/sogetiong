@@ -42,6 +42,28 @@ def previous_accounts(db: Session, email: str) -> list[User]:
     return db.query(User).filter(User.email_hash == email_fingerprint(email)).all()
 
 
+def opposite_gender(gender: str) -> str:
+    """추천 상대의 성별 = 이성 (2026-11-07부터 '원하는 성별'을 고르지 않는다)."""
+    return "MALE" if gender == "FEMALE" else "FEMALE"
+
+
+def previous_gender(previous: list[User]) -> str | None:
+    """같은 메일로 예전에 가입했던 계정의 성별 (가장 최근 것). 없으면 None.
+
+    탈퇴한 계정은 프로필이 지워지므로 탈퇴할 때 남겨 둔 deleted_gender를 본다.
+    """
+    def key(u: User):
+        t = as_utc(u.deleted_at) if u.deleted_at is not None else None
+        return (t is not None, t)
+
+    for u in sorted(previous, key=key, reverse=True):
+        profile = getattr(u, "public_profile", None)
+        gender = profile.gender if profile is not None else u.deleted_gender
+        if gender:
+            return gender
+    return None
+
+
 def rejoin_block_reason(db: Session, email: str) -> str | None:
     """다시 가입할 수 없으면 그 이유(사용자에게 보여줄 문장), 가능하면 None.
 

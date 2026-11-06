@@ -12,7 +12,6 @@ import { savedRef } from "@/lib/referral";
 
 type Campus = { id: string; name: string };
 type Gender = "MALE" | "FEMALE";
-type WantGender = Gender | "ANY";
 
 export default function SignupPage() {
   const router = useRouter();
@@ -25,11 +24,11 @@ export default function SignupPage() {
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
   const [ticket, setTicket] = useState("");
-  // 성별·원하는 성별은 가입 후 본인이 바꿀 수 없어서, 미리 골라두지 않고 직접 고르게 한다
+  // 성별은 가입 후 누구도(운영진 포함) 바꿀 수 없어서, 미리 골라두지 않고 직접 고르게 한다.
+  // '만나고 싶은 상대'는 2026-11-07에 없앴다 — 추천은 항상 이성 (서버가 정한다)
   const [info, setInfo] = useState({
     nickname: "",
     gender: "" as Gender | "",
-    want: "" as WantGender | "",
     birth: "",
     campus: "",
     pw: "",
@@ -85,7 +84,6 @@ export default function SignupPage() {
   const register = (e: React.FormEvent) => {
     e.preventDefault();
     if (!info.gender) return setError("성별을 골라주세요.");
-    if (!info.want) return setError("만나고 싶은 상대의 성별을 골라주세요.");
     if (info.pw !== info.pw2) return setError("비밀번호가 서로 다릅니다.");
     if (!agree.terms || !agree.privacy || !agree.appearance) return setError("필수 항목에 모두 동의해주세요.");
     run(async () => {
@@ -96,7 +94,6 @@ export default function SignupPage() {
           password: info.pw,
           nickname: info.nickname,
           gender: info.gender,
-          preferred_gender: info.want,
           birth_date: info.birth,
           campus_id: info.campus,
           agree_terms: agree.terms,
@@ -166,29 +163,18 @@ export default function SignupPage() {
         <form onSubmit={register} className="space-y-5">
           <PageTitle
             title="기본 정보"
-            desc="성별·만나고 싶은 상대·생년월일·캠퍼스는 가입 후 바꿀 수 없어요. 생년월일은 만 나이 계산에만 쓰여요."
+            desc="성별·생년월일·캠퍼스는 가입 후 바꿀 수 없어요. 생년월일은 만 나이 계산에만 쓰여요."
           />
           <Field label="닉네임" htmlFor="nickname" hint="2~20자. 실명이나 학번이 드러나지 않게 지어주세요.">
             <Input id="nickname" value={info.nickname} maxLength={20} onChange={(e) => setInfo({ ...info, nickname: e.target.value })} required />
           </Field>
-          <Field label="성별">
+          <Field label="성별" hint="한 번 고르면 운영진도 바꿀 수 없어요. 훕팅은 이성만 추천해요.">
             <Segmented<Gender | "">
               value={info.gender}
               onChange={(g) => setInfo({ ...info, gender: g })}
               options={[
                 { value: "FEMALE", label: "여성" },
                 { value: "MALE", label: "남성" },
-              ]}
-            />
-          </Field>
-          <Field label="만나고 싶은 상대" hint="다른 학생에게는 보이지 않아요. 가입 후에는 바꿀 수 없으니 신중히 골라주세요.">
-            <Segmented<WantGender | "">
-              value={info.want}
-              onChange={(w) => setInfo({ ...info, want: w })}
-              options={[
-                { value: "MALE", label: "남성" },
-                { value: "FEMALE", label: "여성" },
-                { value: "ANY", label: "상관없음" },
               ]}
             />
           </Field>

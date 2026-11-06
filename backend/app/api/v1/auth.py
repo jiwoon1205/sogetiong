@@ -130,6 +130,14 @@ def register(payload: RegisterRequest, request: Request, response: Response, db:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=reason)
     previous = auth_service.previous_accounts(db, ticket.email)
     previous_ids = [u.id for u in previous]
+    # 성별은 가입한 뒤 절대 바꿀 수 없다 (2026-11-07). 탈퇴 → 재가입으로 성별을 바꾸는 것도 막는다
+    before = auth_service.previous_gender(previous)
+    if before is not None and before != payload.gender:
+        label = "여성" if before == "FEMALE" else "남성"
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"성별은 바꿀 수 없어요. 예전에 가입할 때 고른 성별({label})로 다시 가입해주세요.",
+        )
 
     now = utcnow()
     user = User(
@@ -149,7 +157,7 @@ def register(payload: RegisterRequest, request: Request, response: Response, db:
         PrivateProfile(
             user_id=user.id,
             birth_date=payload.birth_date,
-            preferred_gender=payload.preferred_gender,
+            preferred_gender=auth_service.opposite_gender(payload.gender),  # 항상 이성 (2026-11-07)
             real_name=payload.real_name,
             student_id=payload.student_id,
             verification_data_json={

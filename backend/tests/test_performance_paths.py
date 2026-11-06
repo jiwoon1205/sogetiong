@@ -61,10 +61,10 @@ def test_unread_count(sent_codes, db):
 
 def test_match_list_last_message_and_block(sent_codes, db):
     admin = admin_login(db)
-    a = ready_user(sent_codes, db, admin, "a@hufs.ac.kr")
-    b = ready_user(sent_codes, db, admin, "b@hufs.ac.kr")
-    c = ready_user(sent_codes, db, admin, "c@hufs.ac.kr")
-    d = ready_user(sent_codes, db, admin, "d@hufs.ac.kr")
+    a = ready_user(sent_codes, db, admin, "a@hufs.ac.kr", gender="FEMALE")
+    b = ready_user(sent_codes, db, admin, "b@hufs.ac.kr", gender="MALE")
+    c = ready_user(sent_codes, db, admin, "c@hufs.ac.kr", gender="MALE")
+    d = ready_user(sent_codes, db, admin, "d@hufs.ac.kr", gender="MALE")
     ab, ac, _ad = _match(a, b), _match(a, c), _match(a, d)
 
     a.post(f"/api/v1/matches/{ab}/messages", json={"body": "b에게 1"})

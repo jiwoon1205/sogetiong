@@ -199,6 +199,13 @@ class Settings(BaseSettings):
     # 이용권을 사면 체험은 끝난다. 탈퇴·재가입해도 이어진다. 0이면 체험 없음.
     free_trial_likes: int = 3
 
+    # --- 여성 회원 (2026-11-07, `여성 무료·성별 고정 (2026-11-07)`) ---
+    # 여성 회원은 기본 이용권 없이도 기본 이용권 혜택(하루 좋아요 5개 등)을 쓴다. 끝나는 날 없음 (상시).
+    # 끄려면 .env에 FEMALE_FREE=false (그때는 다시 모두 같은 규칙)
+    female_free: bool = True
+    # 여성 회원의 VIP 가격 (남성은 VIP_PRICE 그대로)
+    vip_price_female: int = 3000
+
     # --- 문의 ---
     # 학과 변경 요청·"내 학과가 목록에 없어요" 문의를 받는 메일 주소 (화면에 표시됨)
     support_email: str = "support@private-matching.com"
@@ -316,6 +323,8 @@ class Settings(BaseSettings):
             raise ValueError("FREE_TRIAL_LIKES는 0 이상이어야 합니다")
         if self.vip_enabled and not (self.vip_price > 0 and self.vip_days > 0):
             raise ValueError("VIP_PRICE, VIP_DAYS는 0보다 커야 합니다")
+        if self.vip_enabled and self.vip_price_female <= 0:
+            raise ValueError("VIP_PRICE_FEMALE은 0보다 커야 합니다")
         if self.vip_enabled and not self.membership_enabled:
             raise ValueError("VIP_ENABLED를 켜려면 MEMBERSHIP_ENABLED도 켜야 합니다 (VIP는 기본 이용권을 포함)")
         if (self.membership_enabled or self.vip_enabled) and not (

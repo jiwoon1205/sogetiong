@@ -15,6 +15,9 @@
 - 무료 체험 (2026-10-06, `무료 체험 플랜 설계`): 이용권이 없는 사람은 LIKE를 평생 FREE_TRIAL_LIKES(3)개만 보낼 수 있다.
   다 쓰면(또는 이용권이 끝나면) 추천·PASS·대화는 되고 LIKE만 막힌다. 이용권을 사면 체험은 끝난다.
 - 가격 (2026-10-06): 정가 4,000원, MEMBERSHIP_DISCOUNT_UNTIL 전에는 할인가 3,000원.
+- 여성 회원 무료 (2026-11-07, 상시, 설정 FEMALE_FREE): 여성은 기본 이용권 없이 항상 기본 이용권 혜택.
+  기본 이용권은 살 수 없고(API에서 막음), 그래도 들어온 기본 이용권 결제·쌓아 둔 일수는 VIP 일수로 바꿔 준다.
+  VIP는 VIP_PRICE_FEMALE원 (vip_service.price).
 """
 
 import math
@@ -24,6 +27,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.core.time import as_utc, kst_day_start, kst_today, utcnow
+from app.models.profile import PublicProfile
 from app.models.user import User
 from app.services import profile_service, vip_service
 
@@ -108,6 +112,8 @@ def has_membership(user: User, now: datetime | None = None) -> bool:
     """지금 추천·LIKE를 쓸 수 있는 이용권이 있나."""
     now = now or utcnow()
     if not enabled(now) or vip_service.is_vip_tester(user):
+        return True
+    if vip_service.is_female_free(user):  # 여성 회원 무료 (2026-11-07)
         return True
     until = _until(user)
     if until is not None and until > now:
@@ -200,16 +206,20 @@ def cannot_like_ids(db: Session, user_ids: list, now: datetime | None = None) ->
     if not user_ids or not enabled(now):
         return set()
     now = now or utcnow()
-    emails = get_settings().vip_test_email_set
+    settings = get_settings()
+    emails = settings.vip_test_email_set
     rows = (
-        db.query(User.id, User.email, User.member_until, User.vip_until, User.trial_likes_used)
+        db.query(User.id, User.email, User.member_until, User.vip_until, User.trial_likes_used, PublicProfile.gender)
+        .outerjoin(PublicProfile, PublicProfile.user_id == User.id)
         .filter(User.id.in_(list(user_ids)))
         .all()
     )
     limit = trial_limit()
     out = set()
-    for uid, email, member_until, vip_until, used in rows:
+    for uid, email, member_until, vip_until, used, gender in rows:
         if (email or "").strip().lower() in emails:
+            continue
+        if settings.female_free and gender == "FEMALE":  # 여성 회원 무료 (2026-11-07)
             continue
         if any(t is not None and as_utc(t) > now for t in (member_until, vip_until)):
             continue
@@ -230,6 +240,11 @@ def add_membership(db: Session, user: User, now: datetime | None = None, days: i
     days = days or period_days("SIGNUP", now)
     until = _until(user)
     active = until is not None and until > now
+    # 여성 회원 (2026-11-07): 기본 이용권은 이미 무료라서, 들어온 기본 이용권 결제는 같은 일수의 VIP로 바꿔 준다.
+    # 추천이 아직 안 열렸으면 아래처럼 쌓아 두고, 열릴 때 start_banked가 VIP로 시작한다.
+    if vip_service.is_female_free(user) and (active or can_start(db, user)):
+        add_vip(db, user, now, days)
+        return
     if not active and not can_start(db, user):
         user.member_days_banked = (user.member_days_banked or 0) + days
     else:
@@ -259,8 +274,11 @@ def start_banked(db: Session, user: User, now: datetime | None = None) -> bool:
     if banked <= 0 or not can_start(db, user):
         return False
     now = now or utcnow()
-    user.member_until = end_of_kst_day(_base(_until(user), now) + timedelta(days=banked))
     user.member_days_banked = 0
+    if vip_service.is_female_free(user):  # 여성 회원: 쌓아 둔 기본 이용권 일수 → VIP (2026-11-07)
+        add_vip(db, user, now, banked)
+        return True
+    user.member_until = end_of_kst_day(_base(_until(user), now) + timedelta(days=banked))
     return True
 
 
@@ -316,6 +334,7 @@ def view(user: User, now: datetime | None = None) -> dict:
         "enabled": enabled(),
         "active": has_membership(user, now),
         "free": vip_service.is_vip_tester(user),  # 테스트 계정 (결제 없이 항상 이용)
+        "female_free": vip_service.is_female_free(user),  # 여성 회원: 기본 이용권 무료, 살 수 없음 (2026-11-07)
         "status": status(user, now),
         "until": until.isoformat() if until else None,
         "days_left": days_left(user, now),

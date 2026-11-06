@@ -70,10 +70,8 @@ def department_locked_message() -> str:
 
 
 def gender_locked_message() -> str:
-    return (
-        "성별과 원하는 성별은 가입할 때 정하면 바꿀 수 없어요. 잘못 선택했다면 가입한 학교 메일로 "
-        f"{get_settings().support_email} 에 바꿀 내용을 알려주세요. 운영진이 확인 후 바꿔드려요."
-    )
+    # 2026-11-07: 성별은 가입한 뒤 누구도(운영진 포함) 바꿀 수 없다. 추천 상대는 항상 이성
+    return "성별은 가입할 때 정하면 운영진도 바꿀 수 없어요. 추천 상대는 항상 이성이에요."
 
 
 # ---------- 계정 ----------
@@ -704,7 +702,12 @@ def _payment_ready(db: Session, current: CurrentUser) -> None:
 def _pays_membership(current: CurrentUser) -> bool:
     """이용권을 살 수 있는(내야 하는) 사람인가. 유료화가 꺼져 있거나 테스트 계정이면 아니다."""
     # 유료 시작 시각 전에도 미리 살 수 있다 (2026-10-06)
-    return membership_service.sales_open() and not vip_service.is_vip_tester(current.user)
+    # 여성 회원은 기본 이용권이 무료라서 살 수 없다 (2026-11-07). VIP·슈퍼 라이크는 살 수 있다
+    return (
+        membership_service.sales_open()
+        and not vip_service.is_vip_tester(current.user)
+        and not vip_service.is_female_free(current.user)
+    )
 
 
 @router.get("/me/payment")
@@ -751,7 +754,7 @@ def request_payment_check(
 def _vip_info(db: Session, current: CurrentUser) -> dict:
     settings = get_settings()
     user = current.user
-    price = vip_service.price()
+    price = vip_service.price(user)  # 여성 회원은 VIP_PRICE_FEMALE (2026-11-07)
     info = {
         "visible": vip_service.feature_visible(user),
         "active": vip_service.is_vip(user),
@@ -759,8 +762,14 @@ def _vip_info(db: Session, current: CurrentUser) -> dict:
         "until": user.vip_until.isoformat() if vip_service.has_paid_vip(user) else None,
         "days": membership_service.period_days("VIP"),  # 지금 사면 받는 일수 (베타 4주 / 정식 2주, 2026-10-06)
         "price": price,
+        "regular_price": get_settings().vip_price,  # 남성 가격 (여성 회원 화면에 정가로 보여줄 때)
+        "female_free": vip_service.is_female_free(user),
         # 지금 남은 기본 이용권 일수 → "VIP를 사면 남은 ○일은 VIP가 끝난 뒤 이어서 써요" 안내
-        "member_days_left": membership_service.days_left(user) if membership_service.sales_open() else None,
+        "member_days_left": (
+            membership_service.days_left(user)
+            if membership_service.sales_open() and not vip_service.is_female_free(user)
+            else None
+        ),
         "daily_like_limit": settings.vip_daily_like_limit,
         "base_like_limit": settings.daily_like_limit,
         "pass_cooldown_hours": settings.vip_pass_cooldown_hours,

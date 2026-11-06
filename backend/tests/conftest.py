@@ -20,6 +20,9 @@ os.environ.update(
         "LOCAL_STORAGE_DIR": f"{_tmp}/storage",
         "EMAIL_BACKEND": "console",
         "SECRET_KEY": "test-secret-key-that-is-long-enough-123456",
+        # 여성 회원 무료(2026-11-07)는 기본으로 끈다 → 예전 이용권 테스트가 성별과 상관없이 그대로 돈다.
+        # 여성 무료를 보는 테스트는 tests/test_female_free.py에서 켠다
+        "FEMALE_FREE": "false",
     }
 )
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -51,6 +54,8 @@ def fresh_db(monkeypatch):
     reset_photo_alert()
     push_service.reset()
     seed.run()
+    _gender_turn["n"] = 0
+    _gender_turn["by_email"] = {}
     yield
 
 
@@ -160,11 +165,27 @@ def jpeg_with_exif() -> bytes:
     return out.getvalue()
 
 
+# 2026-11-07: 추천은 항상 이성끼리 → 성별을 안 정한 테스트 사용자는 여성·남성을 번갈아 만든다 (테스트마다 처음은 여성)
+# 같은 메일로 다시 가입(탈퇴 후 재가입)하면 예전과 같은 성별 (성별은 바꿀 수 없음)
+_gender_turn = {"n": 0, "by_email": {}}
+
+
+def _next_gender(email: str) -> str:
+    if email in _gender_turn["by_email"]:
+        return _gender_turn["by_email"][email]
+    _gender_turn["n"] += 1
+    gender = "FEMALE" if _gender_turn["n"] % 2 == 1 else "MALE"
+    _gender_turn["by_email"][email] = gender
+    return gender
+
+
 def signup(
-    sent_codes, db, email, *, gender="FEMALE", want="ANY", birth=date(2003, 5, 1), campus="서울캠퍼스", nickname=None,
+    sent_codes, db, email, *, gender=None, want=None, birth=date(2003, 5, 1), campus="서울캠퍼스", nickname=None,
     school="hufs.ac.kr",
 ) -> UserClient:
-    """가입. want = 원하는 성별 (가입할 때 정하고 이후 본인은 못 바꿈)."""
+    """가입. gender를 안 주면 여성·남성 번갈아. want(원하는 성별)는 2026-11-07부터 서버가 무시한다 (항상 이성)."""
+    gender = gender or _next_gender(email)
+    _gender_turn["by_email"].setdefault(email, gender)
     client = UserClient()
     r = client.post("/api/v1/auth/email/send-code", json={"email": email})
     assert r.status_code == 202, r.text
@@ -177,7 +198,7 @@ def signup(
             "password": "goodpass123",
             "nickname": nickname or ("user_" + email.split("@")[0]),
             "gender": gender,
-            "preferred_gender": want,
+            **({"preferred_gender": want} if want is not None else {}),
             "birth_date": birth.isoformat(),
             "campus_id": campus_id(db, campus, school),
             "agree_terms": True,

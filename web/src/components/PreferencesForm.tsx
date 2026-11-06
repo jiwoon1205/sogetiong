@@ -31,7 +31,7 @@ const EMPTY: Preferences = {
 type SchoolCampuses = { id: string; name: string; mine: boolean; campuses: { id: string; name: string }[] };
 
 /** 매칭 조건. 이 내용은 본인만 볼 수 있다.
- *  원하는 성별은 가입할 때 정해서 여기서는 보여주기만 한다 (바꾸려면 운영진에게 메일). */
+ *  만나고 싶은 상대는 항상 이성 (2026-11-07) — 여기서는 보여주기만 한다. */
 export function PreferencesForm({
   campuses,
   submitLabel = "저장",
@@ -186,7 +186,7 @@ export function PreferencesForm({
         <p className="text-[13px] font-medium text-ink-soft">만나고 싶은 상대</p>
         <div className="rounded-md border border-line bg-paper-card px-4 py-3 text-[14.5px]">{GENDER_LABEL[p.preferred_gender]}</div>
         <p className="text-[12.5px] leading-relaxed text-ink-faint">
-          {p.gender_locked_message ?? "가입할 때 고른 값이에요. 바꾸려면 운영진에게 메일로 요청해주세요."}
+          {p.gender_locked_message ?? "성별은 가입할 때 정하면 운영진도 바꿀 수 없어요. 추천 상대는 항상 이성이에요."}
         </p>
       </div>
 

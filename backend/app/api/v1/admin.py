@@ -34,7 +34,6 @@ from app.schemas.admin import (
     AppearanceTierRequest,
     MembershipAdjustRequest,
     UserDepartmentRequest,
-    UserGenderRequest,
     UserStatusRequest,
 )
 from app.services import admin_alert_service, audit_service, match_limit_service, membership_service, payment_service, profile_service, referral_service, super_like_service, vip_service, withdrawal_service
@@ -954,50 +953,8 @@ def update_user_department(
     return {"user_id": str(user.id), "department": {"id": str(dept.id), "name": dept.name}}
 
 
-GENDER_LABEL = {"MALE": "남성", "FEMALE": "여성", "ANY": "상관없음"}
-
-
-@router.patch("/users/{user_id}/gender")
-def update_user_gender(
-    user_id: uuid.UUID,
-    payload: UserGenderRequest,
-    request: Request,
-    admin: CurrentAdmin = Depends(require_permission("users:gender")),
-    db: Session = Depends(get_db),
-):
-    """성별·원하는 성별 변경 (사용자는 직접 못 바꾼다). 요청 메일이 가입한 학교 메일에서 왔는지 먼저 확인할 것.
-
-    이미 생긴 LIKE·매칭은 그대로 두고, 이후 추천부터 새 값이 적용된다.
-    """
-    user = _user_or_404(db, user_id)
-    profile = db.query(PublicProfile).filter(PublicProfile.user_id == user.id).first()
-    private = db.query(PrivateProfile).filter(PrivateProfile.user_id == user.id).first()
-    if profile is None or private is None or user.deleted_at is not None:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="프로필이 없는 계정입니다.")
-
-    before = {"gender": profile.gender, "preferred_gender": private.preferred_gender}
-    changes = []
-    if payload.gender is not None and payload.gender != profile.gender:
-        profile.gender = payload.gender
-        changes.append(f"성별: {GENDER_LABEL[payload.gender]}")
-    if payload.preferred_gender is not None and payload.preferred_gender != private.preferred_gender:
-        private.preferred_gender = payload.preferred_gender
-        changes.append(f"원하는 성별: {GENDER_LABEL[payload.preferred_gender]}")
-    after = {"gender": profile.gender, "preferred_gender": private.preferred_gender}
-
-    if changes:
-        notify(db, user.id, "PROFILE_UPDATED", "성별 정보가 변경되었어요", "요청하신 대로 바꿨어요. " + ", ".join(changes))
-        audit_service.record(
-            db,
-            admin_id=admin.id,
-            action="USER_GENDER_CHANGE",
-            target_type="USER",
-            target_id=user.id,
-            request=request,
-            metadata={"before": before, "after": after, "reason": payload.reason},
-        )
-    db.commit()
-    return {"user_id": str(user.id), **after}
+# 성별·원하는 성별 변경 (PATCH /users/{user_id}/gender)은 2026-11-07에 없앴다.
+# 성별은 가입한 뒤 운영진도 바꿀 수 없고, 추천 상대는 항상 이성이다 (여성 회원 무료와 함께 — 성별 사칭 방지).
 
 
 @router.patch("/users/{user_id}/appearance-tier")

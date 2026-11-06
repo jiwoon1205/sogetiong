@@ -39,8 +39,9 @@ class RegisterRequest(BaseModel):
     password: str = Field(max_length=128)
     nickname: str = Field(min_length=2, max_length=20)
     gender: Literal["MALE", "FEMALE"]
-    # 만나고 싶은 성별. 성별과 함께 가입 후에는 본인이 바꿀 수 없다 (운영진에게 메일로 요청).
-    preferred_gender: Literal["MALE", "FEMALE", "ANY"]
+    # 2026-11-07: '원하는 성별'은 없앴다 — 항상 이성 (서버가 성별의 반대로 정한다).
+    # 예전 화면·앱이 보내도 받기만 하고 쓰지 않는다.
+    preferred_gender: Literal["MALE", "FEMALE", "ANY"] | None = None
     birth_date: date
     campus_id: uuid.UUID
     # 선택 입력 (Layer 3, 관리자만 접근)

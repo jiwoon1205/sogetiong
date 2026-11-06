@@ -107,6 +107,8 @@ export type Membership = {
   active: boolean;
   /** 테스트 계정 (결제 없이 항상 이용) */
   free: boolean;
+  /** 여성 회원: 기본 이용권 무료, 살 수 없음 (2026-11-07) */
+  female_free?: boolean;
   /** none: 산 적 없음 / banked: 사진 검수가 끝나면 시작 / active / expired */
   status: "none" | "banked" | "active" | "expired";
   /** 끝나는 시각 (밤 12시, 한국 시간) */
@@ -151,6 +153,10 @@ export type VipInfo = {
   until: string | null;
   days: number;
   price: number;
+  /** 남성 VIP 가격. 여성 회원은 price가 더 싸다 (2026-11-07) */
+  regular_price?: number;
+  /** 여성 회원 (기본 이용권 무료, VIP 할인가) */
+  female_free?: boolean;
   /** 지금 남은 기본 이용권 일수 (VIP를 사면 VIP가 끝난 뒤 이어서 씀) */
   member_days_left: number | null;
   daily_like_limit: number;

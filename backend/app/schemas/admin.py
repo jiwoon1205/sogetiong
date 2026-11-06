@@ -47,23 +47,6 @@ class UserDepartmentRequest(BaseModel):
     reason: str = Field(min_length=2, max_length=300)  # 예: "가입 메일로 요청, 컴퓨터공학부 → 통계학과"
 
 
-class UserGenderRequest(BaseModel):
-    """PATCH /admin/users/{user_id}/gender — 성별·원하는 성별 변경 요청 처리 (사용자는 직접 못 바꾼다)
-
-    바꿀 항목만 보낸다. 둘 다 비우면 400.
-    """
-
-    gender: Literal["MALE", "FEMALE"] | None = None
-    preferred_gender: Literal["MALE", "FEMALE", "ANY"] | None = None
-    reason: str = Field(min_length=2, max_length=300)  # 예: "가입 메일로 요청, 원하는 성별 여성 → 상관없음"
-
-    @model_validator(mode="after")
-    def needs_change(self):
-        if self.gender is None and self.preferred_gender is None:
-            raise ValueError("바꿀 항목을 골라주세요.")
-        return self
-
-
 class AppearanceTierRequest(BaseModel):
     """PATCH /admin/users/{user_id}/appearance-tier — 외모 등급만 다시 정하기 (점수는 그대로)"""
 

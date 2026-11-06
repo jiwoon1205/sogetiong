@@ -159,15 +159,7 @@ export default function UserDetail() {
             <DepartmentForm key={`${d.user_id}-${d.department?.id}`} userId={d.user_id} campusId={d.campus.id} current={d.department} onDone={() => load(!!d.private)} />
           )}
 
-          {admin.can("users:gender") && d.profile && !d.deleted_at && (
-            <GenderForm
-              key={`${d.user_id}-${d.gender}-${d.preferred_gender}`}
-              userId={d.user_id}
-              gender={d.gender ?? "FEMALE"}
-              want={d.preferred_gender ?? "ANY"}
-              onDone={() => load(!!d.private)}
-            />
-          )}
+          {/* 성별 변경 폼은 2026-11-07에 없앴다: 성별은 운영진도 바꿀 수 없고 추천은 항상 이성 */}
 
           {admin.can("payments:confirm") && !d.deleted_at && (
             <MembershipForm key={`${d.user_id}-${d.member_until}`} userId={d.user_id} onDone={() => load(!!d.private)} />
@@ -485,72 +477,6 @@ function DepartmentForm({
       {ok && <Notice tone="ok">변경했어요. 사용자에게 알림이 갔어요.</Notice>}
       <Button type="submit" loading={loading} disabled={!deptId || deptId === current?.id || reason.trim().length < 2}>
         학과 변경
-      </Button>
-    </form>
-  );
-}
-
-/** 성별·원하는 성별 변경: 사용자는 가입 후 직접 못 바꾸고, 가입한 학교 메일로 요청하면 여기서 바꾼다 */
-function GenderForm({ userId, gender, want, onDone }: { userId: string; gender: Gender; want: WantGender; onDone: () => void }) {
-  const [g, setG] = useState<Gender>(gender);
-  const [w, setW] = useState<WantGender>(want);
-  const [reason, setReason] = useState("");
-  const [error, setError] = useState("");
-  const [ok, setOk] = useState(false);
-  const [loading, setLoading] = useState(false);
-
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
-    setLoading(true);
-    setError("");
-    setOk(false);
-    try {
-      await adminApi(`/users/${userId}/gender`, {
-        method: "PATCH",
-        body: { gender: g !== gender ? g : null, preferred_gender: w !== want ? w : null, reason },
-      });
-      setOk(true);
-      setReason("");
-      onDone();
-    } catch (err) {
-      setError(errorMessage(err));
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  return (
-    <form onSubmit={submit} className="space-y-4">
-      <p className="eyebrow">성별 · 원하는 상대 변경</p>
-      <Notice>요청 메일이 이 사용자가 가입한 학교 메일에서 왔는지 먼저 확인하세요. 이미 생긴 좋아요·매칭은 그대로 남아요.</Notice>
-      <Field label="성별">
-        <Segmented<Gender>
-          value={g}
-          onChange={setG}
-          options={[
-            { value: "FEMALE", label: "여성" },
-            { value: "MALE", label: "남성" },
-          ]}
-        />
-      </Field>
-      <Field label="원하는 상대">
-        <Segmented<WantGender>
-          value={w}
-          onChange={setW}
-          options={[
-            { value: "MALE", label: "남성" },
-            { value: "FEMALE", label: "여성" },
-            { value: "ANY", label: "상관없음" },
-          ]}
-        />
-      </Field>
-      <Field label="사유 (감사 로그에 남아요)" htmlFor="gender-reason">
-        <Input id="gender-reason" value={reason} onChange={(e) => setReason(e.target.value)} maxLength={300} placeholder="가입 메일로 요청 (잘못 선택)" />
-      </Field>
-      {error && <Notice tone="error">{error}</Notice>}
-      {ok && <Notice tone="ok">변경했어요. 사용자에게 알림이 갔어요.</Notice>}
-      <Button type="submit" loading={loading} disabled={(g === gender && w === want) || reason.trim().length < 2}>
-        변경
       </Button>
     </form>
   );

@@ -646,7 +646,7 @@ function LikeIntro({ label, trial }: { label: string; trial?: boolean }) {
 function MembershipWarning() {
   const { me } = useSession();
   const m = me.membership;
-  if (!m || !m.enabled || m.free || m.status !== "active" || m.days_left === null || m.days_left > m.warn_days) return null;
+  if (!m || !m.enabled || m.free || m.female_free || m.status !== "active" || m.days_left === null || m.days_left > m.warn_days) return null;
   return (
     <Link href="/settings#membership" className="mb-4 block rounded-md border border-brick/30 bg-brick-wash/60 px-4 py-2.5 text-[13px] text-brick">
       이용권이 <b className="num">{m.days_left}</b>일 남았어요 · 미리 연장하면 끊기지 않아요 →
