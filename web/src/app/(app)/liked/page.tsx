@@ -192,7 +192,9 @@ function VipShop({ vip, onChange, onActivated }: { vip: VipInfo; onChange: (v: V
   }
 
   const benefits = [
-    { title: `좋아요 하루 ${vip.base_like_limit}+${vip.daily_like_limit - vip.base_like_limit}개`, body: `기본 이용권은 하루 ${vip.base_like_limit}개예요.` },
+    vip.female_free
+      ? { title: `좋아요 하루 ${vip.daily_like_limit}개`, body: `여성 무료 이용은 하루 ${vip.base_like_limit}개예요.` }
+      : { title: `좋아요 하루 ${vip.base_like_limit}+${vip.daily_like_limit - vip.base_like_limit}개`, body: `기본 이용권은 하루 ${vip.base_like_limit}개예요.` },
     { title: "나를 LIKE한 사람 보기", body: "목록에서 바로 좋아요를 누르면 바로 매칭돼요." },
     { title: `넘긴 사람 ${vip.pass_cooldown_hours}시간 뒤 다시 보기`, body: `기본 이용권은 ${vip.base_pass_cooldown_hours}시간 뒤예요.` },
     {

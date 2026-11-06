@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { PageTitle, Spinner } from "@/components/ui";
 import GenderPie from "@/components/GenderPie";
 import { adminApi, useAdmin } from "@/lib/admin";
+import { dateTime } from "@/lib/format";
 
 type Stats = {
   users_total: number;
@@ -205,7 +206,7 @@ function RecentWithdrawals() {
           {shown.map((w) => (
             <li key={w.user_id} className="px-5 py-3">
               <Link href={`/admin/users/${w.user_id}`} className="text-[12.5px] text-ink-faint underline-offset-4 hover:underline">
-                {new Date(w.deleted_at).toLocaleDateString("ko-KR", { timeZone: "Asia/Seoul" })} · {w.nickname ?? "—"} ·{" "}
+                {dateTime(w.deleted_at)} · {w.nickname ?? "—"} ·{" "}
                 {w.gender === "FEMALE" ? "여성" : w.gender === "MALE" ? "남성" : "—"}
                 {w.school ? ` · ${w.school}` : ""}
               </Link>

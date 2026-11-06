@@ -1,7 +1,7 @@
 """여성 회원 무료 · 성별 고정 (2026-11-07, `여성 무료·성별 고정 (2026-11-07)`).
 
 - 여성 회원은 기본 이용권 없이 항상 기본 이용권 혜택 (상시, 설정 FEMALE_FREE). 기본 이용권은 살 수 없다
-- 여성 회원의 VIP는 3,000원 (VIP_PRICE_FEMALE). 남성은 6,000원 그대로
+- 여성 회원의 VIP는 4,000원 (VIP_PRICE_FEMALE). 남성은 6,000원 그대로
 - 그래도 들어온 기본 이용권 결제·쌓아 둔 일수는 같은 일수의 VIP로 바꿔 준다
 - 마이그레이션 0030: 원하는 성별 → 이성, 여성의 남은 기본 기간 → VIP, 알림
 (다른 테스트는 conftest에서 FEMALE_FREE=false로 돈다)
@@ -37,12 +37,14 @@ def test_woman_has_basic_benefits_without_paying(sent_codes, db, women_free):
     m = her.get("/api/v1/me").json()["membership"]
     assert m["female_free"] is True and m["active"] is True and m["like_access"] == "paid"
     r = her.get("/api/v1/discover").json()
-    assert r["like_access"] == "paid" and r["likes_left_today"] == women_free.daily_like_limit
+    # 여성 무료 이용은 하루 좋아요 3개 (2026-11-07: 5 → 3)
+    assert r["like_access"] == "paid" and r["likes_left_today"] == 3 and r["daily_like_limit"] == 3
+    assert r["base_like_limit"] == 3
     # 남성은 그대로 체험 이용자
     m = him.get("/api/v1/me").json()["membership"]
     assert m["female_free"] is False and m["like_access"] == "trial"
 
-    # 좋아요 4개 이상도 된다 (체험 3개 제한 없음) — 받은 좋아요에 응답도 가능
+    # 받은 좋아요에 응답도 된다 (체험을 다 쓴 남성과 다르게)
     assert him.post("/api/v1/likes", json={"profile_id": her.profile_id}).status_code == 200
     r = her.post("/api/v1/likes", json={"profile_id": him.profile_id})
     assert r.status_code == 200 and r.json()["matched"] is True
@@ -69,7 +71,7 @@ def test_vip_price_by_gender(sent_codes, db, women_free):
     her = ready_user(sent_codes, db, admin, "her@hufs.ac.kr", gender="FEMALE")
     him = ready_user(sent_codes, db, admin, "him@hufs.ac.kr", gender="MALE")
     vip = her.get("/api/v1/me/vip").json()
-    assert vip["price"] == 3000 and vip["payment"]["amount"] == 3000 and vip["female_free"] is True
+    assert vip["price"] == 4000 and vip["payment"]["amount"] == 4000 and vip["female_free"] is True
     assert vip["member_days_left"] is None
     assert him.get("/api/v1/me/vip").json()["price"] == 6000
 
@@ -209,3 +211,18 @@ def test_migration_0030(tmp_path, monkeypatch):
         assert "여성 회원은 기본 이용권이 무료예요" in titles[ids["woman_any"]]
         assert ids["man_same"] not in {u for u, t in titles.items() if "여성 회원은 기본 이용권이 무료예요" in t}
     engine.dispose()
+
+
+def test_woman_daily_limit_is_three_and_vip_gets_vip_limit(sent_codes, db, women_free):
+    admin = admin_login(db)
+    her = ready_user(sent_codes, db, admin, "her@hufs.ac.kr", gender="FEMALE")
+    men = [ready_user(sent_codes, db, admin, f"m{i}@hufs.ac.kr", gender="MALE") for i in range(4)]
+    for m in men[:3]:
+        assert her.post("/api/v1/likes", json={"profile_id": m.profile_id}).status_code == 200
+    r = her.post("/api/v1/likes", json={"profile_id": men[3].profile_id})
+    assert r.status_code in (409, 429), r.text  # 4번째는 막힌다
+    assert her.get("/api/v1/me/vip").json()["base_like_limit"] == 3
+    # VIP를 사면 VIP 한도 (남녀 같음)
+    pay(admin, her, "vip")
+    r = her.get("/api/v1/discover").json()
+    assert r["daily_like_limit"] == women_free.vip_daily_like_limit and r["likes_left_today"] == women_free.vip_daily_like_limit - 3

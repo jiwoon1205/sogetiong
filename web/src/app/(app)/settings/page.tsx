@@ -107,7 +107,7 @@ function MyMembership({ onActivated }: { onActivated: () => void }) {
         <p className="eyebrow mb-4">내 이용권</p>
         <div className="mb-4 rounded-card border border-line bg-paper-card px-5 py-4">
           <p className="text-[13px] text-ink-faint">여성 회원</p>
-          <p className="mt-0.5 text-[14.5px]">기본 이용권 무료 · 기간 없이 계속 쓸 수 있어요</p>
+          <p className="mt-0.5 text-[14.5px]">무료 이용 · 하루 좋아요 3개 · 기간 없이 계속 쓸 수 있어요</p>
           {vipUntil ? (
             <p className="mt-2 text-[13.5px] text-brick">VIP {untilDay(vipUntil)}</p>
           ) : (

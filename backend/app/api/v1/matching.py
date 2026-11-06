@@ -140,7 +140,9 @@ def discover(
         "daily_like_limit": max(membership_service.trial_limit(), membership_service.trial_left(current.user)) if trial else like_limit,
         # VIP는 하트를 "5+5"로 보여준다 (무료 몫 5개 + VIP 몫 5개)
         "vip": vip_service.is_vip(current.user),
-        "base_like_limit": settings.daily_like_limit,
+        "base_like_limit": (
+            settings.female_daily_like_limit if vip_service.is_female_free(current.user) else settings.daily_like_limit
+        ),
         # 슈퍼 라이크 남은 개수·가격 (2026-10-12)
         "super_likes": super_like_service.view(current.user),
         "super_like_on_sale": membership_service.sales_open(),

@@ -203,11 +203,13 @@ class Settings(BaseSettings):
     free_trial_likes: int = 3
 
     # --- 여성 회원 (2026-11-07, `여성 무료·성별 고정 (2026-11-07)`) ---
-    # 여성 회원은 기본 이용권 없이도 기본 이용권 혜택(하루 좋아요 5개 등)을 쓴다. 끝나는 날 없음 (상시).
+    # 여성 회원은 기본 이용권 없이도 무료로 쓴다 (사진 재검토 등 기본 이용권 혜택). 끝나는 날 없음 (상시).
+    # 단 하루 좋아요는 FEMALE_DAILY_LIKE_LIMIT개 (2026-11-07: 5 → 3). VIP를 사면 VIP 한도(VIP_DAILY_LIKE_LIMIT) 그대로.
     # 끄려면 .env에 FEMALE_FREE=false (그때는 다시 모두 같은 규칙)
     female_free: bool = True
+    female_daily_like_limit: int = 3
     # 여성 회원의 VIP 가격 (남성은 VIP_PRICE 그대로)
-    vip_price_female: int = 3000
+    vip_price_female: int = 4000  # 2026-11-07: 3,000원 → 4,000원
 
     # --- 문의 ---
     # 학과 변경 요청·"내 학과가 목록에 없어요" 문의를 받는 메일 주소 (화면에 표시됨)

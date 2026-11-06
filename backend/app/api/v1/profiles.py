@@ -773,7 +773,8 @@ def _vip_info(db: Session, current: CurrentUser) -> dict:
             else None
         ),
         "daily_like_limit": settings.vip_daily_like_limit,
-        "base_like_limit": settings.daily_like_limit,
+        # VIP가 아닐 때 하루 좋아요 (여성 무료 이용은 3개, 2026-11-07)
+        "base_like_limit": settings.female_daily_like_limit if vip_service.is_female_free(user) else settings.daily_like_limit,
         "pass_cooldown_hours": settings.vip_pass_cooldown_hours,
         "base_pass_cooldown_hours": settings.pass_cooldown_hours,
         "photo_resubmit_days": settings.vip_photo_resubmit_days,

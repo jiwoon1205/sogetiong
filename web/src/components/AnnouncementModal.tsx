@@ -129,9 +129,9 @@ const NOTICES: Record<string, Notice> = {
             {m?.female_free ? "이제 이용권 없이 무료로 써요" : "여성 회원은 이제 무료예요"}
           </p>
           <p className="mt-2 text-[13px] leading-relaxed text-ink-soft">
-            기본 이용권 혜택(하루 좋아요 5개 · 받은 좋아요에 답하기 · 사진 재검토)을 결제 없이 계속 쓸 수 있어요.
+            결제 없이 <b className="font-semibold text-ink">하루 좋아요 3개</b>를 계속 쓸 수 있어요. 자정마다 다시 채워져요.
             <br />
-            VIP도 여성 회원은 <b className="font-semibold text-brick">3,000원</b>이에요.
+            VIP도 여성 회원은 <b className="font-semibold text-brick">4,000원</b>이에요.
           </p>
         </div>
         <InviteEventHero />

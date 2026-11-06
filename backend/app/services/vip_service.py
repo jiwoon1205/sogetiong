@@ -88,10 +88,18 @@ def bonus_likes_today(user: User) -> int:
     return (user.bonus_likes or 0) if user.bonus_likes_date == kst_today() else 0
 
 
-def daily_like_limit(user: User) -> int:
-    """오늘 보낼 수 있는 LIKE 수 = 기본(무료 5 / VIP 10) + 관리자가 준 오늘 추가분."""
+def base_like_limit(user: User) -> int:
+    """VIP가 아닐 때의 하루 LIKE 수 = 기본 이용권 5개, 여성 무료 이용은 3개 (2026-11-07)."""
     s = get_settings()
-    base = s.vip_daily_like_limit if is_vip(user) else s.daily_like_limit
+    if is_female_free(user) and not has_paid_vip(user) and not is_vip_tester(user):
+        return s.female_daily_like_limit
+    return s.daily_like_limit
+
+
+def daily_like_limit(user: User) -> int:
+    """오늘 보낼 수 있는 LIKE 수 = 기본(5 / 여성 무료 3 / VIP 10) + 관리자가 준 오늘 추가분."""
+    s = get_settings()
+    base = s.vip_daily_like_limit if is_vip(user) else base_like_limit(user)
     return base + bonus_likes_today(user)
 
 

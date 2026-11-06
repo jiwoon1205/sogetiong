@@ -16,6 +16,7 @@
   다 쓰면(또는 이용권이 끝나면) 추천·PASS·대화는 되고 LIKE만 막힌다. 이용권을 사면 체험은 끝난다.
 - 가격 (2026-10-06): 정가 4,000원, MEMBERSHIP_DISCOUNT_UNTIL 전에는 할인가 3,000원.
 - 여성 회원 무료 (2026-11-07, 상시, 설정 FEMALE_FREE): 여성은 기본 이용권 없이 항상 기본 이용권 혜택.
+  단 하루 좋아요는 FEMALE_DAILY_LIKE_LIMIT(3)개 (vip_service.base_like_limit).
   기본 이용권은 살 수 없고(API에서 막음), 그래도 들어온 기본 이용권 결제·쌓아 둔 일수는 VIP 일수로 바꿔 준다.
   VIP는 VIP_PRICE_FEMALE원 (vip_service.price).
 """
