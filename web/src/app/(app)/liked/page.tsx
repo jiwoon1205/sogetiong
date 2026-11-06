@@ -6,7 +6,7 @@ import { PaymentPanel } from "@/components/PaymentStep";
 import { ProfileCard } from "@/components/ProfileCard";
 import { Button, Notice, PageTitle, Spinner } from "@/components/ui";
 import { ApiError, api, errorMessage } from "@/lib/api";
-import { timeAgo, untilDay, shortSchoolName } from "@/lib/format";
+import { untilDay, shortSchoolName } from "@/lib/format";
 import { usePolling } from "@/lib/polling";
 import { markMatchSeen } from "@/lib/seenMatches";
 import { useSession } from "@/lib/session";
@@ -132,10 +132,12 @@ function LikedList({ vip }: { vip: VipInfo }) {
                   <span className="ml-2 text-[13px] text-ink-soft">{[r.age ? `만 ${r.age}세` : null, r.university ? [shortSchoolName(r.university), r.campus].filter(Boolean).join(" ") : r.campus].filter(Boolean).join(" · ")}</span>
                   {r.passed && <span className="ml-2 rounded bg-paper-deep px-1.5 py-0.5 text-[11.5px] text-ink-soft">넘김</span>}
                 </span>
-                <span className="shrink-0 text-[12.5px] text-ink-faint">
-                  {(r.like_count ?? 1) > 1 && <b className="mr-1.5 font-semibold text-brick">💌 {r.like_count}번</b>}
-                  {timeAgo(r.liked_at)}
-                </span>
+                {/* 좋아요를 받은 날짜는 보여주지 않는다 (2026-11-07). 여러 번 받았으면 횟수만 */}
+                {(r.like_count ?? 1) > 1 && (
+                  <span className="shrink-0 text-[12.5px]">
+                    <b className="font-semibold text-brick">💌 {r.like_count}번</b>
+                  </span>
+                )}
               </button>
             </li>
           ))}
