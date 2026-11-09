@@ -89,6 +89,10 @@ class Settings(BaseSettings):
     # 같은 사람에게 이 횟수째 좋아요를 보내면 바로 매칭 (슈퍼 라이크와 같은 효과)
     like_repeat_hours: int = 48
     like_repeat_match_count: int = 5
+    # ⑥ 내가 이미 좋아요를 이 횟수 이상 보낸 사람은 추천에 덜 나온다 (2026-11-09).
+    # 다음 좋아요(5번째)가 바로 매칭이라, 받는 사람이 원하지 않는 매칭을 당할 기회를 줄인다. 1이면 끔
+    rec_sent_many_count: int = 4
+    rec_sent_many_factor: float = 0.5  # 이 배수를 곱한다 (0.5 = 뽑힐 가능성 절반)
     # ④ 취향 점수 안의 비중. 2026-10-24: 관심사 0.60→0.80, 완성도 0.25→0 (⑤ 프로필 정성으로 옮김), MBTI 0.15→0.20
     weight_interest: float = 0.80
     weight_completeness: float = 0.0

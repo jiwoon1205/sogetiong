@@ -237,6 +237,17 @@ def test_liked_me_appears_more_often():
     assert fan_first / 4000 > 0.6  # 2 대 1
 
 
+def test_sent_four_likes_appears_half_as_often():
+    """2026-11-09: 내가 좋아요를 4번 보낸 사람(다음이면 바로 매칭)은 가중치 절반 → 1 대 2."""
+    viewer = person()
+    chased, other = person(), person()
+    assert weight(viewer, chased, W, sent_count=4) == weight(viewer, other, W) * 0.5
+    assert weight(viewer, chased, W, sent_count=3) == weight(viewer, other, W)  # 3번까지는 그대로
+    rng = random.Random(7)
+    chased_first = sum(draw(viewer, [other, chased], W, rng, None, {chased.user_id: 4})[0] is chased for _ in range(4000))
+    assert 0.25 < chased_first / 4000 < 0.42  # 기대값 1/3
+
+
 def test_draw_still_needs_hard_filters():
     viewer = person(want="MALE")
     fan = person(gender="FEMALE")  # 원하는 성별이 아님

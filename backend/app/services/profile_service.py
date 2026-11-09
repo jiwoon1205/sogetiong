@@ -470,6 +470,8 @@ def matching_weights():
         liked_full=s.rec_liked_full,
         taste_max=s.rec_taste_max,
         effort_max=s.rec_effort_max,
+        sent_many_count=s.rec_sent_many_count,
+        sent_many_factor=s.rec_sent_many_factor,
     )
 
 

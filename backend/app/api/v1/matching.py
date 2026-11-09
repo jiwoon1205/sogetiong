@@ -109,19 +109,21 @@ def discover(
     like_limit = vip_service.daily_like_limit(current.user)
     access = membership_service.like_access(current.user)
     by_user = {p.user_id: p for p in profiles}
-    # 가중치 추첨 (2026-10-24): 등급 × 활동 × 나를 좋아요한 횟수 × 취향 → matching_service.rank
+    # 내가 이 사람들에게 보낸 좋아요 횟수 (2026-11-09: 추첨 전에 전부 구함 → 4번 이상 보낸 사람은 덜 나오게)
+    sent = profile_service.sent_like_counts(db, current.id, list(by_user))
+    # 가중치 추첨 (2026-10-24): 등급 × 활동 × 나를 좋아요한 횟수 × 취향 × 정성 × 내가 보낸 횟수 → matching_service.rank
     ranked = matching_service.rank(
         viewer,
         profile_service.people_from_profiles(db, profiles),
         profile_service.matching_weights(),
         limit or settings.discover_page_size,
         liked_counts=profile_service.liked_counts(db, current.id),
+        sent_counts=sent,
         super_vip_slots=settings.super_vip_slots,  # 슈퍼 VIP는 페이지 맨 앞 (2026-10-12)
     )
     # 카드에는 외모 등급도, "나를 LIKE했는지"도 들어가지 않는다 (build_cards가 보내는 항목만 나감)
     cards = profile_service.build_cards(db, [by_user[p.user_id] for p in ranked])
-    # 내가 이 사람에게 보낸 좋아요 횟수 (내 행동이라 보여줘도 된다): "좋아요 n번 보냈어요 · 5번이면 바로 매칭" 안내용
-    sent = profile_service.sent_like_counts(db, current.id, [p.user_id for p in ranked])
+    # 내가 보낸 좋아요 횟수는 카드에도 보여준다 (내 행동이라 보여줘도 된다): "좋아요 n번 보냈어요 · 5번이면 바로 매칭" 안내용
     for card, person in zip(cards, ranked):
         card["my_likes"] = sent.get(person.user_id, 0)
     # 후보가 없을 때 조건을 자동으로 넓히지 않는다 (설계도 §56, §57)

@@ -79,6 +79,9 @@ class Weights:
     liked_full: int = 4
     taste_max: float = 2.0
     effort_max: float = 2.0
+    # ⑥ 내가 좋아요를 sent_many_count번 이상 보낸 사람 → sent_many_factor배 (2026-11-09, 기본 4번 이상이면 절반)
+    sent_many_count: int = 4
+    sent_many_factor: float = 0.5
 
 
 # ---------- Stage 1: 조건 확인 ----------
@@ -267,7 +270,7 @@ def taste(viewer: Person, candidate: Person, weights: Weights) -> float:
     return min(max(value, 0.0), 1.0)
 
 
-def weight(viewer: Person, candidate: Person, weights: Weights, liked_count: int = 0) -> float:
+def weight(viewer: Person, candidate: Person, weights: Weights, liked_count: int = 0, sent_count: int = 0) -> float:
     """추첨 가중치 = ① 등급 × ② 활동 × ③ 나를 좋아요한 횟수 × ④ 취향 × ⑤ 프로필 정성 (2026-10-24). 항상 0보다 크다."""
     gap = tier_gap(viewer.tier, candidate.tier)
     tier = {0: weights.tier_same, 1: weights.tier_one}.get(gap, weights.tier_two)
@@ -276,7 +279,9 @@ def weight(viewer: Person, candidate: Person, weights: Weights, liked_count: int
     liked = 1 + (weights.liked_max - 1) * min(max(liked_count, 0), full) / full
     pref = 1 + (weights.taste_max - 1) * taste(viewer, candidate, weights)
     care = 1 + (weights.effort_max - 1) * effort(candidate)
-    return max(tier, 0.01) * max(activity, 0.01) * max(liked, 0.01) * max(pref, 0.01) * max(care, 0.01)
+    # ⑥ 내가 이미 좋아요를 많이 보낸 사람 (다음 좋아요면 바로 매칭) → 덜 나오게 (2026-11-09)
+    sent = weights.sent_many_factor if weights.sent_many_count > 0 and sent_count >= weights.sent_many_count else 1.0
+    return max(tier, 0.01) * max(activity, 0.01) * max(liked, 0.01) * max(pref, 0.01) * max(care, 0.01) * max(sent, 0.01)
 
 
 def draw(
@@ -285,6 +290,7 @@ def draw(
     weights: Weights,
     rng: random.Random | None = None,
     liked_counts: dict[uuid.UUID, int] | None = None,
+    sent_counts: dict[uuid.UUID, int] | None = None,
 ) -> list[Person]:
     """조건이 맞는 사람을 가중치에 비례한 확률로 순서대로 뽑는다 (가중치 랜덤 비복원 추출).
 
@@ -293,8 +299,12 @@ def draw(
     """
     rng = rng or random.Random()
     counts = liked_counts or {}
+    sent = sent_counts or {}
     eligible = [c for c in candidates if mutually_compatible(viewer, c)]
-    keyed = [(rng.random() ** (1.0 / weight(viewer, c, weights, counts.get(c.user_id, 0))), c) for c in eligible]
+    keyed = [
+        (rng.random() ** (1.0 / weight(viewer, c, weights, counts.get(c.user_id, 0), sent.get(c.user_id, 0))), c)
+        for c in eligible
+    ]
     keyed.sort(key=lambda kc: kc[0], reverse=True)
     return [c for _, c in keyed]
 
@@ -306,12 +316,13 @@ def rank(
     limit: int,
     *,
     liked_counts: dict[uuid.UUID, int] | None = None,
+    sent_counts: dict[uuid.UUID, int] | None = None,
     rng: random.Random | None = None,
     super_vip_slots: int = 0,
 ) -> list[Person]:
     """추천 한 페이지: 가중치 추첨 → 슈퍼 VIP 맨 앞."""
     rng = rng or random.Random()
-    ordered = draw(viewer, candidates, weights, rng, liked_counts)
+    ordered = draw(viewer, candidates, weights, rng, liked_counts, sent_counts)
     return _put_super_vip_first(ordered, ordered[:limit], limit, super_vip_slots, rng)
 
 
