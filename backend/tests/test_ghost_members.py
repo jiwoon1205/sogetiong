@@ -17,7 +17,7 @@ def test_activity_raises_chance_but_ghost_is_never_zero():
     assert w.activity_max == 2.0  # 매일 오는 사람은 유령회원의 2배까지
 
 
-def test_ghost_member_shows_and_is_not_always_last(sent_codes, db):
+def test_ghost_member_shows_and_is_not_always_last(sent_codes, db, new_draw_each_call):
     admin = admin_login(db)
     viewer = ready_user(sent_codes, db, admin, "v@hufs.ac.kr", gender="MALE", want="FEMALE")
     active = ready_user(sent_codes, db, admin, "act@hufs.ac.kr", gender="FEMALE", want="MALE")

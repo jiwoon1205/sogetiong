@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.core.rate_limit import enforce_rate_limit
-from app.core.time import as_utc, utcnow
+from app.core.time import as_utc, kst_today, utcnow
 from app.db.session import get_db
 from app.deps import CurrentUser, get_current_user
 from app.models.matching import Like, Match, MatchingPreference, MatchRead, Message, Report
@@ -120,6 +120,9 @@ def discover(
         liked_counts=profile_service.liked_counts(db, current.id),
         sent_counts=sent,
         super_vip_slots=settings.super_vip_slots,  # 슈퍼 VIP는 페이지 맨 앞 (2026-10-12)
+        # 하루 동안 고정 (2026-11-09): 같은 사람·같은 한국 날짜면 새로고침해도 같은 순서. 자정에 새로 뽑는다.
+        # 좋아요·넘기기한 사람은 빠지고 그다음 사람이 채워진다 (다른 사람 순서는 그대로)
+        seed=f"{current.id}:{kst_today().isoformat()}",
     )
     # 카드에는 외모 등급도, "나를 LIKE했는지"도 들어가지 않는다 (build_cards가 보내는 항목만 나감)
     cards = profile_service.build_cards(db, [by_user[p.user_id] for p in ranked])

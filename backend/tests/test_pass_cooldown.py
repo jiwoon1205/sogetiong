@@ -55,7 +55,7 @@ def test_passing_again_restarts_the_48_hours(sent_codes, db):
     assert other.profile_id not in discover_ids(me)
 
 
-def test_returning_profiles_are_drawn_like_new_ones(sent_codes, db):
+def test_returning_profiles_are_drawn_like_new_ones(sent_codes, db, new_draw_each_call):
     """2026-10-24 재설계: 다시 나온 사람(PASS 48시간 뒤)도 처음 보는 사람과 같은 가중치로 추첨된다."""
     admin = admin_login(db)
     me = ready_user(sent_codes, db, admin, "me@hufs.ac.kr", gender="FEMALE", want="MALE", tier="HIGH")

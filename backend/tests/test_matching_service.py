@@ -248,6 +248,30 @@ def test_sent_four_likes_appears_half_as_often():
     assert 0.25 < chased_first / 4000 < 0.42  # 기대값 1/3
 
 
+def test_same_seed_gives_same_page_all_day():
+    """2026-11-09: 같은 seed(보는 사람 + 날짜)면 새로고침해도 같은 순서, 날이 바뀌면 다시 뽑는다."""
+    viewer = person()
+    pool = [person() for _ in range(15)]
+    day1 = [p.user_id for p in rank(viewer, pool, W, 5, seed="me:2026-11-09")]
+    assert all([p.user_id for p in rank(viewer, pool, W, 5, seed="me:2026-11-09")] == day1 for _ in range(5))
+    # 한 사람을 빼도(좋아요·넘기기) 나머지 순서는 그대로, 빈자리는 다음 사람이 채움
+    rest = [p for p in pool if p.user_id != day1[0]]
+    after = [p.user_id for p in rank(viewer, rest, W, 5, seed="me:2026-11-09")]
+    assert after[:4] == day1[1:]
+    # 날이 바뀌면 다시 뽑는다 (여러 날 중 적어도 하루는 다름)
+    assert any([p.user_id for p in rank(viewer, pool, W, 5, seed=f"me:2026-11-{d}")] != day1 for d in range(10, 20))
+
+
+def test_seeded_draw_still_follows_weights():
+    """seed를 써도 가중치 비율은 그대로 (여러 사람·여러 날 평균)."""
+    viewer = person()
+    fan, other = person(), person()
+    fan_first = sum(
+        draw(viewer, [other, fan], W, None, {fan.user_id: 4}, None, f"v{i}")[0] is fan for i in range(4000)
+    )
+    assert 0.58 < fan_first / 4000 < 0.75  # 기대값 2/3
+
+
 def test_draw_still_needs_hard_filters():
     viewer = person(want="MALE")
     fan = person(gender="FEMALE")  # 원하는 성별이 아님

@@ -110,7 +110,7 @@ def test_tier_is_never_sent_to_users(sent_codes, db):
         assert "tier" not in text and "HIGH" not in text, url
 
 
-def test_every_tier_is_drawn(sent_codes, db):
+def test_every_tier_is_drawn(sent_codes, db, new_draw_each_call):
     """2026-10-24 재설계: 등급이 같으면 더 자주 나오지만(가중치), 다른 등급도 추첨 대상이라 맨 앞에 나올 수 있다."""
     admin = admin_login(db)
     viewer = ready_user(sent_codes, db, admin, "v@hufs.ac.kr", gender="FEMALE", want="MALE", tier="HIGH")
@@ -266,3 +266,16 @@ def test_age_any_user_is_still_filtered_by_the_other_sides_range(sent_codes, db)
     # 추천에 안 나온 사람에게 ID로 직접 LIKE해도 막힌다
     r = older.post("/api/v1/likes", json={"profile_id": young_only.profile_id})
     assert r.status_code == 404
+
+
+def test_discover_is_fixed_for_the_day(sent_codes, db):
+    """2026-11-09: 같은 날에는 새로고침해도 추천 순서가 같다. 넘긴 사람만 빠지고 나머지 순서는 그대로."""
+    admin = admin_login(db)
+    viewer = ready_user(sent_codes, db, admin, "v@hufs.ac.kr", gender="FEMALE")
+    for i in range(6):
+        ready_user(sent_codes, db, admin, f"m{i}@hufs.ac.kr", gender="MALE")
+    first = discover_ids(viewer)
+    assert len(first) == 6
+    assert all(discover_ids(viewer) == first for _ in range(5))
+    assert viewer.post("/api/v1/passes", json={"profile_id": first[0]}).status_code == 200
+    assert discover_ids(viewer) == first[1:]

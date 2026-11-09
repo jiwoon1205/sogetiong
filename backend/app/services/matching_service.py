@@ -17,6 +17,7 @@ Stage 3 — 슈퍼 VIP는 페이지 맨 앞 (최대 SUPER_VIP_SLOTS명).
 DB에서 데이터를 모으는 부분은 app/services/profile_service.py에 있다.
 """
 
+import hashlib
 import random
 import uuid
 from dataclasses import dataclass, field
@@ -284,6 +285,15 @@ def weight(viewer: Person, candidate: Person, weights: Weights, liked_count: int
     return max(tier, 0.01) * max(activity, 0.01) * max(liked, 0.01) * max(pref, 0.01) * max(care, 0.01) * max(sent, 0.01)
 
 
+def seeded_uniform(seed: str, user_id: uuid.UUID) -> float:
+    """(seed, 상대)마다 항상 같은 0~1 사이 값 (0과 1은 안 나옴). 2026-11-09: 하루 동안 추천 고정용.
+
+    상대마다 따로 정해지므로, 한 사람이 빠지거나(좋아요·넘기기) 새로 들어와도 다른 사람의 값은 그대로다.
+    """
+    digest = hashlib.sha256(f"{seed}:{user_id}".encode()).digest()
+    return (int.from_bytes(digest[:8], "big") + 1) / (2**64 + 2)
+
+
 def draw(
     viewer: Person,
     candidates: list[Person],
@@ -291,18 +301,24 @@ def draw(
     rng: random.Random | None = None,
     liked_counts: dict[uuid.UUID, int] | None = None,
     sent_counts: dict[uuid.UUID, int] | None = None,
+    seed: str | None = None,
 ) -> list[Person]:
     """조건이 맞는 사람을 가중치에 비례한 확률로 순서대로 뽑는다 (가중치 랜덤 비복원 추출).
 
     키 = 난수^(1/가중치) 가 큰 순서 (Efraimidis–Spirakis). 가중치가 2배면 앞에 나올 확률도 그만큼 높다.
-    새로고침할 때마다 다시 뽑으므로 가중치가 낮은 사람도 가끔 앞에 나온다.
+    seed가 없으면 부를 때마다 다시 뽑는다. seed(보는 사람 + 한국 날짜)가 있으면 그날 하루는
+    새로고침해도 같은 결과 (2026-11-09). 날이 바뀌면 다시 뽑으므로 가중치가 낮은 사람도 가끔 앞에 나온다.
     """
     rng = rng or random.Random()
     counts = liked_counts or {}
     sent = sent_counts or {}
     eligible = [c for c in candidates if mutually_compatible(viewer, c)]
+
+    def u(c: Person) -> float:
+        return seeded_uniform(seed, c.user_id) if seed is not None else rng.random()
+
     keyed = [
-        (rng.random() ** (1.0 / weight(viewer, c, weights, counts.get(c.user_id, 0), sent.get(c.user_id, 0))), c)
+        (u(c) ** (1.0 / weight(viewer, c, weights, counts.get(c.user_id, 0), sent.get(c.user_id, 0))), c)
         for c in eligible
     ]
     keyed.sort(key=lambda kc: kc[0], reverse=True)
@@ -319,10 +335,11 @@ def rank(
     sent_counts: dict[uuid.UUID, int] | None = None,
     rng: random.Random | None = None,
     super_vip_slots: int = 0,
+    seed: str | None = None,
 ) -> list[Person]:
-    """추천 한 페이지: 가중치 추첨 → 슈퍼 VIP 맨 앞."""
-    rng = rng or random.Random()
-    ordered = draw(viewer, candidates, weights, rng, liked_counts, sent_counts)
+    """추천 한 페이지: 가중치 추첨 → 슈퍼 VIP 맨 앞. seed가 있으면 같은 seed 동안 결과가 고정된다."""
+    rng = rng or (random.Random(seed) if seed is not None else random.Random())
+    ordered = draw(viewer, candidates, weights, rng, liked_counts, sent_counts, seed)
     return _put_super_vip_first(ordered, ordered[:limit], limit, super_vip_slots, rng)
 
 

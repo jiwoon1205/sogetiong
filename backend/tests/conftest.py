@@ -299,3 +299,16 @@ def discover_ids(client: UserClient) -> list[str]:
     r = client.get("/api/v1/discover")
     assert r.status_code == 200, r.text
     return [card["profile_id"] for card in r.json()["profiles"]]
+
+
+@pytest.fixture
+def new_draw_each_call(monkeypatch):
+    """추천은 하루 동안 고정된다 (2026-11-09). 여러 번 불러 '추첨 확률'을 보는 테스트는
+    부를 때마다 날짜가 하루씩 바뀐 것처럼 해서 매번 새로 뽑게 한다."""
+    import itertools
+    from datetime import date, timedelta as _td
+
+    from app.api.v1 import matching as matching_api
+
+    days = itertools.count()
+    monkeypatch.setattr(matching_api, "kst_today", lambda *a, **k: date(2030, 1, 1) + _td(days=next(days)))
