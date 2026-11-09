@@ -10,7 +10,7 @@ export const BUSINESS = {
   registrationNumber: "570-22-02299",
   // 간이과세자 등 신고 면제 대상 (2026-10-06). 신고하면 "제2026-서울구로-0000호" 같은 번호로 바꾼다
   mailOrderNumber: "신고 면제 대상",
-  address: "서울 구로구 공원로 40",
+  address: "서울 구로구 구로중앙로34길 77",
   phone: "070-7692-5737",
   email: "support@private-matching.com",
   hosting: "Google Cloud",
