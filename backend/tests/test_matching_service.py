@@ -288,4 +288,4 @@ def test_default_weights_sum_to_one():
     # 다섯 요소 모두 최대 2배 (2026-10-24 "고르게")
     assert d["rec_tier_same"] == d["rec_activity_max"] == d["rec_liked_max"] == d["rec_taste_max"] == d["rec_effort_max"] == 2.0
     assert d["weight_completeness"] == 0.0  # 완성도는 ⑤ 프로필 정성으로 옮김
-    assert d["like_repeat_hours"] == 48 and d["like_repeat_match_count"] == 5
+    assert d["like_repeat_hours"] == 72 and d["like_repeat_match_count"] == 5

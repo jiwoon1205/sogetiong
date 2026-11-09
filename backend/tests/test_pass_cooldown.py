@@ -83,17 +83,17 @@ def test_like_after_returning_counts_toward_daily_limit(sent_codes, db):
     assert me.post("/api/v1/likes", json={"profile_id": targets[5].profile_id}).status_code == 429
 
 
-def test_liked_profile_comes_back_after_48_hours_and_likes_add_up(sent_codes, db):
-    """2026-10-24 재설계: 좋아요한 사람과 48시간 동안 매칭이 안 되면 다시 나오고, 다시 좋아요하면 횟수가 쌓인다."""
+def test_liked_profile_comes_back_after_72_hours_and_likes_add_up(sent_codes, db):
+    """2026-10-24 재설계: 좋아요한 사람과 72시간(2026-11-09 전에는 48시간) 동안 매칭이 안 되면 다시 나오고, 다시 좋아요하면 횟수가 쌓인다."""
     admin = admin_login(db)
     me = ready_user(sent_codes, db, admin, "me@hufs.ac.kr", gender="FEMALE", want="MALE")
     other = ready_user(sent_codes, db, admin, "o@hufs.ac.kr", gender="MALE", want="FEMALE")
 
     me.post("/api/v1/likes", json={"profile_id": other.profile_id})
-    _age_actions(db, me, 47)
+    _age_actions(db, me, 71)
     assert other.profile_id not in discover_ids(me)
     assert me.post("/api/v1/likes", json={"profile_id": other.profile_id}).status_code == 404
-    _age_actions(db, me, 2)  # 합계 49시간
+    _age_actions(db, me, 2)  # 합계 73시간
     cards = me.get("/api/v1/discover").json()["profiles"]
     card = next(c for c in cards if c["profile_id"] == other.profile_id)
     assert card["my_likes"] == 1  # "좋아요 1번 보냈어요" 안내용
@@ -102,7 +102,7 @@ def test_liked_profile_comes_back_after_48_hours_and_likes_add_up(sent_codes, db
     row = db.query(Like).filter(Like.from_user_id == _user_id(db, me)).one()
     db.refresh(row)
     assert row.like_count == 2 and row.action == "LIKE"
-    assert other.profile_id not in discover_ids(me)  # 다시 48시간 동안 안 나옴
+    assert other.profile_id not in discover_ids(me)  # 다시 72시간 동안 안 나옴
 
 
 def test_passed_person_can_be_liked_only_after_48_hours(sent_codes, db):
@@ -142,7 +142,7 @@ def test_passes_made_before_this_update_also_come_back(sent_codes, db):
 # ---------- 좋아요 쌓기 (2026-10-24 추천 재설계) ----------
 
 def _like_again(db, me, other):
-    _age_actions(db, me, 49)
+    _age_actions(db, me, 73)  # 좋아요 뒤 다시 나오기까지 72시간 (2026-11-09)
     r = me.post("/api/v1/likes", json={"profile_id": other.profile_id})
     assert r.status_code == 200, r.text
     return r.json()
