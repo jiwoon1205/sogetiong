@@ -49,7 +49,7 @@ export function RelationshipGoalScreen({ onDone }: { onDone: () => Promise<void>
       <PageTitle
         eyebrow="프로필 업데이트"
         title="어떤 관계를 찾고 있나요?"
-        desc="프로필에 '내가 찾는 관계'가 새로 생겼어요. 골라 주셔야 서비스를 계속 이용할 수 있어요. 나중에 내 프로필에서 바꿀 수 있어요."
+        desc="프로필에 '내가 찾는 관계'가 새로 생겼어요. 골라 주셔야 서비스를 계속 이용할 수 있어요. 고른 뒤 3일이 지나면 내 프로필에서 바꿀 수 있어요."
       />
 
       <form onSubmit={submit} className="space-y-6">

@@ -209,15 +209,48 @@ def test_relationship_goal(sent_codes, db):
     a = ready_user(sent_codes, db, admin, "a@hufs.ac.kr", gender="FEMALE")
     b = ready_user(sent_codes, db, admin, "b@hufs.ac.kr", gender="MALE")
     assert a.get("/api/v1/me/profile").json()["relationship_goal"] is None  # 예전 회원은 비어 있음
-    for goal in ("SERIOUS", "FRIEND", "CASUAL"):
-        r = a.patch("/api/v1/me/profile", json={"relationship_goal": goal})
-        assert r.status_code == 200 and r.json()["relationship_goal"] == goal
+    r = a.patch("/api/v1/me/profile", json={"relationship_goal": "CASUAL"})
+    assert r.status_code == 200 and r.json()["relationship_goal"] == "CASUAL"
     assert a.patch("/api/v1/me/profile", json={"relationship_goal": "FWB"}).status_code == 422
     # 다른 항목만 고쳐도 그대로 남는다
     a.patch("/api/v1/me/profile", json={"bio": "안녕하세요"})
     assert a.get("/api/v1/me/profile").json()["relationship_goal"] == "CASUAL"
     cards = b.get("/api/v1/discover").json()["profiles"]
     assert [c["relationship_goal"] for c in cards if c["profile_id"] == a.profile_id] == ["CASUAL"]
+
+
+def test_relationship_goal_change_cooldown(sent_codes, db):
+    """2026-11-11: 찾는 관계는 고르거나 바꾼 뒤 3일 동안 다시 못 바꾼다. 같은 값으로 저장하는 건 괜찮다."""
+    from datetime import timedelta
+
+    from app.core.time import utcnow
+    from app.models.profile import PublicProfile
+
+    admin = admin_login(db)
+    a = ready_user(sent_codes, db, admin, "a@hufs.ac.kr")
+    assert a.get("/api/v1/me/profile").json()["relationship_goal_next_change_at"] is None
+    # 처음 고르기 → 바로 됨, 이때부터 3일
+    r = a.patch("/api/v1/me/profile", json={"relationship_goal": "SERIOUS"})
+    assert r.status_code == 200 and r.json()["relationship_goal_next_change_at"] is not None
+    assert r.json()["relationship_goal_change_days"] == 3
+    # 3일 안에 바꾸기 → 막힘 (언제부터 되는지 알려줌)
+    r = a.patch("/api/v1/me/profile", json={"relationship_goal": "CASUAL"})
+    assert r.status_code == 409 and "3일에 한 번" in r.json()["detail"] and "부터 바꿀 수 있어요" in r.json()["detail"]
+    # 같은 값 + 다른 항목 저장은 됨 (프로필 저장할 때 항상 같이 보냄)
+    r = a.patch("/api/v1/me/profile", json={"relationship_goal": "SERIOUS", "bio": "안녕하세요 반가워요"})
+    assert r.status_code == 200 and r.json()["relationship_goal"] == "SERIOUS"
+    # 비우기는 안 됨
+    assert a.patch("/api/v1/me/profile", json={"relationship_goal": None}).status_code == 400
+    # 3일이 지나면 바꿀 수 있음
+    import uuid
+
+    p = db.query(PublicProfile).filter(PublicProfile.id == uuid.UUID(a.profile_id)).one()
+    p.relationship_goal_changed_at = utcnow() - timedelta(days=3, minutes=1)
+    db.commit()
+    assert a.get("/api/v1/me/profile").json()["relationship_goal_next_change_at"] is None
+    r = a.patch("/api/v1/me/profile", json={"relationship_goal": "CASUAL"})
+    assert r.status_code == 200 and r.json()["relationship_goal"] == "CASUAL"
+    assert a.patch("/api/v1/me/profile", json={"relationship_goal": "FRIEND"}).status_code == 409  # 다시 3일
 
 
 def test_old_members_must_pick_relationship_goal(sent_codes, db):

@@ -64,6 +64,10 @@ export type MyProfile = Card & {
   campus_id: string;
   /** 학교가 둘 이상 열리면 캠퍼스는 항상 공개 → "캠퍼스 공개" 선택지를 숨긴다 (2026-10-24) */
   campus_always_public?: boolean;
+  /** 찾는 관계를 다시 바꿀 수 있는 시각 (2026-11-11). 지금 바꿀 수 있으면 null */
+  relationship_goal_next_change_at?: string | null;
+  /** 찾는 관계 변경 쿨타임 (일) */
+  relationship_goal_change_days?: number;
 };
 
 export type Me = {

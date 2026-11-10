@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.core.rate_limit import enforce_rate_limit
 from app.core.security import verify_password
-from app.core.time import as_utc, kst_day_start, utcnow
+from app.core.time import KST, as_utc, kst_day_start, utcnow
 from app.db.session import get_db
 from app.deps import CurrentUser, get_current_user
 from app.models.matching import Match, MatchingPreference, PreferredCampus
@@ -230,7 +230,20 @@ def get_my_profile(current: CurrentUser = Depends(get_current_user), db: Session
     # 학교가 둘 이상 열리면 캠퍼스는 항상 공개 → 화면에서 "캠퍼스 공개" 선택지를 숨긴다 (2026-10-23)
     card["campus_always_public"] = profile_service.multi_school(db)
     card["department_locked"] = profile.department_id is not None
+    # 찾는 관계를 다시 바꿀 수 있는 시각 (2026-11-11). 지금 바꿀 수 있으면 null
+    nxt = _goal_next_change(profile)
+    card["relationship_goal_next_change_at"] = nxt.isoformat() if nxt and nxt > utcnow() else None
+    card["relationship_goal_change_days"] = get_settings().relationship_goal_change_days
     return card
+
+
+def _goal_next_change(profile: PublicProfile):
+    """찾는 관계를 다음에 바꿀 수 있는 시각 (마지막으로 고른 시각 + N일). 기록이 없으면 None = 바로 가능."""
+    days = get_settings().relationship_goal_change_days
+    changed = as_utc(profile.relationship_goal_changed_at)
+    if days <= 0 or changed is None:
+        return None
+    return changed + timedelta(days=days)
 
 
 @router.patch("/me/profile")
@@ -264,9 +277,24 @@ def update_my_profile(
     if payload.show_campus is not None:
         profile.show_campus = payload.show_campus
     # 얼굴상·키: 목록 밖 값이나 범위 밖 키는 위 ProfileUpdateRequest가 422로 막는다
-    for field in ("face_type", "height_cm", "relationship_goal"):
+    for field in ("face_type", "height_cm"):
         if field in data:
             setattr(profile, field, data[field])
+    # 내가 찾는 관계 (2026-11-11): 비울 수 없고, 고르거나 바꾼 뒤 N일(기본 3일) 동안은 다시 못 바꾼다.
+    # 같은 값을 다시 보내는 것(프로필 저장할 때마다 함께 보냄)은 바꾼 것이 아니라 그대로 통과.
+    if "relationship_goal" in data and data["relationship_goal"] != profile.relationship_goal:
+        if data["relationship_goal"] is None:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="내가 찾는 관계를 골라주세요.")
+        nxt = _goal_next_change(profile)
+        if profile.relationship_goal is not None and nxt is not None and utcnow() < nxt:
+            t = nxt.astimezone(KST)
+            days = get_settings().relationship_goal_change_days
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"찾는 관계는 {days}일에 한 번 바꿀 수 있어요. {t.month}월 {t.day}일 {t.hour}시 {t.minute:02d}분부터 바꿀 수 있어요.",
+            )
+        profile.relationship_goal = data["relationship_goal"]
+        profile.relationship_goal_changed_at = utcnow()
     for field in ("mbti", "bio", "ideal_type"):
         if field in data:
             value = data[field]

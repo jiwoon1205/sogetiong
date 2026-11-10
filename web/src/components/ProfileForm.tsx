@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Button, Field, Input, Notice, Segmented, Select, Tag, Textarea } from "@/components/ui";
 import { api, errorMessage } from "@/lib/api";
+import { dateTime } from "@/lib/format";
 import { mailto, useSupportEmail, type CampusWithDepts } from "@/lib/catalog";
 import { FACE_TYPES, HEIGHT_MAX_CM, HEIGHT_MIN_CM, RELATIONSHIP_GOALS, type MyProfile } from "@/lib/types";
 import { BIO_FULL, IDEAL_FULL, INTEREST_MAX, effortChars } from "@/lib/profileEffort";
@@ -226,12 +227,30 @@ export function ProfileForm({
         </p>
         <div className="flex flex-wrap gap-2">
           {RELATIONSHIP_GOALS.map((g) => (
-            <Tag key={g.value} active={p.relationship_goal === g.value} onClick={() => set("relationship_goal", g.value)}>
+            <Tag
+              key={g.value}
+              active={p.relationship_goal === g.value}
+              onClick={() => {
+                // 바꾼 뒤 3일 동안은 다시 못 바꾼다 (2026-11-11). 서버도 막는다
+                if (p.relationship_goal_next_change_at && g.value !== p.relationship_goal) {
+                  return setError(`찾는 관계는 ${dateTime(p.relationship_goal_next_change_at)}부터 바꿀 수 있어요.`);
+                }
+                set("relationship_goal", g.value);
+              }}
+            >
               {g.label}
             </Tag>
           ))}
         </div>
-        <p className="text-[12.5px] leading-relaxed text-ink-faint">다른 학생 카드에 보여요. 추천에는 영향이 없어요.</p>
+        <p className="text-[12.5px] leading-relaxed text-ink-faint">
+          다른 학생 카드에 보여요. 추천에는 영향이 없어요. 고르거나 바꾼 뒤 {p.relationship_goal_change_days ?? 3}일 동안은 다시 바꿀 수 없어요.
+          {p.relationship_goal_next_change_at && (
+            <>
+              {" "}
+              <b className="font-medium text-ink-soft">{dateTime(p.relationship_goal_next_change_at)}부터 바꿀 수 있어요.</b>
+            </>
+          )}
+        </p>
         {/* 2026-10-24 사용자 결정: 캐주얼한 만남을 고르지 않고 불건전한 만남을 요구하다 신고로 확인되면 영구 정지 */}
         <div className="rounded-card border border-brick/30 bg-brick-wash px-4 py-3 text-[12.5px] leading-relaxed text-ink-soft">
           <b className="font-semibold text-brick-deep">⚠️ 꼭 읽어주세요</b>

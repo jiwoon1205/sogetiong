@@ -1,7 +1,7 @@
 import uuid
 from datetime import date, datetime
 
-from sqlalchemy import JSON, Boolean, Date, ForeignKey, Integer, String, Text, UniqueConstraint, Uuid
+from sqlalchemy import JSON, Boolean, Date, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, Uuid
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -34,6 +34,8 @@ class PublicProfile(Base):
     # 내가 찾는 관계 (2026-10-24): SERIOUS 진지한 연애 / FRIEND 대학교 친구 / CASUAL 캐주얼한 만남.
     # 카드에 보이기만 하고 추천·매칭에는 쓰지 않는다. None = 아직 안 고름 (예전 회원)
     relationship_goal: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    # 찾는 관계를 마지막으로 고른·바꾼 시각 (2026-11-11, 0032). 이때부터 RELATIONSHIP_GOAL_CHANGE_DAYS일 동안 다시 못 바꿈
+    relationship_goal_changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     profile_status: Mapped[str] = mapped_column(String(30), default="ACTIVE", nullable=False)
     created_at: Mapped[datetime] = created_at()
     updated_at: Mapped[datetime] = updated_at()
