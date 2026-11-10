@@ -95,6 +95,8 @@ export type Me = {
   super_likes?: SuperLikes;
   /** 설문 (2026-10-05). pending = 설문을 받는 중이고 아직 안 답함 → 설문 화면만 보여준다 */
   survey?: { pending: boolean };
+  /** 내가 찾는 관계를 아직 안 고른 예전 회원 (2026-11-11) → 고르는 화면만 보여준다 */
+  relationship_goal_required?: boolean;
   /** 아직 안 본 한 번짜리 공지 이름 (2026-10-05). 없으면 null */
   announcement?: string | null;
 };

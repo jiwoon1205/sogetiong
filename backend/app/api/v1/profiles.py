@@ -62,6 +62,18 @@ def _profile_done(db: Session, current: CurrentUser) -> bool:
     return profile is not None and profile.department_id is not None and profile.show_campus is not None
 
 
+def _needs_relationship_goal(db: Session, current: CurrentUser) -> bool:
+    """'내가 찾는 관계'(2026-10-24) 전에 프로필을 다 쓴 회원 → 꼭 골라야 서비스를 쓸 수 있다 (2026-11-11).
+    프로필을 아직 다 쓰지 않은 사람(가입 중)은 프로필 화면에서 고르므로 여기서는 false."""
+    profile = db.query(PublicProfile).filter(PublicProfile.user_id == current.id).first()
+    return (
+        profile is not None
+        and profile.department_id is not None
+        and profile.show_campus is not None
+        and profile.relationship_goal is None
+    )
+
+
 def department_locked_message() -> str:
     return (
         "학과는 한 번 정하면 바꿀 수 없어요. 잘못 선택했다면 가입한 학교 메일로 "
@@ -119,6 +131,8 @@ def get_me(current: CurrentUser = Depends(get_current_user), db: Session = Depen
         },
         # 설문 (2026-10-05). pending = 설문을 받는 중이고 아직 안 답함 → 화면이 설문만 보여준다
         "survey": {"pending": survey_service.pending(db, current.id)},
+        # 내가 찾는 관계를 아직 안 고른 예전 회원 (2026-11-11) → 화면이 이것부터 고르게 한다 (꼭 골라야 넘어감)
+        "relationship_goal_required": _needs_relationship_goal(db, current),
         # 한 번만 보여주는 공지 팝업 (2026-10-05). 아직 안 본 공지 이름, 없으면 null
         "announcement": announcement_service.pending(current.user, multi_school=profile_service.multi_school(db)),
         # 친구 초대 이벤트 (2026-10-24): 화면 맨 윗줄 배너용. 기간 안이면 active, end = 끝나는 시각

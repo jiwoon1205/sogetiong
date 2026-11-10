@@ -220,6 +220,17 @@ def test_relationship_goal(sent_codes, db):
     assert [c["relationship_goal"] for c in cards if c["profile_id"] == a.profile_id] == ["CASUAL"]
 
 
+def test_old_members_must_pick_relationship_goal(sent_codes, db):
+    """2026-11-11: '내가 찾는 관계'가 생기기 전에 프로필을 쓴 회원은 꼭 골라야 한다 (/me가 알려줌)."""
+    admin = admin_login(db)
+    new = signup(sent_codes, db, "new@hufs.ac.kr")  # 가입 중 (프로필 아직) → 프로필 화면에서 고름
+    assert new.get("/api/v1/me").json()["relationship_goal_required"] is False
+    old = ready_user(sent_codes, db, admin, "old@hufs.ac.kr")  # 예전 회원: 프로필은 다 썼고 찾는 관계는 비어 있음
+    assert old.get("/api/v1/me").json()["relationship_goal_required"] is True
+    assert old.patch("/api/v1/me/profile", json={"relationship_goal": "FRIEND"}).status_code == 200
+    assert old.get("/api/v1/me").json()["relationship_goal_required"] is False
+
+
 def test_admin_user_list_filters_by_relationship_goal(sent_codes, db):
     """관리자 사용자 관리: 찾는 관계로 걸러보기 (2026-11-11). NONE = 아직 안 고른 사람."""
     admin = admin_login(db)
