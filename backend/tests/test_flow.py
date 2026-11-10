@@ -220,6 +220,27 @@ def test_relationship_goal(sent_codes, db):
     assert [c["relationship_goal"] for c in cards if c["profile_id"] == a.profile_id] == ["CASUAL"]
 
 
+def test_admin_user_list_filters_by_relationship_goal(sent_codes, db):
+    """관리자 사용자 관리: 찾는 관계로 걸러보기 (2026-11-11). NONE = 아직 안 고른 사람."""
+    admin = admin_login(db)
+    a = ready_user(sent_codes, db, admin, "a@hufs.ac.kr", gender="FEMALE")
+    b = ready_user(sent_codes, db, admin, "b@hufs.ac.kr", gender="MALE")
+    ready_user(sent_codes, db, admin, "c@hufs.ac.kr", gender="MALE")  # 안 고름
+    a.patch("/api/v1/me/profile", json={"relationship_goal": "SERIOUS"})
+    b.patch("/api/v1/me/profile", json={"relationship_goal": "CASUAL"})
+
+    def nicks(goal=None):
+        rows = admin.get("/api/v1/admin/users" + (f"?goal={goal}" if goal else "")).json()["users"]
+        return {r["nickname"]: r["relationship_goal"] for r in rows}
+
+    assert nicks() == {"user_a": "SERIOUS", "user_b": "CASUAL", "user_c": None}
+    assert nicks("SERIOUS") == {"user_a": "SERIOUS"}
+    assert nicks("CASUAL") == {"user_b": "CASUAL"}
+    assert nicks("FRIEND") == {}
+    assert nicks("NONE") == {"user_c": None}
+    assert admin.get("/api/v1/admin/users?goal=FWB").status_code == 422
+
+
 def test_report_unwholesome_meeting(sent_codes, db):
     admin = admin_login(db)
     a = ready_user(sent_codes, db, admin, "a@hufs.ac.kr")

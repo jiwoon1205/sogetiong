@@ -7,6 +7,7 @@ import { Input, PageTitle, Select, Spinner } from "@/components/ui";
 import { useUniversities } from "@/components/SchoolEmail";
 import { USER_STATUS_LABEL, adminApi } from "@/lib/admin";
 import { cn, dateTime, shortSchoolName, timeAgo } from "@/lib/format";
+import { RELATIONSHIP_GOALS, RELATIONSHIP_LABEL, type RelationshipGoal } from "@/lib/types";
 
 type UserRow = {
   user_id: string;
@@ -15,6 +16,8 @@ type UserRow = {
   gender: string | null;
   /** 학교 이름 (2026-10-24) */
   university?: string | null;
+  /** 내가 찾는 관계 (2026-11-11). null = 안 고름 */
+  relationship_goal?: RelationshipGoal | null;
   status: string;
   onboarding_stage?: string;
   reports_received: number;
@@ -70,6 +73,8 @@ function UsersList() {
   const [q, setQ] = useState("");
   // 학교 (2026-10-24 경희대 확장): 현황의 "학교별" 표에서 학교 이름을 누르면 ?school=khu.ac.kr 로 들어온다
   const [school, setSchool] = useState(() => searchParams.get("school") ?? "");
+  // 내가 찾는 관계 (2026-11-11): SERIOUS / FRIEND / CASUAL / NONE(안 고름)
+  const [goal, setGoal] = useState(() => searchParams.get("goal") ?? "");
   const universities = useUniversities();
   const multiSchool = universities.length > 1 || !!school;
 
@@ -80,6 +85,7 @@ function UsersList() {
       if (gender) params.set("gender", gender);
       if (membership) params.set("membership", membership);
       if (school) params.set("school", school);
+      if (goal) params.set("goal", goal);
       if (q.trim()) params.set("q", q.trim());
       adminApi<{ users: UserRow[]; total?: number }>(`/users?${params}`).then((r) => {
         setItems(r.users);
@@ -87,7 +93,7 @@ function UsersList() {
       });
     }, 250);
     return () => clearTimeout(t);
-  }, [status, gender, membership, school, q]);
+  }, [status, gender, membership, school, goal, q]);
 
   return (
     <>
@@ -116,8 +122,8 @@ function UsersList() {
           ))}
         </Select>
       </div>
-      {multiSchool && (
-        <div className="-mt-2 mb-5 sm:w-56">
+      <div className="-mt-2 mb-5 grid gap-3 sm:grid-cols-[14rem_14rem]">
+        {multiSchool && (
           <Select value={school} onChange={(e) => setSchool(e.target.value)}>
             <option value="">모든 학교</option>
             {universities.map((u) => (
@@ -127,8 +133,17 @@ function UsersList() {
             ))}
             {school && !universities.some((u) => u.email_domain === school) && <option value={school}>{school} (닫힘)</option>}
           </Select>
-        </div>
-      )}
+        )}
+        <Select value={goal} onChange={(e) => setGoal(e.target.value)}>
+          <option value="">모든 찾는 관계</option>
+          {RELATIONSHIP_GOALS.map((g) => (
+            <option key={g.value} value={g.value}>
+              {g.label}
+            </option>
+          ))}
+          <option value="NONE">안 고름</option>
+        </Select>
+      </div>
       {items && (
         <p className="mb-2 text-[12.5px] text-ink-faint">
           {total > items.length ? `${total}명 중 최근 가입한 ${items.length}명` : `${total}명`}
@@ -138,13 +153,14 @@ function UsersList() {
         <Spinner />
       ) : (
         <div className="overflow-x-auto rounded-card border border-line bg-paper-card">
-          <table className="w-full min-w-[62rem] text-[14px]">
+          <table className="w-full min-w-[68rem] text-[14px]">
             <thead className="border-b border-line text-left text-[12.5px] text-ink-faint">
               <tr>
                 <th className="px-5 py-3 font-normal">코드</th>
                 <th className="px-5 py-3 font-normal">닉네임</th>
                 <th className="px-5 py-3 font-normal">성별</th>
                 {multiSchool && <th className="px-5 py-3 font-normal">학교</th>}
+                <th className="px-5 py-3 font-normal">찾는 관계</th>
                 <th className="px-5 py-3 font-normal">상태</th>
                 <th className="px-5 py-3 font-normal">가입 단계</th>
                 <th className="px-5 py-3 font-normal">이용권 끝</th>
@@ -164,6 +180,9 @@ function UsersList() {
                   <td className="px-5 py-3">{u.nickname ?? <span className="text-ink-faint">—</span>}</td>
                   <td className="px-5 py-3">{u.gender ? GENDER_LABEL[u.gender] ?? u.gender : <span className="text-ink-faint">—</span>}</td>
                   {multiSchool && <td className="px-5 py-3 text-ink-soft">{u.university ? shortSchoolName(u.university) : "—"}</td>}
+                  <td className="px-5 py-3 text-ink-soft">
+                    {u.relationship_goal ? RELATIONSHIP_LABEL[u.relationship_goal] ?? u.relationship_goal : <span className="text-ink-faint">—</span>}
+                  </td>
                   <td className={cn("px-5 py-3", u.status !== "ACTIVE" && "text-brick")}>{USER_STATUS_LABEL[u.status] ?? u.status}</td>
                   <td className={cn("px-5 py-3", u.onboarding_stage === "DONE" ? "text-ink-soft" : "text-brick")}>
                     {u.onboarding_stage ? STAGE_LABEL[u.onboarding_stage] ?? u.onboarding_stage : "—"}

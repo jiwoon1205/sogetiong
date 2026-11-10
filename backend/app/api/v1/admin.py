@@ -498,6 +498,8 @@ def list_users(
     gender: str | None = Query(default=None, pattern="^(MALE|FEMALE)$"),
     membership: str | None = Query(default=None, pattern="^(active|vip|expiring)$"),
     school: str | None = Query(default=None, max_length=120),  # 학교 메일 뒷부분 (예: khu.ac.kr), 2026-10-24
+    # 내가 찾는 관계 (2026-11-11): SERIOUS / FRIEND / CASUAL, NONE = 아직 안 고름(예전 회원·탈퇴자)
+    goal: str | None = Query(default=None, pattern="^(SERIOUS|FRIEND|CASUAL|NONE)$"),
     admin: CurrentAdmin = Depends(require_permission("users:read")),
     db: Session = Depends(get_db),
 ):
@@ -509,7 +511,7 @@ def list_users(
     nick_col = func.coalesce(PublicProfile.nickname, User.deleted_nickname)
     gender_col = func.coalesce(PublicProfile.gender, User.deleted_gender)
     query = (
-        db.query(User, nick_col, gender_col, report_counts.c[1])
+        db.query(User, nick_col, gender_col, report_counts.c[1], PublicProfile.relationship_goal)
         .outerjoin(PublicProfile, PublicProfile.user_id == User.id)
         .outerjoin(report_counts, report_counts.c.reported_user_id == User.id)
     )
@@ -529,6 +531,10 @@ def list_users(
     if school:
         uni_ids = [uid for (uid,) in db.query(University.id).filter(University.email_domain == school.strip().lower())]
         query = query.filter(User.university_id.in_(uni_ids))
+    if goal == "NONE":
+        query = query.filter(PublicProfile.relationship_goal.is_(None))
+    elif goal:
+        query = query.filter(PublicProfile.relationship_goal == goal)
     if membership:
         # 현황의 "이용권 이용 중" 칸을 누르면 들어온다 (2026-10-06). 숫자와 똑같은 기준(_membership_counts)으로 거른다.
         now = utcnow()
@@ -552,7 +558,7 @@ def list_users(
     else:
         query = query.order_by(User.created_at.desc())
     rows = query.limit(USER_LIST_LIMIT).all()
-    stages = _onboarding_stages(db, [u.id for u, _, _, _ in rows])
+    stages = _onboarding_stages(db, [u.id for u, *_ in rows])
     schools = _school_names(db)
     return {
         "total": total,
@@ -563,6 +569,7 @@ def list_users(
                 "nickname": nick,
                 "gender": user_gender,  # MALE / FEMALE / None(프로필 없음)
                 "university": schools.get(u.university_id),  # 학교 이름 (2026-10-24)
+                "relationship_goal": user_goal,  # 내가 찾는 관계 (2026-11-11). None = 안 고름
                 "status": u.status,
                 "onboarding_stage": stages.get(u.id, "PROFILE"),
                 "reports_received": reports or 0,
@@ -571,7 +578,7 @@ def list_users(
                 "member_until": u.member_until.isoformat() if u.member_until else None,
                 "vip_until": u.vip_until.isoformat() if u.vip_until else None,
             }
-            for u, nick, user_gender, reports in rows
+            for u, nick, user_gender, reports, user_goal in rows
         ]
     }
 
