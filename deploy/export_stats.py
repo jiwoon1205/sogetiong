@@ -10,6 +10,9 @@
 - **개인정보를 빼고** 내보낸다: 이메일·닉네임·실명·사용자 ID·자기소개 원문·대화 내용·탈퇴 사유 원문은 없다.
   사람은 순서 번호(row)로만 구분한다. 글은 글자 수만, 탈퇴 사유는 적었는지만.
 - 시각은 모두 한국 시간.
+- **빼는 계정** (2026-11-11): 운영자 테스트 계정(VIP_TEST_EMAILS)과 슈퍼 VIP 계정.
+  그 사람의 줄뿐 아니라, 그 계정과 주고받은 좋아요·매칭·대화·결제·접속도 모든 숫자에서 뺀다.
+  테스트 계정 메일은 환경 변수 VIP_TEST_EMAILS → deploy/backend.env의 VIP_TEST_EMAILS= 줄 → 기본값 순서로 찾는다.
 
 stats_users.csv : 한 사람에 한 줄 (외모 점수·활동·좋아요·매칭·대화·결제)
 stats_daily.csv : 하루에 한 줄 (성별 가입자 수·접속자 수·매칭 수·결제)
@@ -27,6 +30,25 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 DB = sys.argv[1] if len(sys.argv) > 1 else os.path.join(ROOT, "data", "sogetiong.db")
 OUT = os.path.abspath(os.path.expanduser(sys.argv[2])) if len(sys.argv) > 2 else os.path.dirname(os.path.abspath(DB))
+
+
+DEFAULT_TEST_EMAILS = "wldns051205@hufs.ac.kr"  # backend/app/core/config.py 의 vip_test_emails 기본값과 같게
+
+
+def test_emails():
+    """운영자 테스트 계정 메일 (소문자). 서버가 쓰는 설정과 같은 곳에서 읽는다."""
+    raw = os.environ.get("VIP_TEST_EMAILS")
+    if raw is None:
+        env_path = os.path.join(HERE, "backend.env")
+        if os.path.exists(env_path):
+            with open(env_path, encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if line.startswith("VIP_TEST_EMAILS="):
+                        raw = line.split("=", 1)[1].strip().strip('"').strip("'")
+    if raw is None:
+        raw = DEFAULT_TEST_EMAILS
+    return {e.strip().lower() for e in raw.split(",") if e.strip()}
 
 
 def ts(v):
@@ -66,7 +88,11 @@ def main():
     today = now.date()
 
     schools = {r["id"]: r["email_domain"] for r in q("SELECT id, email_domain FROM universities")}
-    users = q("SELECT * FROM users")
+    all_users = q("SELECT * FROM users")
+    # 운영자 테스트 계정과 슈퍼 VIP 계정은 통계에서 뺀다 (2026-11-11)
+    tests = test_emails()
+    skip = {u["id"] for u in all_users if bool(u["super_vip"]) or (u["email"] or "").strip().lower() in tests}
+    users = [u for u in all_users if u["id"] not in skip]
     pub = {r["user_id"]: r for r in q("SELECT * FROM public_profiles")}
     priv = {r["user_id"]: r for r in q("SELECT user_id, birth_date FROM private_profiles")}
     interests = defaultdict(int)
@@ -87,11 +113,15 @@ def main():
 
     visits = defaultdict(list)
     for r in q("SELECT user_id, visit_date FROM user_daily_visits"):
+        if r["user_id"] in skip:
+            continue
         visits[r["user_id"]].append(d(r["visit_date"]))
 
     like_sent = defaultdict(lambda: [0, 0, 0, 0])  # 좋아요 횟수 합, 좋아요 보낸 사람 수, 넘기기 수, 슈퍼 라이크 수
     like_recv = defaultdict(lambda: [0, 0, 0])  # 받은 좋아요 횟수 합, 좋아요 보낸 사람 수, 받은 넘기기 수
     for r in q("SELECT from_user_id f, to_user_id t, action, like_count, is_super FROM likes"):
+        if r["f"] in skip or r["t"] in skip:
+            continue
         if r["action"] == "LIKE":
             n = max(r["like_count"] or 1, 1)
             like_sent[r["f"]][0] += n
@@ -104,7 +134,10 @@ def main():
             like_sent[r["f"]][2] += 1
             like_recv[r["t"]][2] += 1
 
-    match_rows = q("SELECT id, user_a_id a, user_b_id b, created_at, super_like_by, by_repeat_likes FROM matches")
+    match_rows = [
+        r for r in q("SELECT id, user_a_id a, user_b_id b, created_at, super_like_by, by_repeat_likes FROM matches")
+        if r["a"] not in skip and r["b"] not in skip
+    ]
     senders = defaultdict(set)
     msg_count = defaultdict(int)
     for r in q("SELECT match_id, sender_user_id s FROM messages WHERE message_type = 'TEXT' OR message_type IS NULL"):
@@ -131,7 +164,10 @@ def main():
                 x["first"] = t
 
     pays = defaultdict(lambda: {"n": 0, "amount": 0, "SIGNUP": 0, "VIP": 0, "SUPER_LIKE": 0, "first": None})
-    pay_rows = q("SELECT user_id, kind, amount, status, processed_at FROM payments WHERE status = 'CONFIRMED'")
+    pay_rows = [
+        r for r in q("SELECT user_id, kind, amount, status, processed_at FROM payments WHERE status = 'CONFIRMED'")
+        if r["user_id"] not in skip
+    ]
     for r in pay_rows:
         x = pays[r["user_id"]]
         x["n"] += 1
@@ -143,6 +179,8 @@ def main():
 
     reports_recv = defaultdict(int)
     for r in q("SELECT reported_user_id u, COUNT(*) n FROM reports GROUP BY reported_user_id"):
+        if r["u"] in skip:
+            continue
         reports_recv[r["u"]] = r["n"]
 
     cols = [
@@ -258,7 +296,7 @@ def main():
         for dd in sorted(day):
             w.writerow([dd.isoformat(), *[day[dd].get(k, 0) for k in keys]])
 
-    print(f"완료: {len(users)}명")
+    print(f"완료: {len(users)}명 (테스트·슈퍼 VIP 계정 {len(skip)}개 뺌)")
     print(f"  {out_users}")
     print(f"  {out_daily}")
 
