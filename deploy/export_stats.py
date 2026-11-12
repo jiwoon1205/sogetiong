@@ -19,6 +19,8 @@ stats_daily.csv : 하루에 한 줄 (성별 가입자 수·접속자 수·매칭
 stats_superlikes.csv : 슈퍼 라이크·좋아요 5번으로 생긴 매칭 하나에 한 줄 (2026-11-12)
    보낸 사람·받은 사람의 성별·점수·찾는 관계와 결과(받은 사람이 답장했나, 대화가 끝났나).
    사람은 stats_users.csv의 row 번호로만 이어진다.
+stats_payments.csv : 입금 확인된 결제 하나에 한 줄 (2026-11-12, 이용권 연장률 분석용)
+   언제·누가(row)·무엇을·얼마에 샀는지, 그 사람의 몇 번째 이용권 결제인지, 지난 이용권 결제와 며칠 차이인지.
 """
 
 import csv
@@ -336,6 +338,39 @@ def main():
                 r["status"],
             ])
 
+    # ---- 결제 하나에 한 줄 (2026-11-12) ----
+    out_pay = os.path.join(OUT, "stats_payments.csv")
+    nth = defaultdict(int)
+    last_member_pay = {}
+    with open(out_pay, "w", newline="", encoding="utf-8-sig") as f:
+        w = csv.writer(f)
+        w.writerow([
+            "paid_at", "row", "gender", "kind", "amount", "quantity",
+            "member_pay_no", "days_since_prev_member_pay", "days_after_signup",
+        ])
+        for r in sorted(pay_rows, key=lambda r: r["processed_at"] or ""):
+            uid = r["user_id"]
+            t = ts(r["processed_at"])
+            u = by_id.get(uid)
+            p = pub.get(uid)
+            created = ts(u["created_at"]) if u else None
+            no, gap = "", ""
+            if r["kind"] in ("SIGNUP", "VIP"):  # 이용권 (기본·VIP)
+                nth[uid] += 1
+                no = nth[uid]
+                prev = last_member_pay.get(uid)
+                gap = round((t - prev).total_seconds() / 86400, 2) if t and prev else ""
+                if t:
+                    last_member_pay[uid] = t
+            w.writerow([
+                t.strftime("%Y-%m-%d %H:%M") if t else "",
+                row_of.get(uid, ""),
+                ((p["gender"] if p else None) or (u["deleted_gender"] if u else None) or ""),
+                r["kind"], r["amount"] or 0, r["quantity"] or 1,
+                no, gap,
+                round((t - created).total_seconds() / 86400, 2) if t and created else "",
+            ])
+
     # ---- 하루 단위 ----
     gender_of = {}
     for u in users:
@@ -376,6 +411,7 @@ def main():
     print(f"  {out_users}")
     print(f"  {out_daily}")
     print(f"  {out_sl}")
+    print(f"  {out_pay}")
 
 
 if __name__ == "__main__":
