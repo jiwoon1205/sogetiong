@@ -16,6 +16,9 @@
 
 stats_users.csv : 한 사람에 한 줄 (외모 점수·활동·좋아요·매칭·대화·결제)
 stats_daily.csv : 하루에 한 줄 (성별 가입자 수·접속자 수·매칭 수·결제)
+stats_superlikes.csv : 슈퍼 라이크·좋아요 5번으로 생긴 매칭 하나에 한 줄 (2026-11-12)
+   보낸 사람·받은 사람의 성별·점수·찾는 관계와 결과(받은 사람이 답장했나, 대화가 끝났나).
+   사람은 stats_users.csv의 row 번호로만 이어진다.
 """
 
 import csv
@@ -141,7 +144,7 @@ def main():
             like_recv[r["t"]][2] += 1
 
     match_rows = [
-        r for r in q("SELECT id, user_a_id a, user_b_id b, created_at, super_like_by, by_repeat_likes FROM matches")
+        r for r in q("SELECT id, user_a_id a, user_b_id b, created_at, status, super_like_by, by_repeat_likes FROM matches")
         if r["a"] not in skip and r["b"] not in skip
     ]
     senders = defaultdict(set)
@@ -149,7 +152,10 @@ def main():
     for r in q("SELECT match_id, sender_user_id s FROM messages WHERE message_type = 'TEXT' OR message_type IS NULL"):
         senders[r["match_id"]].add(r["s"])
         msg_count[(r["match_id"], r["s"])] += 1
-    m = defaultdict(lambda: {"n": 0, "n7": 0, "n30": 0, "talk": 0, "both": 0, "msgs": 0, "forced_recv": 0, "first": None})
+    m = defaultdict(lambda: {
+        "n": 0, "n7": 0, "n30": 0, "talk": 0, "both": 0, "msgs": 0, "forced_recv": 0, "first": None,
+        "sl_recv": 0, "sl_recv_replied": 0, "sl_sent_matches": 0, "sl_sent_replied": 0,
+    })
     for r in match_rows:
         t = ts(r["created_at"])
         for me, other in ((r["a"], r["b"]), (r["b"], r["a"])):
@@ -168,10 +174,20 @@ def main():
                 x["forced_recv"] += 1
             if t and (x["first"] is None or t < x["first"]):
                 x["first"] = t
+            # 슈퍼 라이크로 생긴 매칭 (좋아요 5번 매칭은 뺀다)
+            if r["super_like_by"] and not r["by_repeat_likes"]:
+                if r["super_like_by"] == other:
+                    x["sl_recv"] += 1
+                    if me in senders[r["id"]]:
+                        x["sl_recv_replied"] += 1
+                elif r["super_like_by"] == me:
+                    x["sl_sent_matches"] += 1
+                    if other in senders[r["id"]]:
+                        x["sl_sent_replied"] += 1
 
-    pays = defaultdict(lambda: {"n": 0, "amount": 0, "SIGNUP": 0, "VIP": 0, "SUPER_LIKE": 0, "first": None})
+    pays = defaultdict(lambda: {"n": 0, "amount": 0, "SIGNUP": 0, "VIP": 0, "SUPER_LIKE": 0, "sl_qty": 0, "first": None})
     pay_rows = [
-        r for r in q("SELECT user_id, kind, amount, status, processed_at FROM payments WHERE status = 'CONFIRMED'")
+        r for r in q("SELECT user_id, kind, amount, quantity, status, processed_at FROM payments WHERE status = 'CONFIRMED'")
         if r["user_id"] not in skip
     ]
     for r in pay_rows:
@@ -179,6 +195,8 @@ def main():
         x["n"] += 1
         x["amount"] += r["amount"] or 0
         x[r["kind"]] = x.get(r["kind"], 0) + 1
+        if r["kind"] == "SUPER_LIKE":
+            x["sl_qty"] += r["quantity"] or 1
         t = ts(r["processed_at"])
         if t and (x["first"] is None or t < x["first"]):
             x["first"] = t
@@ -201,12 +219,17 @@ def main():
         "matches_forced_received", "first_match_days_after_signup",
         "paid", "paid_count", "paid_amount", "paid_basic", "paid_vip", "paid_superlike", "first_paid_days_after_signup",
         "trial_likes_used", "vip_active", "member_active", "super_vip", "referred", "reports_received", "withdraw_reason_given",
+        # 슈퍼 라이크 (2026-11-12): 산 개수, 보낸 슈퍼 라이크 중 상대가 답장한 수, 받은 슈퍼 라이크, 그중 내가 답장한 수
+        "superlike_bought_qty", "superlike_sent_matches", "superlike_sent_replied",
+        "superlike_received", "superlike_received_replied",
     ]
+    ordered = sorted(users, key=lambda r: r["created_at"] or "")
+    row_of = {u["id"]: i for i, u in enumerate(ordered, start=1)}
     out_users = os.path.join(OUT, "stats_users.csv")
     with open(out_users, "w", newline="", encoding="utf-8-sig") as f:
         w = csv.writer(f)
         w.writerow(cols)
-        for i, u in enumerate(sorted(users, key=lambda r: r["created_at"] or ""), start=1):
+        for i, u in enumerate(ordered, start=1):
             uid = u["id"]
             p = pub.get(uid)
             e = evals.get(uid)
@@ -264,6 +287,53 @@ def main():
                 int(bool(u["referred_by_id"])),
                 reports_recv[uid],
                 int(bool(u["deleted_reason"])) if "deleted_reason" in u.keys() else "",
+                pp["sl_qty"], mm["sl_sent_matches"], mm["sl_sent_replied"], mm["sl_recv"], mm["sl_recv_replied"],
+            ])
+
+    # ---- 슈퍼 라이크·좋아요 5번 매칭 하나에 한 줄 (2026-11-12) ----
+    def person(uid):
+        p = pub.get(uid)
+        e = evals.get(uid)
+        u = by_id.get(uid)
+        return [
+            row_of.get(uid, ""),
+            ((p["gender"] if p else None) or (u["deleted_gender"] if u else None) or ""),
+            e["overall_impression"] if e else "",
+            (p["relationship_goal"] or "") if p else "",
+        ]
+
+    by_id = {u["id"]: u for u in users}
+    first_match_at = defaultdict(list)
+    for r in match_rows:
+        t = ts(r["created_at"])
+        if t:
+            first_match_at[r["a"]].append(t)
+            first_match_at[r["b"]].append(t)
+    out_sl = os.path.join(OUT, "stats_superlikes.csv")
+    with open(out_sl, "w", newline="", encoding="utf-8-sig") as f:
+        w = csv.writer(f)
+        w.writerow([
+            "date", "kind",
+            "sender_row", "sender_gender", "sender_overall", "sender_goal", "sender_matches_before",
+            "receiver_row", "receiver_gender", "receiver_overall", "receiver_goal", "receiver_matches_before",
+            "sender_messages", "receiver_replied", "receiver_messages", "match_status",
+        ])
+        for r in sorted(match_rows, key=lambda r: r["created_at"] or ""):
+            if not r["super_like_by"]:
+                continue
+            sender = r["super_like_by"]
+            receiver = r["b"] if r["a"] == sender else r["a"]
+            t = ts(r["created_at"])
+            before = lambda uid: sum(1 for x in first_match_at[uid] if t and x < t)  # noqa: E731
+            w.writerow([
+                t.strftime("%Y-%m-%d") if t else "",
+                "repeat5" if r["by_repeat_likes"] else "super",
+                *person(sender), before(sender),
+                *person(receiver), before(receiver),
+                msg_count[(r["id"], sender)],
+                int(receiver in senders[r["id"]]),
+                msg_count[(r["id"], receiver)],
+                r["status"],
             ])
 
     # ---- 하루 단위 ----
@@ -305,6 +375,7 @@ def main():
     print(f"완료: {len(users)}명 (테스트·슈퍼 VIP 계정 {len(skip)}개 뺌)")
     print(f"  {out_users}")
     print(f"  {out_daily}")
+    print(f"  {out_sl}")
 
 
 if __name__ == "__main__":
