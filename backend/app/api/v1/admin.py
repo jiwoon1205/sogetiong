@@ -1321,6 +1321,7 @@ def _payment_row(
         "payment_id": str(p.id),
         "kind": p.kind,  # SIGNUP(기본 이용권, 예전 이름 가입비) / VIP / SUPER_LIKE(2026-10-12)
         "quantity": p.quantity,  # 슈퍼 라이크 개수
+        "renewal_discount": p.renewal_discount or 0,  # VIP 재구매 할인 금액 (2026-11-12). 0보다 크면 "재구매"
         "code": p.code,
         "amount": p.amount,
         "status": p.status,
@@ -1441,15 +1442,16 @@ def confirm_payment(
         )
     elif user is not None and payment.kind == "VIP":
         # 확인한 순간부터 VIP 기간. 남아 있던 기본 이용권은 VIP 뒤로 밀린다 (2026-10-04 구독제)
+        # VIP가 남아 있을 때 산 연장(2026-11-12)은 지금 VIP가 끝난 뒤에 이어진다 (add_vip)
+        extending = vip_service.has_paid_vip(user, now)
         membership_service.add_vip(db, user, now, days)
-        notify(
-            db,
-            user.id,
-            "VIP_STARTED",
-            "VIP가 시작되었어요",
-            f"{days}일 동안 VIP 혜택을 받을 수 있어요. '받은 LIKE'에서 나를 LIKE한 사람을 확인해 보세요.",
-            payment.id,
-        )
+        if extending:
+            until = as_utc(user.vip_until).astimezone(KST) - timedelta(seconds=1)
+            title, body = "VIP가 연장되었어요", f"VIP가 {until.month}월 {until.day}일 밤 12시까지로 늘어났어요."
+        else:
+            title = "VIP가 시작되었어요"
+            body = f"{days}일 동안 VIP 혜택을 받을 수 있어요. '받은 LIKE'에서 나를 LIKE한 사람을 확인해 보세요."
+        notify(db, user.id, "VIP_STARTED", title, body, payment.id)
     elif user is not None:
         if user.signup_paid_at is None:
             user.signup_paid_at = now  # 첫 결제 시각 (기록용)

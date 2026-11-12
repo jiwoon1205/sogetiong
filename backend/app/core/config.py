@@ -111,6 +111,8 @@ class Settings(BaseSettings):
     # 슈퍼 라이크 (2026-10-12): 1개 가격, 한 번에 살 수 있는 최대 개수. 판매는 MEMBERSHIP_ENABLED를 따른다
     super_like_price: int = 1000
     super_like_max_quantity: int = 10
+    # 가입 선물 (2026-11-12): 처음 가입한 사람에게 슈퍼 라이크 N개. 탈퇴 후 다시 가입한 계정은 받지 않는다. 0이면 끔
+    signup_super_likes: int = 1
     # 우대를 적용할 확률. 항상 넣으면 "이 카드 = 나를 좋아하는 사람"이라고 티가 난다.
     liked_me_probability: float = 0.7
 
@@ -128,6 +130,13 @@ class Settings(BaseSettings):
     vip_preview_notice: str = "VIP는 무료 베타가 끝나는 날(10월 8일)부터 살 수 있어요."
     vip_days: int = 14  # 한 번 사면 2주, 기본 이용권 포함 (2026-10-06: 4주 → 2주, 가격 그대로). 베타 기간 구매는 BETA_PERIOD_DAYS
     vip_price: int = 6000  # 할인 없음 (2026-10-04, 오픈 할인 4,000원 취소)
+    # VIP 재구매 할인 (2026-11-12, `VIP 재구매 할인 (2026-11-12)`): VIP를 산 적 있는 사람이
+    # VIP가 끝나기 N일 전 ~ 끝난 뒤 N일 안에 다시 사면 이만큼 싸게 (남녀 같음). 0이면 끔
+    vip_renewal_discount: int = 1000
+    vip_renewal_window_days: int = 3
+    # 끝나기 며칠 전에 "곧 끝나요" 알림을 보낼지. 알림은 한국 시간 9시~22시에만, 이 간격(분)마다 확인
+    vip_reminder_days_before: int = 2
+    vip_reminder_interval_minutes: int = 30
     # VIP 혜택 숫자 (유료화 계획 1장)
     vip_daily_like_limit: int = 10  # 무료 5개 + 5개
     liker_boost_limit: int = 5  # "나를 LIKE한 사람" 우대는 보낸 사람의 하루 처음 5개 LIKE에만

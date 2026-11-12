@@ -20,6 +20,8 @@ export default function LikedPage() {
   const { refresh } = useSession();
   const [vip, setVip] = useState<VipInfo | null>(null);
   const [error, setError] = useState("");
+  // VIP 연장 화면 (2026-11-12): VIP가 끝나기 3일 전부터 연장할 수 있다
+  const [renewing, setRenewing] = useState(false);
 
   const loadVip = useCallback(async () => {
     try {
@@ -33,22 +35,20 @@ export default function LikedPage() {
   usePolling(loadVip, 60_000);
 
   if (!vip) return error ? <Notice tone="error">{error}</Notice> : <Spinner />;
-  if (vip.active) return <LikedList vip={vip} />;
-  return (
-    <VipShop
-      vip={vip}
-      onChange={setVip}
-      onActivated={() => {
-        void refresh();
-        void loadVip();
-      }}
-    />
-  );
+  const done = () => {
+    setRenewing(false);
+    void refresh();
+    void loadVip();
+  };
+  // VIP 중인데 연장 입금을 기다리는 중이면 결제 화면을 계속 보여준다
+  const renewWaiting = vip.active && vip.payment?.status === "REQUESTED";
+  if (vip.active && !renewing && !renewWaiting) return <LikedList vip={vip} onRenew={() => setRenewing(true)} />;
+  return <VipShop vip={vip} onChange={setVip} onActivated={done} onBack={vip.active && !renewWaiting ? () => setRenewing(false) : undefined} />;
 }
 
 // ---------- VIP: 나를 LIKE한 사람 ----------
 
-function LikedList({ vip }: { vip: VipInfo }) {
+function LikedList({ vip, onRenew }: { vip: VipInfo; onRenew: () => void }) {
   const [rows, setRows] = useState<LikedMeCard[] | null>(null);
   const [open, setOpen] = useState<LikedMeCard | null>(null);
   const [busy, setBusy] = useState(false);
@@ -96,6 +96,17 @@ function LikedList({ vip }: { vip: VipInfo }) {
         title="받은 LIKE"
         desc={vip.until ? `VIP는 ${untilDay(vip.until)}예요.` : "나를 LIKE한 사람이에요. 서로 LIKE하면 바로 매칭돼요."}
       />
+      {vip.renewal && vip.can_buy && (
+        <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-card border border-brick/30 bg-brick-wash px-5 py-4">
+          <p className="text-[13.5px]">
+            VIP가 곧 끝나요. <b className="font-semibold text-brick">지금 연장하면 {vip.renewal.discount.toLocaleString()}원 할인</b>
+            <span className="block text-[12.5px] text-ink-soft">새 VIP는 지금 VIP가 끝난 뒤 이어져요.</span>
+          </p>
+          <Button size="sm" onClick={onRenew}>
+            연장하기 · {vip.price.toLocaleString()}원
+          </Button>
+        </div>
+      )}
       {error && (
         <div className="mb-4">
           <Notice tone="error">{error}</Notice>
@@ -160,20 +171,32 @@ function LikedList({ vip }: { vip: VipInfo }) {
 
 // ---------- 일반: VIP 안내·결제 ----------
 
-function VipShop({ vip, onChange, onActivated }: { vip: VipInfo; onChange: (v: VipInfo) => void; onActivated: () => void }) {
+function VipShop({
+  vip,
+  onChange,
+  onActivated,
+  onBack,
+}: {
+  vip: VipInfo;
+  onChange: (v: VipInfo) => void;
+  onActivated: () => void;
+  /** VIP 중에 연장 화면을 열었을 때: 받은 LIKE 목록으로 돌아가기 */
+  onBack?: () => void;
+}) {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
   const [paying, setPaying] = useState(vip.payment?.status === "REQUESTED" || vip.payment?.status === "REJECTED");
 
-  // "입금했어요"를 누른 뒤에는 30초마다 확인 → VIP가 시작되면 목록 화면으로
+  // "입금했어요"를 누른 뒤에는 30초마다 확인 → VIP가 시작(연장)되면 목록 화면으로
   const waiting = vip.payment?.status === "REQUESTED";
+  const extending = vip.active; // VIP 중에 연장 (2026-11-12)
   usePolling(
     () => {
       if (!waiting) return;
       api<VipInfo>("/me/vip")
         .then((next) => {
           onChange(next);
-          if (next.active) onActivated();
+          if (next.active && next.payment?.status !== "REQUESTED") onActivated();
         })
         .catch(() => {});
     },
@@ -208,18 +231,39 @@ function VipShop({ vip, onChange, onActivated }: { vip: VipInfo; onChange: (v: V
 
   return (
     <div className="mx-auto max-w-app">
-      <PageTitle eyebrow="VIP" title="받은 LIKE는 VIP에서 볼 수 있어요" />
+      {onBack && (
+        <button onClick={onBack} className="mb-4 text-[13.5px] text-ink-soft hover:text-ink">
+          ← 받은 LIKE로
+        </button>
+      )}
+      <PageTitle eyebrow="VIP" title={extending ? "VIP 연장하기" : "받은 LIKE는 VIP에서 볼 수 있어요"} />
 
       <div className="mb-6 rounded-card border border-line bg-paper-card px-6 py-5">
         <p className="text-[13px] text-ink-soft">VIP {vip.days}일 이용권 · 기본 이용권 포함</p>
-        <p className="mt-1.5 flex items-baseline gap-2">
-          {vip.female_free && vip.regular_price && vip.regular_price > vip.price ? (
+        <p className="mt-1.5 flex flex-wrap items-baseline gap-2">
+          {vip.renewal && vip.base_price ? (
+            <span className="num text-[15px] text-ink-faint line-through">{vip.base_price.toLocaleString()}원</span>
+          ) : vip.female_free && vip.regular_price && vip.regular_price > vip.price ? (
             <span className="num text-[15px] text-ink-faint line-through">{vip.regular_price.toLocaleString()}원</span>
           ) : null}
           <span className="num font-serif text-[30px] font-semibold">{vip.price.toLocaleString()}원</span>
-          {vip.female_free ? <span className="text-[12.5px] font-semibold text-brick">여성 회원가</span> : null}
+          {vip.renewal ? (
+            <span className="text-[12.5px] font-semibold text-brick">재구매 할인 −{vip.renewal.discount.toLocaleString()}원</span>
+          ) : vip.female_free ? (
+            <span className="text-[12.5px] font-semibold text-brick">여성 회원가</span>
+          ) : null}
         </p>
-        <p className="mt-2 text-[12.5px] text-ink-faint">자동 결제 없어요. 기간이 끝나면 다시 살 수 있어요.</p>
+        {vip.renewal ? (
+          <p className="mt-2 text-[12.5px] text-ink-soft">
+            {untilDay(vip.renewal.until)}까지 다시 사면 할인돼요.{extending ? " 새 VIP는 지금 VIP가 끝난 뒤 이어져요." : ""}
+          </p>
+        ) : null}
+        <p className="mt-2 text-[12.5px] text-ink-faint">
+          자동 결제 없어요.
+          {vip.renewal_discount_amount
+            ? ` VIP가 끝나기 ${vip.renewal_window_days}일 전부터 끝난 뒤 ${vip.renewal_window_days}일 안에 다시 사면 ${vip.renewal_discount_amount.toLocaleString()}원 할인돼요.`
+            : " 기간이 끝나면 다시 살 수 있어요."}
+        </p>
         {vip.member_days_left ? (
           <p className="mt-1 text-[12.5px] text-ink-soft">
             지금 남은 기본 이용권 <span className="num">{vip.member_days_left}</span>일은 VIP가 끝난 뒤 이어서 쓸 수 있어요.
@@ -247,12 +291,16 @@ function VipShop({ vip, onChange, onActivated }: { vip: VipInfo; onChange: (v: V
           sending={sending}
           error={error}
           onRequest={request}
-          waitingText={`입금 후 15분 이내 확인돼요. 확인되면 ${vip.days}일 뒤 밤 12시까지 VIP예요 (기본 이용권 포함).`}
+          waitingText={
+            extending
+              ? `입금 후 15분 이내 확인돼요. 확인되면 지금 VIP가 끝난 뒤 ${vip.days}일이 이어져요 (기본 이용권 포함).`
+              : `입금 후 15분 이내 확인돼요. 확인되면 ${vip.days}일 뒤 밤 12시까지 VIP예요 (기본 이용권 포함).`
+          }
           refundNote="VIP는 입금이 확인되면 바로 시작돼서 환불되지 않아요."
         />
       ) : (
         <Button size="lg" className="w-full" onClick={() => setPaying(true)}>
-          VIP 시작하기 · {vip.price.toLocaleString()}원
+          {extending ? "VIP 연장하기" : "VIP 시작하기"} · {vip.price.toLocaleString()}원
         </Button>
       )}
     </div>

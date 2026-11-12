@@ -32,6 +32,8 @@ class Payment(Base):
     amount: Mapped[int] = mapped_column(Integer, nullable=False)
     # 슈퍼 라이크 개수 (2026-10-12, 마이그레이션 0025). 이용권·VIP는 1
     quantity: Mapped[int] = mapped_column(Integer, default=1, server_default="1", nullable=False)
+    # VIP 재구매 할인 금액 (2026-11-12, 마이그레이션 0033). 0이면 할인 없음. 관리자 화면에 "재구매"로 보인다
+    renewal_discount: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
     code: Mapped[str] = mapped_column(String(12), unique=True, nullable=False)
     status: Mapped[str] = mapped_column(String(20), default="CREATED", nullable=False, index=True)
     created_at: Mapped[datetime] = created_at()

@@ -23,6 +23,9 @@ os.environ.update(
         # 여성 회원 무료(2026-11-07)는 기본으로 끈다 → 예전 이용권 테스트가 성별과 상관없이 그대로 돈다.
         # 여성 무료를 보는 테스트는 tests/test_female_free.py에서 켠다
         "FEMALE_FREE": "false",
+        # 가입 선물 슈퍼 라이크(2026-11-12)도 기본으로 끈다 → 슈퍼 라이크 개수를 세는 예전 테스트가 그대로 돈다.
+        # 켜고 보는 테스트는 tests/test_vip_renewal.py
+        "SIGNUP_SUPER_LIKES": "0",
     }
 )
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))

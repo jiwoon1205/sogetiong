@@ -1,7 +1,8 @@
 """휴대폰 알림 (웹 푸시) + 알림을 못 켠 사람에게 메일 (2026-10-05, `휴대폰 알림 설계`).
 
 규칙
-- 알림을 보내는 일: 새 메시지(MESSAGE), 새 매칭(MATCH) 두 가지뿐.
+- 알림을 보내는 일: 새 메시지(MESSAGE), 새 매칭(MATCH), VIP 재구매 안내(VIP_ENDING·VIP_ENDED, 2026-11-12).
+  VIP 안내는 휴대폰 알림만 보내고 메일로는 보내지 않는다.
 - 잠금화면에 보이는 글에는 상대 닉네임·대화 내용을 넣지 않는다 ("훕팅 · 새 메시지가 왔어요").
 - 휴대폰 알림은 메시지마다 보낸다 (카톡·DM처럼, 2026-10-05 변경. 처음엔 같은 방 10분에 한 번이었음).
   잠금화면에는 대화방마다 한 줄만 남고(같은 tag), 새 메시지가 올 때마다 다시 울린다(renotify).
@@ -43,10 +44,18 @@ logger = logging.getLogger(__name__)
 
 MESSAGE = "MESSAGE"
 MATCH = "MATCH"
+VIP_ENDING = "VIP_ENDING"  # VIP가 곧 끝나요 (2026-11-12)
+VIP_ENDED = "VIP_ENDED"  # VIP가 끝났어요
+VIP_KINDS = (VIP_ENDING, VIP_ENDED)
 
 # 잠금화면에 보이는 글. 상대 닉네임·대화 내용은 절대 넣지 않는다.
 PUSH_TITLE = "훕팅"
-PUSH_BODY = {MESSAGE: "새 메시지가 왔어요", MATCH: "새로운 매칭이 생겼어요"}
+PUSH_BODY = {
+    MESSAGE: "새 메시지가 왔어요",
+    MATCH: "새로운 매칭이 생겼어요",
+    VIP_ENDING: "VIP가 곧 끝나요 · 지금 연장하면 할인돼요",
+    VIP_ENDED: "VIP가 끝났어요 · 며칠 안에 다시 사면 할인돼요",
+}
 
 # 알림 배달 회사 주소만 받는다. 아무 주소나 받으면 우리 서버가 엉뚱한 곳으로 요청을 보내게 만들 수 있다.
 # (크롬·삼성 인터넷·엣지 = 구글, 사파리 = 애플, 파이어폭스 = 모질라, 윈도우 엣지 = 마이크로소프트)
@@ -63,8 +72,8 @@ _PENDING_KEY = "pending_alerts"
 @dataclass(frozen=True)
 class Alert:
     user_id: uuid.UUID
-    kind: str  # MESSAGE / MATCH
-    match_id: uuid.UUID
+    kind: str  # MESSAGE / MATCH / VIP_ENDING / VIP_ENDED
+    match_id: uuid.UUID | None  # VIP 안내는 None
 
 
 # ---------- 기억해 두는 값 (서버 프로세스가 1개라 메모리에 둔다. 재시작하면 비워지는데 그래도 괜찮다) ----------
@@ -108,7 +117,7 @@ def is_allowed_endpoint(endpoint: str) -> bool:
 
 # ---------- 1) 보낼 알림 적어 두기 → 2) commit 뒤에 보내기 ----------
 
-def queue(db: Session, user_id: uuid.UUID, kind: str, match_id: uuid.UUID) -> None:
+def queue(db: Session, user_id: uuid.UUID, kind: str, match_id: uuid.UUID | None) -> None:
     """commit이 성공하면 보낸다. commit은 부르는 쪽에서 한다."""
     db.info.setdefault(_PENDING_KEY, []).append(Alert(user_id=user_id, kind=kind, match_id=match_id))
 
@@ -179,6 +188,8 @@ def deliver(alert: Alert) -> str:
             subs = db.query(PushSubscription).filter(PushSubscription.user_id == user.id).all()
             if subs and send_to_devices(db, subs, payload_for(alert)) > 0:
                 return "push"
+        if alert.kind in VIP_KINDS:
+            return "skipped"  # VIP 안내는 메일로 보내지 않는다
         if not user.email_notify or not _email_allowed(alert):
             return "skipped"
         email = user.email
@@ -195,6 +206,8 @@ def deliver(alert: Alert) -> str:
 
 
 def payload_for(alert: Alert) -> dict:
+    if alert.kind in VIP_KINDS:
+        return {"title": PUSH_TITLE, "body": PUSH_BODY[alert.kind], "url": "/liked", "tag": "vip-renewal"}
     return {
         "title": PUSH_TITLE,
         "body": PUSH_BODY[alert.kind],

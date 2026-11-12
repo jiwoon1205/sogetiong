@@ -49,12 +49,15 @@ def open_payment(db: Session, user_id: uuid.UUID, kind: str = "SIGNUP") -> Payme
     )
 
 
-def get_or_create_payment(db: Session, user: User, kind: str = "SIGNUP", amount: int | None = None) -> Payment:
+def get_or_create_payment(
+    db: Session, user: User, kind: str = "SIGNUP", amount: int | None = None, renewal_discount: int = 0
+) -> Payment:
     """처리 중인 결제가 있으면 그것을, 없으면 새 결제 코드를 만든다 (commit은 호출한 쪽에서).
 
     같은 사람은 다시 들어와도 같은 코드를 본다. 확인·환불이 끝나면 다음에는 새 코드가 생긴다.
     amount: 지금 가격. 아직 "입금했어요"를 안 누른 결제(CREATED)는 지금 가격으로 맞춘다
     → 가격을 바꾼 뒤 예전 가격 코드로 입금하는 일이 없다. 누른 뒤에는 가격이 바뀌지 않는다.
+    renewal_discount: VIP 재구매 할인 금액 (2026-11-12). amount는 이미 할인된 값. 금액과 함께 맞춘다.
     """
     if amount is None:
         from app.services import membership_service  # 할인가 계산 (2026-10-06)
@@ -62,11 +65,15 @@ def get_or_create_payment(db: Session, user: User, kind: str = "SIGNUP", amount:
         amount = membership_service.price()
     payment = open_payment(db, user.id, kind)
     if payment is None:
-        payment = Payment(user_id=user.id, kind=kind, amount=amount, code=_new_code(db), status="CREATED")
+        payment = Payment(
+            user_id=user.id, kind=kind, amount=amount, code=_new_code(db), status="CREATED",
+            renewal_discount=renewal_discount,
+        )
         db.add(payment)
         db.flush()
-    elif payment.status == "CREATED" and payment.amount != amount:
+    elif payment.status == "CREATED" and (payment.amount != amount or (payment.renewal_discount or 0) != renewal_discount):
         payment.amount = amount
+        payment.renewal_discount = renewal_discount
     return payment
 
 

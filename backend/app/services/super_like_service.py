@@ -24,6 +24,7 @@ from app.models.user import User
 from app.services import payment_service
 
 KIND = "SUPER_LIKE"
+GIFT_NOTICE = "SUPER_LIKE_GIFT"  # 가입 선물 알림 (2026-11-12). 누르면 추천 화면
 
 
 def price() -> int:

@@ -20,7 +20,7 @@ from app.api.v1 import (
 from app.core.config import get_settings
 from app.core.dev_bootstrap import prepare_dev_database
 from app.db.session import SessionLocal
-from app.services import withdrawal_service
+from app.services import vip_service, withdrawal_service
 
 logger = logging.getLogger(__name__)
 
@@ -46,14 +46,34 @@ async def _purge_withdrawn_loop(minutes: int) -> None:
         await asyncio.sleep(minutes * 60)
 
 
+def _vip_reminders_once() -> None:
+    db = SessionLocal()
+    try:
+        vip_service.send_renewal_reminders(db)
+    except Exception:  # 실패해도 서버는 계속 돌고, 다음 차례에 다시 시도한다
+        logger.exception("vip renewal reminders failed")
+        db.rollback()
+    finally:
+        db.close()
+
+
+async def _vip_reminders_loop(minutes: int) -> None:
+    """VIP 재구매 알림 (2026-11-12). 서버가 켜질 때 한 번, 그 뒤로 minutes분마다."""
+    while True:
+        await asyncio.to_thread(_vip_reminders_once)
+        await asyncio.sleep(minutes * 60)
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    minutes = settings.withdrawn_purge_interval_minutes
-    task = None
-    if minutes > 0 and settings.environment != "test":
-        task = asyncio.create_task(_purge_withdrawn_loop(minutes))
+    tasks = []
+    if settings.environment != "test":
+        if settings.withdrawn_purge_interval_minutes > 0:
+            tasks.append(asyncio.create_task(_purge_withdrawn_loop(settings.withdrawn_purge_interval_minutes)))
+        if settings.vip_reminder_interval_minutes > 0:
+            tasks.append(asyncio.create_task(_vip_reminders_loop(settings.vip_reminder_interval_minutes)))
     yield
-    if task is not None:
+    for task in tasks:
         task.cancel()
 
 

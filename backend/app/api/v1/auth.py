@@ -23,7 +23,8 @@ from app.schemas.auth import (
     VerifyCodeRequest,
     VerifyCodeResponse,
 )
-from app.services import auth_service, membership_service, referral_service
+from app.services import auth_service, membership_service, referral_service, super_like_service
+from app.services.notification_service import notify
 from app.services.email_service import EmailDeliveryError, EmailService
 from app.services.session_service import (
     auth_response_body,
@@ -173,6 +174,17 @@ def register(payload: RegisterRequest, request: Request, response: Response, db:
     auth_service.carry_over_account(db, previous, user)
     # 친구 초대 이벤트 (2026-10-24): 탈퇴 후 7일 안에 다시 가입한 계정은 초대로 치지 않는다
     referral_service.attach(db, user, payload.referral_code, previous=previous)
+    # 가입 선물 슈퍼 라이크 (2026-11-12). 같은 메일로 가입한 적이 없는 처음 가입자만 (탈퇴·재가입으로 또 받지 못하게)
+    if settings.signup_super_likes > 0 and not previous:
+        super_like_service.add(user, settings.signup_super_likes)
+        notify(
+            db,
+            user.id,
+            super_like_service.GIFT_NOTICE,
+            "가입 선물로 슈퍼 라이크를 드렸어요",
+            f"슈퍼 라이크 {settings.signup_super_likes}개가 들어왔어요. 추천에서 마음에 드는 사람에게 보내면 "
+            "상대가 좋아요하지 않아도 바로 대화가 열려요.",
+        )
     db.flush()
     membership_service.start_banked(db, user)  # 이어받은 사진·등급으로 추천이 바로 열리면 쌓아 둔 일수 시작
     ticket.consumed_at = now

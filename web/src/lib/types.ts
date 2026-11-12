@@ -163,6 +163,13 @@ export type VipInfo = {
   regular_price?: number;
   /** 여성 회원 (기본 이용권 무료, VIP 할인가) */
   female_free?: boolean;
+  /** 재구매 할인 전 가격 (2026-11-12) */
+  base_price?: number;
+  /** 지금 VIP 재구매 할인 중이면 할인 금액과 할인이 끝나는 시각 (VIP가 끝나기 3일 전 ~ 끝난 뒤 3일) */
+  renewal?: { discount: number; until: string } | null;
+  /** 재구매 할인 규칙 안내용 */
+  renewal_discount_amount?: number;
+  renewal_window_days?: number;
   /** 지금 남은 기본 이용권 일수 (VIP를 사면 VIP가 끝난 뒤 이어서 씀) */
   member_days_left: number | null;
   daily_like_limit: number;

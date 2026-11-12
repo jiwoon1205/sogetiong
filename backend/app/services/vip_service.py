@@ -13,7 +13,7 @@ VIP가 끝나면 바로 무료 규칙으로 돌아간다 (모두 그때그때 vi
 """
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
@@ -119,3 +119,123 @@ def price(user: User | None = None) -> int:
     if user is not None and is_female_free(user):
         return s.vip_price_female
     return s.vip_price
+
+
+# ---------- VIP 재구매 할인 (2026-11-12, `VIP 재구매 할인 (2026-11-12)`) ----------
+# VIP를 돈 내고 산 적 있는 사람이 VIP가 끝나기 3일 전 ~ 끝난 뒤 3일 안에 다시 사면 1,000원 할인 (남녀 같음).
+# 끝나기 전에 사면 새 VIP는 지금 VIP가 끝난 뒤에 이어진다 (membership_service.add_vip).
+# 알림: 끝나기 2일 전 "곧 끝나요", 끝난 다음 날 "끝났어요" (한국 시간 9시~22시, send_renewal_reminders).
+
+RENEWAL_NOTICE = "VIP_RENEWAL"  # 알림 종류 (누르면 받은 LIKE 탭)
+
+
+def has_bought_vip(db: Session, user_id: uuid.UUID) -> bool:
+    """VIP를 돈 내고 산 적이 있나 (입금 확인된 VIP 결제). 여성 전환·관리자 지급으로 받은 VIP는 해당 없음."""
+    from app.models.payment import Payment
+
+    return (
+        db.query(Payment.id)
+        .filter(Payment.user_id == user_id, Payment.kind == "VIP", Payment.status == "CONFIRMED")
+        .first()
+        is not None
+    )
+
+
+def renewal_deadline(db: Session, user: User, now: datetime | None = None) -> datetime | None:
+    """지금 VIP 재구매 할인을 받을 수 있으면 할인이 끝나는 시각(VIP가 끝나고 N일 뒤), 아니면 None."""
+    s = get_settings()
+    if s.vip_renewal_discount <= 0 or is_vip_tester(user):
+        return None
+    until = as_utc(user.vip_until)
+    if until is None:
+        return None
+    now = now or utcnow()
+    window = timedelta(days=s.vip_renewal_window_days)
+    if not (until - window <= now <= until + window):
+        return None
+    if not has_bought_vip(db, user.id):
+        return None
+    return until + window
+
+
+def renewal_discount(db: Session, user: User, now: datetime | None = None) -> int:
+    return get_settings().vip_renewal_discount if renewal_deadline(db, user, now) else 0
+
+
+def _reminder_id(user_id: uuid.UUID, until: datetime, stage: str) -> uuid.UUID:
+    """같은 VIP 기간·같은 단계 알림을 두 번 보내지 않으려고 쓰는 고정 번호."""
+    return uuid.uuid5(uuid.NAMESPACE_URL, f"vip-renewal:{user_id}:{until.isoformat()}:{stage}")
+
+
+def send_renewal_reminders(db: Session, now: datetime | None = None) -> int:
+    """VIP 재구매 알림을 보낸다 (서버가 VIP_REMINDER_INTERVAL_MINUTES분마다 부름). 보낸 알림 수를 돌려준다.
+
+    - 끝나기 VIP_REMINDER_DAYS_BEFORE일 전부터 끝나기 전까지: "VIP가 곧 끝나요"
+    - 끝난 뒤 할인 기간 안: "VIP가 끝났어요"
+    한국 시간 9시~22시에만 보낸다. 같은 기간·같은 단계는 한 번만. 이미 "입금했어요"를 눌렀으면 보내지 않는다.
+    """
+    from app.core.time import KST
+    from app.models.payment import Payment
+    from app.services import push_service
+    from app.services.notification_service import notify
+    from app.models.matching import Notification
+
+    s = get_settings()
+    if s.vip_renewal_discount <= 0:
+        return 0
+    now = now or utcnow()
+    if not (9 <= now.astimezone(KST).hour < 22):
+        return 0
+    window = timedelta(days=s.vip_renewal_window_days)
+    before = timedelta(days=s.vip_reminder_days_before)
+    rows = (
+        db.query(User)
+        .filter(
+            User.status == "ACTIVE",
+            User.deleted_at.is_(None),
+            User.vip_until.isnot(None),
+            User.vip_until > now - window,
+            User.vip_until <= now + before,
+        )
+        .all()
+    )
+    sent = 0
+    for user in rows:
+        until = as_utc(user.vip_until)
+        if until is None or is_vip_tester(user) or not has_bought_vip(db, user.id):
+            continue
+        waiting = (
+            db.query(Payment.id)
+            .filter(Payment.user_id == user.id, Payment.kind == "VIP", Payment.status == "REQUESTED")
+            .first()
+        )
+        if waiting is not None:
+            continue
+        stage = "ending" if now < until else "ended"
+        rid = _reminder_id(user.id, until, stage)
+        exists = (
+            db.query(Notification.id)
+            .filter(Notification.user_id == user.id, Notification.type == RENEWAL_NOTICE, Notification.related_id == rid)
+            .first()
+        )
+        if exists is not None:
+            continue
+        end_day = until.astimezone(KST)
+        deadline = (until + window).astimezone(KST)
+        off = f"{s.vip_renewal_discount:,}원"
+        if stage == "ending":
+            title = "VIP가 곧 끝나요"
+            body = (
+                f"VIP가 {end_day.month}월 {end_day.day}일 밤 12시에 끝나요. 지금 연장하면 {off} 할인돼요. "
+                f"새 VIP는 지금 VIP가 끝난 뒤 이어져요."
+            )
+            kind = push_service.VIP_ENDING
+        else:
+            title = "VIP가 끝났어요"
+            body = f"{deadline.month}월 {deadline.day}일까지 VIP를 다시 사면 {off} 할인돼요."
+            kind = push_service.VIP_ENDED
+        notify(db, user.id, RENEWAL_NOTICE, title, body, rid)
+        push_service.queue(db, user.id, kind, None)
+        sent += 1
+    db.commit()
+    return sent

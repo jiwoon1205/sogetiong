@@ -12,6 +12,8 @@ type PaymentRow = {
   kind: "SIGNUP" | "VIP" | "SUPER_LIKE";
   /** 슈퍼 라이크 개수 (2026-10-12) */
   quantity?: number;
+  /** VIP 재구매 할인 금액 (2026-11-12). 0보다 크면 "재구매" */
+  renewal_discount?: number;
   code: string;
   amount: number;
   status: "REQUESTED" | "CONFIRMED" | "REJECTED" | "REFUNDED";
@@ -116,6 +118,11 @@ export default function PaymentsPage() {
                   <span className={cn("ml-2 rounded px-1.5 py-0.5 text-[11.5px]", p.kind === "SIGNUP" ? "bg-paper-deep text-ink-soft" : "bg-brick-wash text-brick")}>
                     {p.kind === "VIP" ? "VIP" : p.kind === "SUPER_LIKE" ? `⭐ 슈퍼 라이크 ${p.quantity ?? 1}개` : "기본 이용권"}
                   </span>
+                  {(p.renewal_discount ?? 0) > 0 && (
+                    <span className="ml-2 rounded bg-ink px-1.5 py-0.5 text-[11.5px] font-semibold text-paper">
+                      재구매 · {p.renewal_discount!.toLocaleString()}원 할인
+                    </span>
+                  )}
                   {p.user_status && p.user_status !== "ACTIVE" && (
                     <span className="ml-2 rounded bg-paper-deep px-1.5 py-0.5 text-[11.5px] text-ink-soft">
                       {USER_STATUS_LABEL[p.user_status] ?? p.user_status}

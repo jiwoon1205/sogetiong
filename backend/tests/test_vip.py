@@ -86,8 +86,8 @@ def test_buy_vip_for_two_weeks(sent_codes, db, vip_on, mails):
     assert mails == [(pay["code"], 6000)]
     info = me.get("/api/v1/me/vip").json()
     assert info["active"] is True and info["can_buy"] is False
-    assert "끝난 뒤" in info["blocked_reason"]
-    assert me.post("/api/v1/me/vip/request").status_code == 409  # VIP 중에는 다시 못 삼
+    assert "3일 전부터" in info["blocked_reason"]  # 2026-11-12: 끝나기 3일 전부터 연장 가능 (그 전엔 "끝난 뒤")
+    assert me.post("/api/v1/me/vip/request").status_code == 409  # VIP가 많이 남았으면 다시 못 삼
 
     until = user_of(db, me).vip_until
     db.refresh(user_of(db, me))

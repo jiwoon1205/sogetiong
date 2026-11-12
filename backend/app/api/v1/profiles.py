@@ -798,7 +798,11 @@ def request_payment_check(
 def _vip_info(db: Session, current: CurrentUser) -> dict:
     settings = get_settings()
     user = current.user
-    price = vip_service.price(user)  # 여성 회원은 VIP_PRICE_FEMALE (2026-11-07)
+    base_price = vip_service.price(user)  # 여성 회원은 VIP_PRICE_FEMALE (2026-11-07)
+    # VIP 재구매 할인 (2026-11-12): VIP가 끝나기 3일 전 ~ 끝난 뒤 3일 안에 다시 사면 1,000원 할인
+    deadline = vip_service.renewal_deadline(db, user)
+    discount = settings.vip_renewal_discount if deadline else 0
+    price = base_price - discount
     info = {
         "visible": vip_service.feature_visible(user),
         "active": vip_service.is_vip(user),
@@ -807,6 +811,12 @@ def _vip_info(db: Session, current: CurrentUser) -> dict:
         "days": membership_service.period_days("VIP"),  # 지금 사면 받는 일수 (베타 4주 / 정식 2주, 2026-10-06)
         "price": price,
         "regular_price": get_settings().vip_price,  # 남성 가격 (여성 회원 화면에 정가로 보여줄 때)
+        "base_price": base_price,  # 재구매 할인 전 가격
+        # 지금 재구매 할인 중이면 {discount, until(할인이 끝나는 시각)}, 아니면 None
+        "renewal": {"discount": discount, "until": deadline.isoformat()} if deadline else None,
+        # 재구매 할인 규칙 안내용 (VIP_RENEWAL_DISCOUNT원, 끝나기 전·끝난 뒤 VIP_RENEWAL_WINDOW_DAYS일)
+        "renewal_discount_amount": settings.vip_renewal_discount,
+        "renewal_window_days": settings.vip_renewal_window_days,
         "female_free": vip_service.is_female_free(user),
         # 지금 남은 기본 이용권 일수 → "VIP를 사면 남은 ○일은 VIP가 끝난 뒤 이어서 써요" 안내
         "member_days_left": (
@@ -828,15 +838,15 @@ def _vip_info(db: Session, current: CurrentUser) -> dict:
     if not settings.vip_enabled:
         # 판매 전 미리 보기 (2026-10-04): 탭은 보이지만 결제 버튼 대신 출시 안내
         info["blocked_reason"] = settings.vip_preview_notice if settings.vip_preview else "VIP는 아직 판매하지 않아요."
-    elif vip_service.has_paid_vip(user):
-        # VIP가 끝난 뒤에만 다시 살 수 있다 (2026-10-03)
-        info["blocked_reason"] = "VIP 기간이 끝난 뒤에 다시 살 수 있어요."
+    elif vip_service.has_paid_vip(user) and deadline is None:
+        # VIP가 끝나기 N일 전부터 연장할 수 있다 (2026-11-12. 그 전에는 끝난 뒤에만)
+        info["blocked_reason"] = f"VIP가 끝나기 {settings.vip_renewal_window_days}일 전부터 연장할 수 있어요."
     elif not membership_service.can_start(db, user):
         # 추천이 열려야(승인 사진 + 등급) VIP를 쓸 수 있다. 그 전에 사면 날짜만 줄어든다.
         info["blocked_reason"] = "사진 검수가 끝난 뒤에 VIP를 살 수 있어요."
     else:
         info["can_buy"] = True
-        payment = payment_service.get_or_create_payment(db, user, "VIP", price)
+        payment = payment_service.get_or_create_payment(db, user, "VIP", price, renewal_discount=discount)
         db.commit()
         info["payment"] = _payment_view(payment, open_now=payment_service.is_payment_open())
     return info
