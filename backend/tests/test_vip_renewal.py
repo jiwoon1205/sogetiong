@@ -222,6 +222,10 @@ def test_migration_0034_gives_recent_first_signups_one(tmp_path, monkeypatch):
         "gone": (recent, "DELETED", "h3"),
         "rejoin": (recent, "ACTIVE", "h4"),
         "rejoin_prev": (old, "DELETED", "h4"),
+        "paid_basic": (recent, "ACTIVE", "h5"),
+        "paid_vip": (recent, "ACTIVE", "h6"),
+        "only_superlike": (recent, "ACTIVE", "h7"),  # 슈퍼 라이크만 산 사람은 이용권이 아니라서 받는다
+        "pending": (recent, "ACTIVE", "h8"),  # 입금 확인 전이면 받는다
     }
     ids = {}
     uni = uuid.uuid4()
@@ -235,9 +239,22 @@ def test_migration_0034_gives_recent_first_signups_one(tmp_path, monkeypatch):
                 deleted_at=now if st == "DELETED" else None, university_id=uni, super_likes=0,
                 referral_code=None, referred_by_id=None,
             )))
+        pays = Base.metadata.tables["payments"]
+        for name, kind, st in [
+            ("paid_basic", "SIGNUP", "CONFIRMED"),
+            ("paid_vip", "VIP", "CONFIRMED"),
+            ("only_superlike", "SUPER_LIKE", "CONFIRMED"),
+            ("pending", "VIP", "REQUESTED"),
+        ]:
+            conn.execute(pays.insert().values(row(
+                pays, id=uuid.uuid4(), user_id=ids[name], kind=kind, status=st, code=name[:12], amount=1000,
+                processed_by_admin_id=None,
+            )))
     command.upgrade(cfg, "0034_signup_super_like_gift")
     with engine.connect() as conn:
         got = dict(conn.execute(sa.select(users.c.id, users.c.super_likes)).all())
     assert got[ids["new"]] == 1
     assert got[ids["old"]] == 0 and got[ids["gone"]] == 0 and got[ids["rejoin"]] == 0
+    assert got[ids["paid_basic"]] == 0 and got[ids["paid_vip"]] == 0  # 이용권을 산 사람은 제외
+    assert got[ids["only_superlike"]] == 1 and got[ids["pending"]] == 1
     engine.dispose()

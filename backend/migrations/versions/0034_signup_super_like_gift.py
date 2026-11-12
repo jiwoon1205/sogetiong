@@ -3,6 +3,7 @@
 - 앞으로 처음 가입하는 사람은 가입할 때 슈퍼 라이크 1개를 받는다 (설정 SIGNUP_SUPER_LIKES, api/v1/auth.signup).
 - 이 마이그레이션: 2026-11-05 17:49(한국 시간, 요청한 시각에서 7일 전) 이후에 가입한 사람에게도 1개를 넣어 준다.
   탈퇴하지 않은 계정만, 같은 메일로 예전에 가입한 적이 없는 사람만 (탈퇴 후 재가입은 제외). 알림도 남긴다.
+  이미 이용권(기본·VIP)을 산 사람(입금 확인된 결제가 있음)은 받지 않는다 (2026-11-12 배포 전 수정).
   칸을 바꾸지 않으므로 되돌리기(downgrade)는 아무것도 하지 않는다.
 
 Revision ID: 0034_signup_super_like_gift
@@ -33,6 +34,12 @@ users = sa.table(
     sa.column("created_at", sa.DateTime(timezone=True)),
     sa.column("super_likes", sa.Integer()),
 )
+payments = sa.table(
+    "payments",
+    sa.column("user_id", sa.Uuid()),
+    sa.column("kind", sa.String()),
+    sa.column("status", sa.String()),
+)
 notifications = sa.table(
     "notifications",
     sa.column("id", sa.Uuid()),
@@ -60,12 +67,21 @@ def upgrade() -> None:
     for r in rows:
         if r.email_hash:
             per_hash[r.email_hash] = per_hash.get(r.email_hash, 0) + 1
+    # 이미 이용권(기본·VIP)을 산 사람은 제외
+    paid = {
+        uid
+        for (uid,) in conn.execute(
+            sa.select(payments.c.user_id).where(payments.c.kind.in_(("SIGNUP", "VIP")), payments.c.status == "CONFIRMED")
+        ).all()
+    }
     alerts = []
     for r in rows:
         created = _utc(r.created_at)
         if created is None or created < CUTOFF or r.status != "ACTIVE" or r.deleted_at is not None:
             continue
         if r.email_hash and per_hash.get(r.email_hash, 0) > 1:
+            continue
+        if r.id in paid:
             continue
         conn.execute(sa.update(users).where(users.c.id == r.id).values(super_likes=(r.super_likes or 0) + GIFT))
         alerts.append(
