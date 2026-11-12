@@ -91,22 +91,20 @@ function LikedList({ vip, onRenew }: { vip: VipInfo; onRenew: () => void }) {
 
   return (
     <div className="mx-auto max-w-app">
+      {vip.renewal && vip.can_buy && (
+        <RenewalBanner
+          title={vip.until ? `VIP가 ${untilDay(vip.until).replace("까지", "에")} 끝나요` : "VIP가 곧 끝나요"}
+          body="지금 연장하면 새 VIP가 지금 VIP가 끝난 뒤 이어져요."
+          discount={vip.renewal.discount}
+          action={`연장하기 · ${vip.price.toLocaleString()}원`}
+          onClick={onRenew}
+        />
+      )}
       <PageTitle
         eyebrow="VIP"
         title="받은 LIKE"
         desc={vip.until ? `VIP는 ${untilDay(vip.until)}예요.` : "나를 LIKE한 사람이에요. 서로 LIKE하면 바로 매칭돼요."}
       />
-      {vip.renewal && vip.can_buy && (
-        <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-card border border-brick/30 bg-brick-wash px-5 py-4">
-          <p className="text-[13.5px]">
-            VIP가 곧 끝나요. <b className="font-semibold text-brick">지금 연장하면 {vip.renewal.discount.toLocaleString()}원 할인</b>
-            <span className="block text-[12.5px] text-ink-soft">새 VIP는 지금 VIP가 끝난 뒤 이어져요.</span>
-          </p>
-          <Button size="sm" onClick={onRenew}>
-            연장하기 · {vip.price.toLocaleString()}원
-          </Button>
-        </div>
-      )}
       {error && (
         <div className="mb-4">
           <Notice tone="error">{error}</Notice>
@@ -236,6 +234,16 @@ function VipShop({
           ← 받은 LIKE로
         </button>
       )}
+      {/* VIP가 끝난 뒤 할인 기간 (2026-11-12): 받은 LIKE 탭 맨 위에 안내 */}
+      {!extending && vip.renewal && vip.can_buy && !paying && (
+        <RenewalBanner
+          title="VIP가 끝났어요"
+          body={`${untilDay(vip.renewal.until).replace(" 밤 12시까지", "")}까지 다시 사면 할인돼요.`}
+          discount={vip.renewal.discount}
+          action={`다시 시작하기 · ${vip.price.toLocaleString()}원`}
+          onClick={() => setPaying(true)}
+        />
+      )}
       <PageTitle eyebrow="VIP" title={extending ? "VIP 연장하기" : "받은 LIKE는 VIP에서 볼 수 있어요"} />
 
       <div className="mb-6 rounded-card border border-line bg-paper-card px-6 py-5">
@@ -255,7 +263,7 @@ function VipShop({
         </p>
         {vip.renewal ? (
           <p className="mt-2 text-[12.5px] text-ink-soft">
-            {untilDay(vip.renewal.until)}까지 다시 사면 할인돼요.{extending ? " 새 VIP는 지금 VIP가 끝난 뒤 이어져요." : ""}
+            {untilDay(vip.renewal.until)} 다시 사면 할인돼요.{extending ? " 새 VIP는 지금 VIP가 끝난 뒤 이어져요." : ""}
           </p>
         ) : null}
         <p className="mt-2 text-[12.5px] text-ink-faint">
@@ -264,7 +272,7 @@ function VipShop({
             ? ` VIP가 끝나기 ${vip.renewal_window_days}일 전부터 끝난 뒤 ${vip.renewal_window_days}일 안에 다시 사면 ${vip.renewal_discount_amount.toLocaleString()}원 할인돼요.`
             : " 기간이 끝나면 다시 살 수 있어요."}
         </p>
-        {vip.member_days_left ? (
+        {vip.member_days_left && !extending ? (
           <p className="mt-1 text-[12.5px] text-ink-soft">
             지금 남은 기본 이용권 <span className="num">{vip.member_days_left}</span>일은 VIP가 끝난 뒤 이어서 쓸 수 있어요.
           </p>
@@ -303,6 +311,35 @@ function VipShop({
           {extending ? "VIP 연장하기" : "VIP 시작하기"} · {vip.price.toLocaleString()}원
         </Button>
       )}
+    </div>
+  );
+}
+
+// ---------- VIP 재구매 할인 안내 (2026-11-12): 받은 LIKE 탭 맨 위 ----------
+
+function RenewalBanner({
+  title,
+  body,
+  discount,
+  action,
+  onClick,
+}: {
+  title: string;
+  body: string;
+  discount: number;
+  action: string;
+  onClick: () => void;
+}) {
+  return (
+    <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-card border border-brick/30 bg-brick-wash px-5 py-4">
+      <p className="min-w-0 text-[13.5px]">
+        <span className="font-semibold">{title}</span>{" "}
+        <b className="font-semibold text-brick">재구매 {discount.toLocaleString()}원 할인</b>
+        <span className="block text-[12.5px] text-ink-soft">{body}</span>
+      </p>
+      <Button size="sm" onClick={onClick}>
+        {action}
+      </Button>
     </div>
   );
 }
