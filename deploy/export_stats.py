@@ -10,7 +10,7 @@
 - **개인정보를 빼고** 내보낸다: 이메일·닉네임·실명·사용자 ID·자기소개 원문·대화 내용·탈퇴 사유 원문은 없다.
   사람은 순서 번호(row)로만 구분한다. 글은 글자 수만, 탈퇴 사유는 적었는지만.
 - 시각은 모두 한국 시간.
-- **빼는 계정** (2026-11-11): 운영자 테스트 계정(VIP_TEST_EMAILS)과 슈퍼 VIP 계정.
+- **빼는 계정** (2026-11-11): 운영자 테스트 계정(닉네임 SKIP_NICKNAMES, VIP_TEST_EMAILS)과 슈퍼 VIP 계정.
   그 사람의 줄뿐 아니라, 그 계정과 주고받은 좋아요·매칭·대화·결제·접속도 모든 숫자에서 뺀다.
   테스트 계정 메일은 환경 변수 VIP_TEST_EMAILS → deploy/backend.env의 VIP_TEST_EMAILS= 줄 → 기본값 순서로 찾는다.
 
@@ -32,6 +32,7 @@ DB = sys.argv[1] if len(sys.argv) > 1 else os.path.join(ROOT, "data", "sogetiong
 OUT = os.path.abspath(os.path.expanduser(sys.argv[2])) if len(sys.argv) > 2 else os.path.dirname(os.path.abspath(DB))
 
 
+SKIP_NICKNAMES = {"케로롱"}  # 관리자 테스트 계정 닉네임
 DEFAULT_TEST_EMAILS = "wldns051205@hufs.ac.kr"  # backend/app/core/config.py 의 vip_test_emails 기본값과 같게
 
 
@@ -89,11 +90,16 @@ def main():
 
     schools = {r["id"]: r["email_domain"] for r in q("SELECT id, email_domain FROM universities")}
     all_users = q("SELECT * FROM users")
+    pub = {r["user_id"]: r for r in q("SELECT * FROM public_profiles")}
     # 운영자 테스트 계정과 슈퍼 VIP 계정은 통계에서 뺀다 (2026-11-11)
     tests = test_emails()
-    skip = {u["id"] for u in all_users if bool(u["super_vip"]) or (u["email"] or "").strip().lower() in tests}
+    skip = {
+        u["id"] for u in all_users
+        if bool(u["super_vip"])
+        or (u["email"] or "").strip().lower() in tests
+        or (u["id"] in pub and (pub[u["id"]]["nickname"] or "").strip() in SKIP_NICKNAMES)
+    }
     users = [u for u in all_users if u["id"] not in skip]
-    pub = {r["user_id"]: r for r in q("SELECT * FROM public_profiles")}
     priv = {r["user_id"]: r for r in q("SELECT user_id, birth_date FROM private_profiles")}
     interests = defaultdict(int)
     for r in q("SELECT user_id, COUNT(*) n FROM user_interests GROUP BY user_id"):
