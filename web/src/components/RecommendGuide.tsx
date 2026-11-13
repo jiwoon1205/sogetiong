@@ -65,7 +65,7 @@ function RecommendGuide({ onClose }: { onClose: () => void }) {
       <Section title="다시 나오는 경우">
         <Item>넘긴 사람은 2일 뒤에 다시 나올 수 있어요.</Item>
         <Item>
-          좋아요를 보냈는데 3일 동안 매칭이 안 되면 다시 나와요. 또 좋아요를 보낼 수 있고, 보낼수록 상대 추천에 내가 더 자주 나와요.
+          좋아요를 보냈는데 3일 동안 매칭이 안 되면 다시 나올 수 있어요. 또 좋아요를 보낼 수 있고, 보낼수록 상대 추천에 내가 더 자주 나와요.
         </Item>
         <Item>
           같은 사람에게 좋아요가 <b className="font-semibold text-ink">5번</b> 쌓이면 상대가 좋아요하지 않아도 바로 매칭돼요 (슈퍼 라이크와 같아요).

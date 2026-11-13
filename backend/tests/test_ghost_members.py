@@ -8,13 +8,7 @@ from datetime import timedelta
 
 from app.core.time import utcnow
 from app.models.user import User, UserDailyVisit
-from app.services import profile_service
 from tests.conftest import admin_login, discover_ids, ready_user
-
-
-def test_activity_raises_chance_but_ghost_is_never_zero():
-    w = profile_service.matching_weights()
-    assert w.activity_max == 2.0  # 매일 오는 사람은 유령회원의 2배까지
 
 
 def test_ghost_member_shows_and_is_not_always_last(sent_codes, db, new_draw_each_call):

@@ -36,7 +36,7 @@ from app.schemas.admin import (
     UserDepartmentRequest,
     UserStatusRequest,
 )
-from app.services import admin_alert_service, audit_service, match_limit_service, membership_service, payment_service, profile_service, referral_service, super_like_service, vip_service, withdrawal_service
+from app.services import admin_alert_service, audit_service, match_limit_service, membership_service, payment_service, profile_service, rec_quota_service, referral_service, super_like_service, vip_service, withdrawal_service
 from app.services.email_service import EmailDeliveryError, EmailService
 from app.services.notification_service import notify, notify_match_created
 from app.services.session_service import (
@@ -1427,6 +1427,8 @@ def confirm_payment(
     if user is not None and payment.kind != super_like_service.KIND:
         # 이용권·VIP를 살 때마다 "사진 바로 재검토 1회" (2026-10-06). 체험 종료는 add_membership/add_vip가 한다
         membership_service.grant_rereview(user, now)
+        # 이용권·VIP를 새로 사면 "좋아요 3·4번 쌓인 사람" 추천 자리가 다시 열린다 (2026-11-13, 내부 규칙)
+        rec_quota_service.reset(db, user.id)
     # 받는 일수: "입금했어요"를 누른 시각 기준. 베타 기간(OPEN_AT 전)이면 4주, 정식 배포 뒤면 2주 (2026-10-06)
     days = membership_service.period_days(payment.kind, payment.requested_at or now)
     if user is not None and payment.kind == super_like_service.KIND:

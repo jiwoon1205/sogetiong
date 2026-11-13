@@ -13,6 +13,7 @@ from app.models.matching import (
     Notification,
     PreferredCampus,
     PreferredDepartment,
+    RecQuotaSlot,
     Report,
 )
 from app.models.payment import Payment

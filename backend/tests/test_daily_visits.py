@@ -88,8 +88,12 @@ def test_admin_user_list_gender_filter(sent_codes, db):
     assert admin.get("/api/v1/admin/users?gender=OTHER").status_code == 422
 
 
-def test_frequent_visitor_is_drawn_more_often(sent_codes, db, monkeypatch):
-    """2026-10-24 재설계: 자주 오는 사람일수록 추천에 뽑힐 확률이 높다 (가중치 ②)."""
+def test_frequent_visitor_is_drawn_more_often(sent_codes, db, monkeypatch, new_draw_each_call):
+    """2026-10-24 재설계: 자주 오는 사람일수록 추천에 뽑힐 확률이 높다 (가중치 ②).
+
+    2026-11-10: 추천이 하루 고정(11-09)된 뒤로 '5번 모두 맨 앞'은 그날 해시에 따라 가끔 실패했다
+    → 매번 새로 뽑게 하고(new_draw_each_call) 30번 중 맨 앞에 나온 횟수로 확인한다.
+    """
     from app.core.config import get_settings
 
     # 2026-10-24 재설계: 활동은 가중치 ②(최대 2배)로 확률만 올린다 → 확실히 보려고 배수를 크게 한다
@@ -105,5 +109,7 @@ def test_frequent_visitor_is_drawn_more_often(sent_codes, db, monkeypatch):
         db.add(UserDailyVisit(user_id=user.id, visit_date=kst_today() - timedelta(days=d)))
     db.commit()
 
-    for _ in range(5):
-        assert discover_ids(viewer)[:2] == [frequent.profile_id, rare.profile_id]
+    firsts = [discover_ids(viewer)[0] for _ in range(30)]
+    # 가중치 약 714 : 72 → 맨 앞 확률 약 91%. 30번 중 20번 미만일 확률은 10만분의 1 수준
+    assert firsts.count(frequent.profile_id) >= 20
+    assert set(firsts) <= {frequent.profile_id, rare.profile_id}

@@ -97,6 +97,24 @@ class Like(Base):
     updated_at: Mapped[datetime] = updated_at()
 
 
+class RecQuotaSlot(Base):
+    """좋아요가 3·4번 쌓인 사람의 추천 자리 (2026-11-13, 마이그레이션 0035). 내부 규칙 — 사용자에게 알리지 않는다.
+
+    이용권 기간마다 "내가 좋아요를 3번 보낸 사람"은 REC_QUOTA_LEVEL3명, "4번 보낸 사람"은 REC_QUOTA_LEVEL4명까지만
+    추천에 나온다. 처음 추천에 나온 순간 자리를 차지하고, 자리를 받은 사람은 그 기간 동안 계속 나올 수 있다.
+    이용권·VIP 입금이 확인되면 그 사용자의 자리를 모두 지운다 (rec_quota_service.reset).
+    """
+
+    __tablename__ = "rec_quota_slots"
+    __table_args__ = (UniqueConstraint("user_id", "target_user_id", "level", name="uq_rec_quota_slot"),)
+
+    id: Mapped[uuid.UUID] = pk()
+    user_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("users.id"), nullable=False, index=True)  # 추천을 보는 사람
+    target_user_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("users.id"), nullable=False)  # 추천에 나온 사람
+    level: Mapped[int] = mapped_column(Integer, nullable=False)  # 3 또는 4 (그때까지 보낸 좋아요 횟수)
+    created_at: Mapped[datetime] = created_at()
+
+
 class Match(Base):
     """user_a_id < user_b_id 순서로 저장해 같은 쌍이 두 번 생기지 않게 한다.
     status: ACTIVE / UNMATCHED / BLOCKED / HIDDEN

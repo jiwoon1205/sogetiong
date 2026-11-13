@@ -22,6 +22,7 @@ from app.services import (
     membership_service,
     profile_service,
     push_service,
+    rec_quota_service,
     super_like_service,
     vip_service,
 )
@@ -112,11 +113,13 @@ def discover(
     # 내가 이 사람들에게 보낸 좋아요 횟수 (2026-11-09: 추첨 전에 전부 구함 → 4번 이상 보낸 사람은 덜 나오게)
     sent = profile_service.sent_like_counts(db, current.id, list(by_user))
     # 가중치 추첨 (2026-10-24): 등급 × 활동 × 나를 좋아요한 횟수 × 취향 × 정성 × 내가 보낸 횟수 → matching_service.rank
+    page_size = limit or settings.discover_page_size
     ranked = matching_service.rank(
         viewer,
         profile_service.people_from_profiles(db, profiles),
         profile_service.matching_weights(),
-        limit or settings.discover_page_size,
+        # 좋아요 3·4번 쌓인 사람은 자리가 없으면 빠지므로(아래) 그만큼 더 뽑아 둔다
+        page_size + rec_quota_service.extra_candidates(sent),
         liked_counts=profile_service.liked_counts(db, current.id),
         sent_counts=sent,
         super_vip_slots=settings.super_vip_slots,  # 슈퍼 VIP는 페이지 맨 앞 (2026-10-12)
@@ -124,6 +127,10 @@ def discover(
         # 좋아요·넘기기한 사람은 빠지고 그다음 사람이 채워진다 (다른 사람 순서는 그대로)
         seed=f"{current.id}:{kst_today().isoformat()}",
     )
+    # 좋아요 3·4번 쌓인 사람 노출 제한 (2026-11-13, 내부 규칙 — 응답에 아무 표시도 없다): 이용권 기간마다 3번 4명·4번 2명,
+    # 이용권이 끝났으면 4번 보낸 사람 1명만 맨 앞에 (맛보기). 여성·테스트 계정은 제한 없음 → rec_quota_service
+    ranked = rec_quota_service.apply(db, current.user, ranked, sent, page_size, can_like=access != "none")
+    rec_quota_service.save(db)
     # 카드에는 외모 등급도, "나를 LIKE했는지"도 들어가지 않는다 (build_cards가 보내는 항목만 나감)
     cards = profile_service.build_cards(db, [by_user[p.user_id] for p in ranked])
     # 내가 보낸 좋아요 횟수는 카드에도 보여준다 (내 행동이라 보여줘도 된다): "좋아요 n번 보냈어요 · 5번이면 바로 매칭" 안내용

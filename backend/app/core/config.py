@@ -93,6 +93,14 @@ class Settings(BaseSettings):
     # 다음 좋아요(5번째)가 바로 매칭이라, 받는 사람이 원하지 않는 매칭을 당할 기회를 줄인다. 1이면 끔
     rec_sent_many_count: int = 4
     rec_sent_many_factor: float = 0.5  # 이 배수를 곱한다 (0.5 = 뽑힐 가능성 절반)
+    # 좋아요 3·4번 쌓인 사람 노출 제한 (2026-11-13, rec_quota_service). 내부 규칙 — 사용자에게 알리지 않는다.
+    # 이용권 기간(이용권·VIP 입금 확인 때마다 새로)마다 3번 보낸 사람 LEVEL3명, 4번 보낸 사람 LEVEL4명까지만 추천에 나온다.
+    # 이용권이 끝난 사람(좋아요 불가)에게는 4번 보낸 사람을 TEASER명만 추천 맨 앞에 보여 준다 (맛보기).
+    # 여성 회원·VIP 테스트 계정·슈퍼 VIP는 제한 없음. REC_QUOTA_ENABLED=false면 예전처럼 (3일 뒤 모두 다시 나옴)
+    rec_quota_enabled: bool = True
+    rec_quota_level3: int = 4
+    rec_quota_level4: int = 2
+    rec_quota_teaser: int = 1
     # ④ 취향 점수 안의 비중. 2026-10-24: 관심사 0.60→0.80, 완성도 0.25→0 (⑤ 프로필 정성으로 옮김), MBTI 0.15→0.20
     weight_interest: float = 0.80
     weight_completeness: float = 0.0
