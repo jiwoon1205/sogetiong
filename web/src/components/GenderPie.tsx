@@ -24,7 +24,18 @@ function slicePath(start: number, end: number): string {
   return `M${R},${R} L${x1},${y1} A${R},${R} 0 ${large} 1 ${x2},${y2} Z`;
 }
 
-export default function GenderPie({ male, female }: { male: number; female: number }) {
+export default function GenderPie({
+  male,
+  female,
+  title = "활성 사용자 남녀 분포",
+  sub = "사진 검수 완료 · 최근 7일 접속",
+}: {
+  male: number;
+  female: number;
+  /** 2026-11-13: "오늘 접속 남녀 분포"에도 같은 그래프를 쓴다 */
+  title?: string;
+  sub?: string;
+}) {
   const [hover, setHover] = useState<string | null>(null);
   const total = male + female;
   const values: Record<string, number> = { male, female };
@@ -40,8 +51,8 @@ export default function GenderPie({ male, female }: { male: number; female: numb
   return (
     <div className="flex items-center gap-5 rounded-card border border-line bg-paper-card px-5 py-4">
       <div>
-        <p className="text-[13px] text-ink-soft">활성 사용자 남녀 분포</p>
-        <p className="mt-0.5 text-[12px] text-ink-faint">사진 검수 완료 · 최근 7일 접속</p>
+        <p className="text-[13px] text-ink-soft">{title}</p>
+        <p className="mt-0.5 text-[12px] text-ink-faint">{sub}</p>
       </div>
       {total === 0 ? (
         <p className="text-[13px] text-ink-faint">아직 데이터가 없어요.</p>

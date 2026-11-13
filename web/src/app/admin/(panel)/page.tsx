@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { PageTitle, Spinner } from "@/components/ui";
 import GenderPie from "@/components/GenderPie";
+import ImpressionChart, { type ImpressionDistribution } from "@/components/ImpressionChart";
 import { adminApi, useAdmin } from "@/lib/admin";
 import { dateTime } from "@/lib/format";
 
@@ -16,6 +17,11 @@ type Stats = {
   users_female: number;
   users_active_male: number;
   users_active_female: number;
+  /** 오늘 접속의 남녀 (2026-11-13) */
+  users_active_today_male?: number;
+  users_active_today_female?: number;
+  /** 전체적인 인상 점수별 접속자 (2026-11-13) */
+  impression_distribution?: ImpressionDistribution;
   users_suspended: number;
   users_deleted?: number;
   users_deleted_recent?: number;
@@ -58,7 +64,12 @@ const TILES: Tile[] = [
     perm: "payments:confirm",
   },
   { key: "users_active", label: "활성 사용자", hint: "사진 검수 완료 + 최근 7일 접속" },
-  { key: "users_active_today", label: "오늘 접속" },
+  {
+    key: "users_active_today",
+    label: "오늘 접속",
+    hint: (s) => `남 ${(s.users_active_today_male ?? 0).toLocaleString()} · 여 ${(s.users_active_today_female ?? 0).toLocaleString()}`,
+    href: "/admin/users?visited=today",
+  },
   { key: "users_total", label: "전체 가입자", hint: "탈퇴·정지 포함" },
   { key: "users_male", label: "남자", hint: "정상 계정", href: "/admin/users?gender=MALE" },
   { key: "users_female", label: "여자", hint: "정상 계정", href: "/admin/users?gender=FEMALE" },
@@ -103,6 +114,12 @@ export default function AdminDashboard() {
       <PageTitle eyebrow="현황" title="오늘의 운영" desc="개인정보 없이 숫자만 보여줍니다." />
       <div className="mb-4 flex flex-wrap items-center gap-x-6 gap-y-3">
         <GenderPie male={stats.users_active_male ?? 0} female={stats.users_active_female ?? 0} />
+        <GenderPie
+          male={stats.users_active_today_male ?? 0}
+          female={stats.users_active_today_female ?? 0}
+          title="오늘 접속 남녀 분포"
+          sub="오늘(한국 시간) 접속한 정상 계정"
+        />
         {genderRatio(stats) && <p className="text-[14px] text-ink-soft">전체 성비 {genderRatio(stats)}</p>}
       </div>
       <div className="grid grid-cols-2 gap-px overflow-hidden rounded-card border border-line bg-line lg:grid-cols-3">
@@ -129,6 +146,7 @@ export default function AdminDashboard() {
           <div key={`filler-${i}`} className="hidden bg-paper-card lg:block" aria-hidden />
         ))}
       </div>
+      {stats.impression_distribution && <ImpressionChart data={stats.impression_distribution} />}
       {(stats.schools?.length ?? 0) > 1 && <SchoolTable schools={stats.schools!} />}
       {admin.can("users:read") && <RecentWithdrawals />}
     </>

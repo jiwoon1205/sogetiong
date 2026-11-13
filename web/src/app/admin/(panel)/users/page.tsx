@@ -14,6 +14,8 @@ type UserRow = {
   subject_code: string;
   nickname: string | null;
   gender: string | null;
+  /** 전체적인 인상 (가장 최근 평가, 1~10). null = 아직 평가 없음 (2026-11-13) */
+  overall_impression?: number | null;
   /** 학교 이름 (2026-10-24) */
   university?: string | null;
   /** 내가 찾는 관계 (2026-11-11). null = 안 고름 */
@@ -70,6 +72,8 @@ function UsersList() {
     const m = searchParams.get("membership");
     return m && m in MEMBERSHIP_LABEL ? m : "";
   });
+  // 오늘 접속한 사람만 (2026-11-13): 현황의 "오늘 접속" 칸을 누르면 ?visited=today 로 들어온다
+  const [visited, setVisited] = useState(() => (searchParams.get("visited") === "today" ? "today" : ""));
   const [q, setQ] = useState("");
   // 학교 (2026-10-24 경희대 확장): 현황의 "학교별" 표에서 학교 이름을 누르면 ?school=khu.ac.kr 로 들어온다
   const [school, setSchool] = useState(() => searchParams.get("school") ?? "");
@@ -86,6 +90,7 @@ function UsersList() {
       if (membership) params.set("membership", membership);
       if (school) params.set("school", school);
       if (goal) params.set("goal", goal);
+      if (visited) params.set("visited", visited);
       if (q.trim()) params.set("q", q.trim());
       adminApi<{ users: UserRow[]; total?: number }>(`/users?${params}`).then((r) => {
         setItems(r.users);
@@ -93,7 +98,7 @@ function UsersList() {
       });
     }, 250);
     return () => clearTimeout(t);
-  }, [status, gender, membership, school, goal, q]);
+  }, [status, gender, membership, school, goal, visited, q]);
 
   return (
     <>
@@ -122,7 +127,7 @@ function UsersList() {
           ))}
         </Select>
       </div>
-      <div className="-mt-2 mb-5 grid gap-3 sm:grid-cols-[14rem_14rem]">
+      <div className="-mt-2 mb-5 grid gap-3 sm:grid-cols-[14rem_14rem_10rem]">
         {multiSchool && (
           <Select value={school} onChange={(e) => setSchool(e.target.value)}>
             <option value="">모든 학교</option>
@@ -143,21 +148,26 @@ function UsersList() {
           ))}
           <option value="NONE">안 고름</option>
         </Select>
+        <Select value={visited} onChange={(e) => setVisited(e.target.value)}>
+          <option value="">모든 접속</option>
+          <option value="today">오늘 접속</option>
+        </Select>
       </div>
       {items && (
         <p className="mb-2 text-[12.5px] text-ink-faint">
-          {total > items.length ? `${total}명 중 최근 가입한 ${items.length}명` : `${total}명`}
+          {visited ? `오늘 접속 ${total}명 · 최근 접속한 순서` : total > items.length ? `${total}명 중 최근 가입한 ${items.length}명` : `${total}명`}
         </p>
       )}
       {!items ? (
         <Spinner />
       ) : (
         <div className="overflow-x-auto rounded-card border border-line bg-paper-card">
-          <table className="w-full min-w-[68rem] text-[14px]">
+          <table className="w-full min-w-[71rem] text-[14px]">
             <thead className="border-b border-line text-left text-[12.5px] text-ink-faint">
               <tr>
                 <th className="px-5 py-3 font-normal">코드</th>
                 <th className="px-5 py-3 font-normal">닉네임</th>
+                <th className="px-5 py-3 text-right font-normal" title="전체적인 인상 (가장 최근 평가)">인상</th>
                 <th className="px-5 py-3 font-normal">성별</th>
                 {multiSchool && <th className="px-5 py-3 font-normal">학교</th>}
                 <th className="px-5 py-3 font-normal">찾는 관계</th>
@@ -178,6 +188,7 @@ function UsersList() {
                     </Link>
                   </td>
                   <td className="px-5 py-3">{u.nickname ?? <span className="text-ink-faint">—</span>}</td>
+                  <td className="num px-5 py-3 text-right">{u.overall_impression ?? <span className="text-ink-faint">—</span>}</td>
                   <td className="px-5 py-3">{u.gender ? GENDER_LABEL[u.gender] ?? u.gender : <span className="text-ink-faint">—</span>}</td>
                   {multiSchool && <td className="px-5 py-3 text-ink-soft">{u.university ? shortSchoolName(u.university) : "—"}</td>}
                   <td className="px-5 py-3 text-ink-soft">

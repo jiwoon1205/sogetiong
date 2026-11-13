@@ -152,7 +152,7 @@ def dashboard(admin: CurrentAdmin = Depends(require_permission("dashboard:read")
             q = q.filter(User.id.in_(approved))
         return c(q)
 
-    def gender_count(gender, since=None, university_id=None):
+    def gender_count(gender, since=None, university_id=None, *, photo_approved=True):
         q = (
             db.query(User.id)
             .join(PublicProfile, PublicProfile.user_id == User.id)
@@ -160,8 +160,10 @@ def dashboard(admin: CurrentAdmin = Depends(require_permission("dashboard:read")
         )
         if university_id is not None:
             q = q.filter(User.university_id == university_id)
-        if since is not None:  # 활성 사용자만: 이 날 이후 접속 + 사진 검수 완료
-            q = q.filter(User.id.in_(visitors_since(since)), User.id.in_(approved))
+        if since is not None:  # 이 날 이후 접속 (+ 활성 사용자면 사진 검수 완료)
+            q = q.filter(User.id.in_(visitors_since(since)))
+            if photo_approved:
+                q = q.filter(User.id.in_(approved))
         return c(q)
 
     week_start = today - timedelta(days=6)
@@ -179,6 +181,11 @@ def dashboard(admin: CurrentAdmin = Depends(require_permission("dashboard:read")
         # 활성 사용자(최근 7일 접속)의 남녀 분포 — 대시보드 원그래프용
         "users_active_male": gender_count("MALE", week_start),
         "users_active_female": gender_count("FEMALE", week_start),
+        # 오늘 접속의 남녀 (2026-11-13): "오늘 접속" 숫자와 같은 기준 (정상 계정, 사진 검수 여부와 상관없음)
+        "users_active_today_male": gender_count("MALE", today, photo_approved=False),
+        "users_active_today_female": gender_count("FEMALE", today, photo_approved=False),
+        # 전체적인 인상 점수별 접속자 (2026-11-13): 남녀 따로, 7일 이내 접속(활성 사용자와 같은 기준)·오늘 접속
+        "impression_distribution": _impression_distribution(db, approved, visitors_since, week_start, today),
         "users_suspended": c(db.query(User.id).filter(User.status.in_(["SUSPENDED", "BANNED"]))),
         # 탈퇴한 사용자 (탈퇴 후 영구 정지한 계정 포함). recent = 최근 7일 안에 탈퇴 → 아직 프로필·사진 열람 가능
         "users_deleted": c(db.query(User.id).filter(User.deleted_at.isnot(None))),
@@ -216,6 +223,32 @@ def dashboard(admin: CurrentAdmin = Depends(require_permission("dashboard:read")
             for uni in db.query(University).order_by(University.active.desc(), University.created_at, University.name).all()
         ],
     }
+
+
+def _impression_distribution(db: Session, approved, visitors_since, week_start, today) -> dict:
+    """전체적인 인상(가장 최근 평가, 1~10점)별로 몇 명이 접속했나 (2026-11-13, 관리자 현황 그래프).
+
+    대상: 정상 계정 + 사진 검수 완료 + 최근 7일(오늘 포함) 접속 = "활성 사용자"와 같은 기준. 평가가 없는 사람은 뺀다.
+    돌려주는 값: {"MALE": [{"score": 1, "week": n, "today": n}, ... 10점까지], "FEMALE": [...]}
+    week = 7일 이내 접속(오늘 포함), today = 그중 오늘 접속.
+    """
+    rows = (
+        db.query(User.id, PublicProfile.gender)
+        .join(PublicProfile, PublicProfile.user_id == User.id)
+        .filter(User.status == "ACTIVE", User.id.in_(visitors_since(week_start)), User.id.in_(approved))
+        .all()
+    )
+    gender_of = dict(rows)
+    today_ids = {uid for (uid,) in visitors_since(today).filter(UserDailyVisit.user_id.in_(list(gender_of)))}
+    out = {g: {score: {"score": score, "week": 0, "today": 0} for score in range(1, 11)} for g in ("MALE", "FEMALE")}
+    for uid, ev in profile_service.latest_evaluations(db, list(gender_of)).items():
+        bucket = out.get(gender_of.get(uid), {}).get(ev.overall_impression)
+        if bucket is None:
+            continue
+        bucket["week"] += 1
+        if uid in today_ids:
+            bucket["today"] += 1
+    return {g: list(scores.values()) for g, scores in out.items()}
 
 
 def _school_names(db: Session) -> dict:
@@ -500,6 +533,8 @@ def list_users(
     school: str | None = Query(default=None, max_length=120),  # 학교 메일 뒷부분 (예: khu.ac.kr), 2026-10-24
     # 내가 찾는 관계 (2026-11-11): SERIOUS / FRIEND / CASUAL, NONE = 아직 안 고름(예전 회원·탈퇴자)
     goal: str | None = Query(default=None, pattern="^(SERIOUS|FRIEND|CASUAL|NONE)$"),
+    # 오늘 접속한 사람만 (2026-11-13): 현황의 "오늘 접속" 칸을 누르면 ?visited=today 로 들어온다
+    visited: str | None = Query(default=None, pattern="^today$"),
     admin: CurrentAdmin = Depends(require_permission("users:read")),
     db: Session = Depends(get_db),
 ):
@@ -535,6 +570,12 @@ def list_users(
         query = query.filter(PublicProfile.relationship_goal.is_(None))
     elif goal:
         query = query.filter(PublicProfile.relationship_goal == goal)
+    if visited == "today":
+        # 현황의 "오늘 접속" 숫자와 같은 기준: 오늘(한국 시간) 접속한 정상 계정
+        query = query.filter(
+            User.status == "ACTIVE",
+            User.id.in_(db.query(UserDailyVisit.user_id).filter(UserDailyVisit.visit_date == kst_today())),
+        )
     if membership:
         # 현황의 "이용권 이용 중" 칸을 누르면 들어온다 (2026-10-06). 숫자와 똑같은 기준(_membership_counts)으로 거른다.
         now = utcnow()
@@ -552,6 +593,8 @@ def list_users(
         query = query.order_by(User.vip_until.asc())  # 곧 끝나는 사람부터
     elif membership:
         query = query.order_by(User.member_until.asc())
+    elif visited:
+        query = query.order_by(User.last_active_at.is_(None), User.last_active_at.desc())  # 방금 접속한 사람부터
     elif status_filter == "DELETED":
         # 탈퇴한 사용자: 마지막 접속이 최근인 사람부터 (접속 기록이 없으면 맨 아래)
         query = query.order_by(User.last_active_at.is_(None), User.last_active_at.desc(), User.created_at.desc())
@@ -560,6 +603,8 @@ def list_users(
     rows = query.limit(USER_LIST_LIMIT).all()
     stages = _onboarding_stages(db, [u.id for u, *_ in rows])
     schools = _school_names(db)
+    # 전체적인 인상 점수 (2026-11-13): 가장 최근 평가. 관리자 화면이라 보여줘도 된다 (등급은 넣지 않음)
+    evals = profile_service.latest_evaluations(db, [u.id for u, *_ in rows])
     return {
         "total": total,
         "users": [
@@ -568,6 +613,7 @@ def list_users(
                 "subject_code": pseudonymous_code(u.id),
                 "nickname": nick,
                 "gender": user_gender,  # MALE / FEMALE / None(프로필 없음)
+                "overall_impression": evals[u.id].overall_impression if u.id in evals else None,
                 "university": schools.get(u.university_id),  # 학교 이름 (2026-10-24)
                 "relationship_goal": user_goal,  # 내가 찾는 관계 (2026-11-11). None = 안 고름
                 "status": u.status,
