@@ -62,6 +62,10 @@ export function SurveyScreen({ onDone }: { onDone: () => Promise<void> }) {
         desc="1분이면 끝나요. 적어 주신 의견은 운영자만 보고, 서비스를 고치는 데만 써요. 다른 학생에게는 보이지 않아요."
       />
 
+      <p className="mb-8 rounded-md border border-line bg-paper-deep px-4 py-3 text-[13.5px] leading-relaxed text-ink-soft">
+        훕팅은 <b className="font-semibold text-ink">1인 개발자 혼자</b> 개발/운영하고 있어요. 남겨 주신 의견 하나하나 직접 읽고 반영할게요.
+      </p>
+
       <form
         onSubmit={(e) => {
           e.preventDefault();
