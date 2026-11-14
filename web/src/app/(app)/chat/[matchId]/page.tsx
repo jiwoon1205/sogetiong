@@ -385,8 +385,20 @@ export default function ChatPage() {
             </p>
           )}
           {/* 카톡처럼 둥근 입력창 하나에 보내기 버튼을 넣었다 (위쪽 회색 줄·큰 회색 버튼을 없애 키보드 위가 깔끔하게)
-              2026-11-14: 입력창 오른쪽에 ＋ 버튼 (사진 보내기·인스타 아이디 교환) */}
+              2026-11-14: ＋ 버튼 (사진 보내기·인스타 아이디 교환)
+              2026-11-15: 카톡처럼 ＋ 버튼은 입력창 왼쪽, 보내기 버튼은 오른쪽 */}
           <div className="flex items-end gap-2">
+          <button
+            type="button"
+            aria-label="사진 보내기·인스타 아이디 교환"
+            disabled={sendLocked}
+            onClick={() => setPanel("plus")}
+            className="mb-1 flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-line bg-paper-card text-ink transition-colors hover:border-ink-soft disabled:opacity-30"
+          >
+            <svg viewBox="0 0 16 16" className="h-4 w-4" aria-hidden>
+              <path d="M8 2.5v11M2.5 8h11" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+            </svg>
+          </button>
           <div className="flex flex-1 items-end gap-1.5 rounded-[24px] border border-line bg-paper-card py-1 pl-4 pr-1 transition-colors focus-within:border-ink-soft">
             <textarea
               ref={inputRef}
@@ -422,17 +434,6 @@ export default function ChatPage() {
               </svg>
             </button>
           </div>
-          <button
-            type="button"
-            aria-label="사진 보내기·인스타 아이디 교환"
-            disabled={sendLocked}
-            onClick={() => setPanel("plus")}
-            className="mb-1 flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-line bg-paper-card text-ink transition-colors hover:border-ink-soft disabled:opacity-30"
-          >
-            <svg viewBox="0 0 16 16" className="h-4 w-4" aria-hidden>
-              <path d="M8 2.5v11M2.5 8h11" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
-            </svg>
-          </button>
           </div>
         </form>
       )}

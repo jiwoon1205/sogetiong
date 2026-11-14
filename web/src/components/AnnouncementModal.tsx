@@ -123,7 +123,7 @@ const NOTICES: Record<string, Notice> = {
     body: (
       <>
         <p className="mb-4 text-[14px] leading-relaxed text-ink-soft">
-          대화방 입력창 오른쪽 <b className="font-semibold text-ink">＋ 버튼</b>을 눌러 보세요.
+          대화방 입력창 왼쪽 <b className="font-semibold text-ink">＋ 버튼</b>을 눌러 보세요.
         </p>
         <ul className="space-y-3 text-[14px] leading-relaxed text-ink-soft">
           <li>
