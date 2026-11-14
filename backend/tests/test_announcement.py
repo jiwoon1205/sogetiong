@@ -6,7 +6,15 @@
 """
 
 from app.models.user import User
+import pytest
+
 from app.services import announcement_service
+
+
+@pytest.fixture(autouse=True)
+def _show_to_everyone(monkeypatch):
+    """테스트 계정은 지금 막 가입한 "신규 가입자"라 공지가 안 뜬다 → 신규 가입자 제외는 따로 시험한다."""
+    monkeypatch.setattr(announcement_service, "CURRENT_FOR_JOINED_BEFORE", None)
 
 from tests.conftest import UserClient, signup
 
@@ -45,6 +53,7 @@ def test_notice_shown_once_a_day(sent_codes, db, monkeypatch):
     from datetime import timedelta
 
     monkeypatch.setattr(announcement_service, "CURRENT", "test-notice")
+    monkeypatch.setattr(announcement_service, "DAILY", True)  # 2026-11-14부터 기본은 계정당 한 번
 
     from app.core.time import kst_today, utcnow
 
@@ -76,9 +85,40 @@ def _daily(monkeypatch, s, *, opens_in=timedelta(days=1)):
 
 
 def test_chat_extras_notice_now(sent_codes, db):
-    """2026-11-14: 경희대 친구 초대 이벤트 공지를 내리고, 대화방 ＋ 버튼(사진·인스타) 공지로 바꿨다."""
+    """2026-11-14: 경희대 친구 초대 이벤트 공지를 내리고, 대화방 ＋ 버튼(사진·인스타) 공지로 바꿨다. 계정당 한 번."""
     a = signup(sent_codes, db, "a@hufs.ac.kr")
-    assert a.get("/api/v1/me").json()["announcement"].split("@")[0] == "chat-extras-2026-11"
+    assert announcement_service.DAILY is False
+    assert a.get("/api/v1/me").json()["announcement"] == "chat-extras-2026-11"
+    assert a.post("/api/v1/me/announcement/seen", json={"key": "chat-extras-2026-11"}).status_code == 200
+    assert a.get("/api/v1/me").json()["announcement"] is None
+
+
+def test_seen_in_daily_mode_counts_as_seen(sent_codes, db):
+    """하루 한 번 방식일 때(이름@날짜) 이미 본 사람에게는 계정당 한 번 방식으로 바꿔도 다시 안 뜬다."""
+    a = signup(sent_codes, db, "a@hufs.ac.kr")
+    db.query(User).filter(User.email == "a@hufs.ac.kr").update({"announcement_seen": "chat-extras-2026-11@2026-11-14"})
+    db.commit()
+    assert a.get("/api/v1/me").json()["announcement"] is None
+    # 다른 공지를 본 기록이면 뜬다
+    db.query(User).filter(User.email == "a@hufs.ac.kr").update({"announcement_seen": "female-free-2026-11@2026-11-13"})
+    db.commit()
+    assert a.get("/api/v1/me").json()["announcement"] == "chat-extras-2026-11"
+
+
+def test_new_signups_do_not_get_feature_notice(sent_codes, db, monkeypatch):
+    """2026-11-14: 기준 시각 이후 가입한 계정에는 기능 소개 공지가 안 뜬다. 그 전 가입자에게는 뜬다."""
+    from datetime import timedelta
+
+    from app.core.time import utcnow
+
+    monkeypatch.setattr(announcement_service, "CURRENT_FOR_JOINED_BEFORE", utcnow() - timedelta(minutes=1))
+    new = signup(sent_codes, db, "new@hufs.ac.kr")
+    assert new.get("/api/v1/me").json()["announcement"] is None
+
+    old = signup(sent_codes, db, "old@hufs.ac.kr")
+    db.query(User).filter(User.email == "old@hufs.ac.kr").update({"created_at": utcnow() - timedelta(days=3)})
+    db.commit()
+    assert old.get("/api/v1/me").json()["announcement"] == "chat-extras-2026-11"
 
 
 def test_payment_notice_once_a_day_before_open(sent_codes, db, paid_world, monkeypatch):

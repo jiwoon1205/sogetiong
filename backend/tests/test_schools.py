@@ -280,6 +280,7 @@ def test_school_notice_before_and_after_open(monkeypatch, sent_codes, db):
     from app.services import announcement_service
 
     monkeypatch.setattr(announcement_service, "DAILY", False)  # 하루 한 번(이름 뒤 날짜)은 test_announcement에서 확인
+    monkeypatch.setattr(announcement_service, "CURRENT_FOR_JOINED_BEFORE", None)  # 테스트 계정은 신규 가입자라 (2026-11-14)
     # 2026-11-07에 공지를 바꿨다 → 사전 공지 → 오픈 공지로 바뀌는 구조는 예전 이름으로 확인
     monkeypatch.setattr(announcement_service, "CURRENT", "khu-notice-2026-10")
     monkeypatch.setattr(announcement_service, "SCHOOL_OPEN_NOTICE", "khu-event-2026-10")
@@ -324,6 +325,7 @@ def test_open_notice_shows_even_if_last_seen_was_payment_notice(monkeypatch, sen
     from app.services import announcement_service
 
     monkeypatch.setattr(announcement_service, "SCHOOL_OPEN_NOTICE", "khu-event-2026-10")
+    monkeypatch.setattr(announcement_service, "CURRENT_FOR_JOINED_BEFORE", None)  # 테스트 계정은 신규 가입자라 (2026-11-14)
     a = signup(sent_codes, db, "a@hufs.ac.kr")
     db.query(User).filter(User.email == "a@hufs.ac.kr").update({"announcement_seen": "payment-open:2026-10-07-15"})
     db.commit()

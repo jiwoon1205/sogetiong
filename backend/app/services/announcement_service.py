@@ -17,11 +17,15 @@
 - 하루 한 번 (2026-10-25): DAILY = True면 CURRENT·SCHOOL_OPEN_NOTICE 공지도 이름 뒤에 한국 날짜를 붙인다
   (예: khu-event-2026-10@2026-10-25). 오늘 "확인"을 누르면 오늘은 안 뜨고, 다음 날 다시 한 번 뜬다.
   예전처럼 한 번만 보여주려면 DAILY = False. 화면은 "@" 앞부분 이름으로 내용을 찾는다.
+- 2026-11-14: 다시 계정당 한 번 (DAILY = False, 사용자 결정). 하루 한 번 방식일 때 이미 본 사람
+  (기록이 "이름@날짜")도 본 것으로 친다 → 이미 확인한 사람에게는 다시 안 뜬다.
+- 2026-11-14: 신규 가입자에게는 안 띄운다. CURRENT_FOR_JOINED_BEFORE 이후에 가입한 계정에는 CURRENT·SCHOOL_OPEN_NOTICE
+  공지가 뜨지 않는다 (기능 소개 공지라 새로 온 사람에게는 필요 없음). None이면 가입 시각과 상관없이 모두.
 """
 
 from datetime import datetime
 
-from app.core.time import KST, kst_today, utcnow
+from app.core.time import KST, as_utc, kst_today, utcnow
 from app.models.user import User
 from app.services import membership_service, vip_service
 
@@ -36,7 +40,11 @@ SCHOOL_OPEN_NOTICE: str | None = "chat-extras-2026-11"
 
 
 # 공지를 하루 한 번씩 다시 보여준다 (2026-10-25 사용자 결정). False면 예전처럼 계정당 한 번
-DAILY: bool = True
+# 2026-11-14: 계정당 한 번으로 되돌림 (사용자 결정)
+DAILY: bool = False
+# 이 시각 이후에 가입한 계정에는 CURRENT 공지를 띄우지 않는다 (2026-11-14 사용자 결정: 신규 가입자 제외).
+# 대화방 ＋ 버튼 기능을 서버에 올린 날 밤 9시(한국 시간). 공지를 바꿀 때 그 공지 기준으로 다시 정하거나 None
+CURRENT_FOR_JOINED_BEFORE: datetime | None = datetime(2026, 11, 14, 21, 0, tzinfo=KST)
 DAILY_SEPARATOR = "@"
 
 
@@ -78,13 +86,31 @@ def pending(user: User, now: datetime | None = None, *, multi_school: bool = Fal
     if daily is not None and user.announcement_seen != daily:
         return daily
     current = current_key(multi_school, now)
-    if current is None or user.announcement_seen == current:
+    if current is None or _seen(user.announcement_seen, current):
+        return None
+    # 신규 가입자에게는 기능 소개 공지를 띄우지 않는다 (2026-11-14)
+    if (
+        CURRENT_FOR_JOINED_BEFORE is not None
+        and user.created_at is not None
+        and as_utc(user.created_at) >= CURRENT_FOR_JOINED_BEFORE
+    ):
         return None
     # 2026-10-24 수정: 예전에는 "마지막으로 본 공지가 결제 오픈 하루 공지면 한 번 공지를 띄우지 않는다"는 규칙이 있었다
     # (휴대폰 알림 공지를 본 뒤 하루 공지를 본 사람에게 알림 공지가 다시 뜨지 않게). 그런데 이 규칙 때문에
     # 10/8 전에 결제 오픈 공지를 본 사람 전부에게 새 한 번 공지(경희대 오픈 공지)가 안 떴다.
     # 결제 오픈 하루 공지는 정식 배포(10/8) 뒤로 다시 나오지 않으므로 이 규칙을 없앤다.
     return current
+
+
+def _seen(seen: str | None, current: str) -> bool:
+    """이 공지를 이미 봤는지. 하루 한 번 방식일 때 본 기록("이름@날짜")도 같은 공지로 친다 (2026-11-14)."""
+    if not seen:
+        return False
+    base = current.split(DAILY_SEPARATOR)[0]
+    if seen == current:
+        return True
+    # 계정당 한 번 방식일 때: 예전에 하루 한 번 방식으로 본 기록("이름@날짜")도 본 것
+    return not DAILY and (seen == base or seen.startswith(base + DAILY_SEPARATOR))
 
 
 def is_showable(user: User, key: str, now: datetime | None = None, *, multi_school: bool = False) -> bool:
