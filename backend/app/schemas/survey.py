@@ -1,5 +1,3 @@
-from typing import Literal
-
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 
@@ -12,24 +10,28 @@ def _clean(text: str | None) -> str | None:
 
 
 class SurveyAnswerRequest(BaseModel):
-    """POST /me/survey"""
+    """POST /me/survey (2026-11-14 새 설문: 개선점·바라는 기능)
 
-    appearance_choice: Literal["AI_ONLY", "AI_NEW_CRITERIA", "AI_PLUS_ADMIN", "AI_PLUS_ADMIN_OPT_IN", "ADMIN_ONLY", "OTHER"]
-    appearance_comment: str | None = Field(default=None, max_length=500)
-    payment_rating: int = Field(ge=1, le=5)
-    payment_comment: str | None = Field(default=None, max_length=500)
-    suggestion: str | None = Field(default=None, max_length=1000)
+    - skip = True: "건너뛰기". 적은 글은 저장하지 않고 빈 응답으로 남긴다 (다시 안 뜸)
+    - skip = False: 둘 중 하나 이상 적어야 한다
+    """
 
-    @field_validator("appearance_comment", "payment_comment", "suggestion")
+    improvement: str | None = Field(default=None, max_length=1000)
+    feature_request: str | None = Field(default=None, max_length=1000)
+    skip: bool = False
+
+    @field_validator("improvement", "feature_request")
     @classmethod
     def strip_text(cls, v: str | None) -> str | None:
         return _clean(v)
 
     @model_validator(mode="after")
-    def other_needs_comment(self):
-        # "기타"를 고르면 어떤 방식인지 꼭 적어야 한다
-        if self.appearance_choice == "OTHER" and not self.appearance_comment:
-            raise ValueError("'기타'를 골랐다면 원하는 방식을 적어주세요.")
+    def needs_some_text(self):
+        if self.skip:
+            self.improvement = None
+            self.feature_request = None
+        elif not self.improvement and not self.feature_request:
+            raise ValueError("둘 중 하나는 적어주세요. 쓸 말이 없으면 '건너뛰기'를 눌러주세요.")
         return self
 
 

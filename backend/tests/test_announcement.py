@@ -13,6 +13,7 @@ from tests.conftest import UserClient, signup
 
 def test_shown_once_per_account(sent_codes, db, monkeypatch):
     monkeypatch.setattr(announcement_service, "DAILY", False)  # 예전 방식(계정당 한 번)도 그대로 동작
+    monkeypatch.setattr(announcement_service, "CURRENT", "test-notice")  # 지금은 공지가 꺼져 있어서(2026-11-14) 시험용 이름
     a = signup(sent_codes, db, "a@hufs.ac.kr")
     key = announcement_service.CURRENT
     assert a.get("/api/v1/me").json()["announcement"] == key
@@ -30,6 +31,7 @@ def test_shown_once_per_account(sent_codes, db, monkeypatch):
 
 def test_new_announcement_shows_again_and_can_be_off(sent_codes, db, monkeypatch):
     monkeypatch.setattr(announcement_service, "DAILY", False)
+    monkeypatch.setattr(announcement_service, "CURRENT", "test-notice")
     a = signup(sent_codes, db, "a@hufs.ac.kr")
     a.post("/api/v1/me/announcement/seen", json={"key": announcement_service.CURRENT})
     monkeypatch.setattr(announcement_service, "CURRENT", "next-notice")
@@ -38,9 +40,11 @@ def test_new_announcement_shows_again_and_can_be_off(sent_codes, db, monkeypatch
     assert a.get("/api/v1/me").json()["announcement"] is None
 
 
-def test_notice_shown_once_a_day(sent_codes, db):
+def test_notice_shown_once_a_day(sent_codes, db, monkeypatch):
     """2026-10-25: 공지는 하루 한 번. 오늘 확인하면 오늘은 안 뜨고, 다음 날 다시 뜬다."""
     from datetime import timedelta
+
+    monkeypatch.setattr(announcement_service, "CURRENT", "test-notice")
 
     from app.core.time import kst_today, utcnow
 
@@ -69,6 +73,12 @@ from tests.test_membership import paid_world, pay, switch_on  # noqa: E402,F401 
 def _daily(monkeypatch, s, *, opens_in=timedelta(days=1)):
     switch_on(monkeypatch, s, vip=True)
     monkeypatch.setattr(s, "open_at", utcnow() + opens_in)
+
+
+def test_no_notice_now(sent_codes, db):
+    """2026-11-14: 경희대 친구 초대 이벤트 공지를 내렸다 → 지금은 아무 공지도 안 뜬다."""
+    a = signup(sent_codes, db, "a@hufs.ac.kr")
+    assert a.get("/api/v1/me").json()["announcement"] is None
 
 
 def test_payment_notice_once_a_day_before_open(sent_codes, db, paid_world, monkeypatch):

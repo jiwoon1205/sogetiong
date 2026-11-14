@@ -1,4 +1,4 @@
-"""사용자 설문 (2026-10-05). 규칙은 app/services/survey_service.py 맨 위 설명.
+"""사용자 설문 (2026-10-05, 2026-11-14 새 설문). 규칙은 app/services/survey_service.py 맨 위 설명.
 
 - router       → /api/v1/me/survey        (사용자)
 - admin_router → /api/v1/admin/survey     (관리자: 켜기/끄기, 결과 보기)
@@ -18,10 +18,6 @@ from app.services import audit_service, survey_service
 
 router = APIRouter()
 admin_router = APIRouter()
-
-# 이 보기를 골랐을 때만 1번 질문의 "적는 칸"을 저장한다
-_COMMENT_CHOICES = {"AI_NEW_CRITERIA", "OTHER"}
-
 
 # ---------- 사용자 ----------
 
@@ -48,11 +44,8 @@ def answer_survey(
         SurveyResponse(
             user_id=current.id,
             survey_key=survey_service.SURVEY_KEY,
-            appearance_choice=payload.appearance_choice,
-            appearance_comment=payload.appearance_comment if payload.appearance_choice in _COMMENT_CHOICES else None,
-            payment_rating=payload.payment_rating,
-            payment_comment=payload.payment_comment,
-            suggestion=payload.suggestion,
+            improvement=payload.improvement,
+            feature_request=payload.feature_request,
         )
     )
     try:
@@ -81,7 +74,7 @@ def survey_results(
     admin: CurrentAdmin = Depends(require_permission("surveys:manage")),
     db: Session = Depends(get_db),
 ):
-    """설문 결과. 닉네임·이메일은 보여주지 않는다 (성별만)."""
+    """설문 결과 (2026-11-14 새 설문). 닉네임·이메일은 보여주지 않는다 (성별만)."""
     rows = (
         db.query(SurveyResponse)
         .filter(SurveyResponse.survey_key == survey_service.SURVEY_KEY)
@@ -89,41 +82,26 @@ def survey_results(
         .all()
     )
     genders = _genders(db, [r.user_id for r in rows])
-
-    appearance = {key: {"label": label, "total": 0, "MALE": 0, "FEMALE": 0} for key, label in survey_service.APPEARANCE_CHOICES.items()}
-    payment = {score: {"label": label, "total": 0, "MALE": 0, "FEMALE": 0} for score, label in survey_service.PAYMENT_RATINGS.items()}
-    for r in rows:
-        g = genders.get(r.user_id)
-        for bucket in (appearance.get(r.appearance_choice), payment.get(r.payment_rating)):
-            if bucket is None:
-                continue
-            bucket["total"] += 1
-            if g in ("MALE", "FEMALE"):
-                bucket[g] += 1
-
-    total = len(rows)
+    written = [r for r in rows if r.improvement or r.feature_request]
     return {
         "open": survey_service.is_open(db),
-        "total": total,
+        "total": len(rows),
         "by_gender": {
             "MALE": sum(1 for r in rows if genders.get(r.user_id) == "MALE"),
             "FEMALE": sum(1 for r in rows if genders.get(r.user_id) == "FEMALE"),
         },
-        "appearance": [{"key": k, **v} for k, v in appearance.items()],
-        "payment": [{"score": s, **v} for s, v in payment.items()],
-        "payment_average": round(sum(r.payment_rating for r in rows) / total, 2) if total else None,
+        "written": len(written),
+        "skipped": len(rows) - len(written),
+        # 글을 적은 응답만 (건너뛴 사람은 숫자로만)
         "responses": [
             {
                 "id": str(r.id),
                 "gender": genders.get(r.user_id),
-                "appearance_choice": r.appearance_choice,
-                "appearance_comment": r.appearance_comment,
-                "payment_rating": r.payment_rating,
-                "payment_comment": r.payment_comment,
-                "suggestion": r.suggestion,
+                "improvement": r.improvement,
+                "feature_request": r.feature_request,
                 "created_at": r.created_at.isoformat(),
             }
-            for r in rows
+            for r in written
         ],
     }
 
