@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { InstaCard, InstaHandleModal, OnceViewer, PhotoBubble, PhotoSendModal, PhotoZoom, PlusMenu } from "@/components/ChatExtras";
 import { Initial } from "@/components/Initial";
 import { ProfileCard } from "@/components/ProfileCard";
 import { ReportModal } from "@/components/ReportModal";
@@ -10,7 +11,7 @@ import { Button, Modal, Spinner } from "@/components/ui";
 import { ApiError, api, errorMessage } from "@/lib/api";
 import { clock, cn } from "@/lib/format";
 import { usePolling } from "@/lib/polling";
-import type { Card, ChatMessage } from "@/lib/types";
+import type { Card, ChatExtras, ChatMessage, InstaShare } from "@/lib/types";
 import { useVisualViewport } from "@/lib/viewport";
 
 const POLL_MS = 4000; // MVP: 몇 초마다 새 메시지 확인 (설계도 §51)
@@ -34,7 +35,15 @@ export default function ChatPage() {
   const [closed, setClosed] = useState("");
   const [error, setError] = useState("");
   const [sending, setSending] = useState(false);
-  const [panel, setPanel] = useState<"none" | "profile" | "menu" | "report">("none");
+  const [panel, setPanel] = useState<"none" | "profile" | "menu" | "report" | "plus" | "photo" | "insta">("none");
+  // ＋ 버튼: 사진·인스타 교환의 최신 상태 (2026-11-14). message_id → 상태. 몇 초마다 새로 받아 예전 카드도 바뀐다
+  const [extras, setExtras] = useState<ChatExtras>({ photos: {}, insta: {} });
+  const [myHandle, setMyHandle] = useState<string | null>(null);
+  const [onceSeconds, setOnceSeconds] = useState(5);
+  const [onceUrl, setOnceUrl] = useState<string | null>(null); // 지금 보고 있는 1회용 사진
+  const [zoomUrl, setZoomUrl] = useState<string | null>(null);
+  const [acceptShare, setAcceptShare] = useState<InstaShare | null>(null); // 수락하려고 아이디를 적는 중인 요청
+  const [reportReason, setReportReason] = useState("");
   // 슈퍼 라이크 매칭 (2026-10-12): sent = 내가 보냄(상대 답장 전 메시지 1개만), received = 내가 받음
   const [superLike, setSuperLike] = useState<"sent" | "received" | null>(null);
   // 좋아요 5번으로 생긴 매칭이면 "repeat_likes" (2026-10-24): 안전장치는 슈퍼 라이크와 같고 문구만 다름
@@ -62,12 +71,23 @@ export default function ChatPage() {
   const loadMessages = useCallback(async () => {
     try {
       const after = lastIdRef.current;
-      const r = await api<{ messages: ChatMessage[]; super_like?: "sent" | "received" | null; super_like_reason?: string | null; send_locked?: boolean }>(
+      const r = await api<{
+        messages: ChatMessage[];
+        super_like?: "sent" | "received" | null;
+        super_like_reason?: string | null;
+        send_locked?: boolean;
+        extras?: ChatExtras;
+        my_insta_handle?: string | null;
+        once_seconds?: number;
+      }>(
         after ? `/matches/${matchId}/messages?after=${encodeURIComponent(after)}` : `/matches/${matchId}/messages`,
       );
       setSuperLike(r.super_like ?? null);
       setSuperReason(r.super_like_reason ?? null);
       setSendLocked(Boolean(r.send_locked));
+      if (r.extras) setExtras(r.extras);
+      if (r.my_insta_handle !== undefined) setMyHandle(r.my_insta_handle);
+      if (r.once_seconds) setOnceSeconds(r.once_seconds);
       if (r.messages.length === 0) return; // 새 메시지 없음 → 화면을 다시 그리지 않는다
       setMessages((prev) => mergeMessages(prev, r.messages));
     } catch (err) {
@@ -163,6 +183,50 @@ export default function ChatPage() {
     }
   }
 
+  /** ＋ 버튼으로 보낸 것(사진·인스타 요청·답)을 화면에 바로 넣는다 */
+  function addSent(msg: ChatMessage) {
+    setMessages((m) => mergeMessages(m, [msg]));
+    if (msg.photo) setExtras((x) => ({ ...x, photos: { ...x.photos, [msg.message_id]: msg.photo! } }));
+    if (msg.insta) setExtras((x) => ({ ...x, insta: { ...x.insta, [msg.message_id]: msg.insta! } }));
+    if (superLike === "sent" && !messages.some((x) => !x.is_mine)) setSendLocked(true);
+    void loadMessages(); // 예전 카드 상태(수락·거절)도 바로 맞춘다
+  }
+
+  // 지금 진행 중이거나 끝난 인스타 교환이 있으면 새 요청을 못 한다
+  const instaList = Object.values(extras.insta);
+  const instaBlocked = instaList.some((s) => s.status === "ACCEPTED")
+    ? "이미 아이디를 교환했어요"
+    : instaList.some((s) => s.status === "PENDING")
+      ? "답을 기다리는 요청이 있어요"
+      : null;
+
+  async function requestInsta(handle: string) {
+    const msg = await api<ChatMessage>(`/matches/${matchId}/insta`, { method: "POST", body: { handle, agree: true } });
+    setMyHandle(handle);
+    addSent(msg);
+  }
+
+  async function answerInsta(share: InstaShare, action: "accept" | "decline" | "cancel", handle?: string) {
+    const msg = await api<ChatMessage>(`/matches/${matchId}/insta/${share.share_id}/${action}`, {
+      method: "POST",
+      body: action === "accept" ? { handle, agree: true } : undefined,
+    });
+    if (handle) setMyHandle(handle);
+    addSent(msg);
+  }
+
+  function closeOnce() {
+    setOnceUrl((url) => {
+      if (url) URL.revokeObjectURL(url);
+      return null;
+    });
+  }
+
+  function openReport(reason = "") {
+    setReportReason(reason);
+    setPanel("report");
+  }
+
   async function endWith(kind: "unmatch" | "block") {
     const ok = window.confirm(kind === "block" ? "차단하면 대화가 끝나고 서로 다시 추천되지 않아요. 차단할까요?" : "매칭을 해제하면 대화가 끝나요. 해제할까요?");
     if (!ok || !partner) return;
@@ -232,9 +296,43 @@ export default function ChatPage() {
         )}
         {messages.map((m, i) => {
           const showTime = i === messages.length - 1 || messages[i + 1].is_mine !== m.is_mine;
-          return (
-            <div key={m.message_id} className={cn("flex items-end gap-2", m.is_mine ? "justify-end" : "justify-start")}>
-              {m.is_mine && showTime && <span className="text-[11px] text-ink-faint">{clock(m.sent_at)}</span>}
+          // 인스타 교환 결과 안내 줄 (교환했어요·거절했어요·취소했어요): 가운데 작은 글씨
+          if (m.type === "INSTA_RESULT") {
+            return (
+              <p key={m.message_id} className="py-1 text-center text-[12px] text-ink-faint">
+                {m.is_mine ? m.body : `상대가 ${m.body.replace("인스타 아이디를 교환했어요", "수락해서 인스타 아이디를 교환했어요")}`}
+              </p>
+            );
+          }
+          const photo = m.type === "PHOTO" ? (extras.photos[m.message_id] ?? m.photo) : null;
+          const insta = m.type === "INSTA_REQUEST" ? (extras.insta[m.message_id] ?? m.insta) : null;
+          let content: React.ReactNode;
+          if (photo) {
+            content = (
+              <PhotoBubble
+                matchId={matchId}
+                message={m}
+                photo={photo}
+                onZoom={setZoomUrl}
+                onOpened={(url, photoId) => {
+                  // 연 순간 이 사진은 "열어본 사진"이 된다 (서버도 이미 기록)
+                  setExtras((x) => ({ ...x, photos: { ...x.photos, [m.message_id]: { ...photo, photo_id: photoId, state: "OPENED" } } }));
+                  if (url) setOnceUrl(url);
+                }}
+              />
+            );
+          } else if (insta) {
+            content = (
+              <InstaCard
+                share={insta}
+                onAccept={() => setAcceptShare(insta)}
+                onDecline={() => answerInsta(insta, "decline")}
+                onCancel={() => answerInsta(insta, "cancel")}
+                onReport={() => openReport("FAKE_INSTA_ID")}
+              />
+            );
+          } else {
+            content = (
               <p
                 className={cn(
                   "max-w-[78%] whitespace-pre-wrap break-words rounded-2xl px-4 py-2.5 text-[15px] leading-relaxed",
@@ -243,6 +341,12 @@ export default function ChatPage() {
               >
                 {m.body}
               </p>
+            );
+          }
+          return (
+            <div key={m.message_id} className={cn("flex items-end gap-2", m.is_mine ? "justify-end" : "justify-start")}>
+              {m.is_mine && showTime && <span className="text-[11px] text-ink-faint">{clock(m.sent_at)}</span>}
+              {content}
               {!m.is_mine && showTime && <span className="text-[11px] text-ink-faint">{clock(m.sent_at)}</span>}
             </div>
           );
@@ -279,8 +383,10 @@ export default function ChatPage() {
               {sendLocked ? "상대가 답장하면 이어서 대화할 수 있어요." : "상대가 답장하기 전까지 메시지는 1개만 보낼 수 있어요."}
             </p>
           )}
-          {/* 카톡처럼 둥근 입력창 하나에 보내기 버튼을 넣었다 (위쪽 회색 줄·큰 회색 버튼을 없애 키보드 위가 깔끔하게) */}
-          <div className="flex items-end gap-1.5 rounded-[24px] border border-line bg-paper-card py-1 pl-4 pr-1 transition-colors focus-within:border-ink-soft">
+          {/* 카톡처럼 둥근 입력창 하나에 보내기 버튼을 넣었다 (위쪽 회색 줄·큰 회색 버튼을 없애 키보드 위가 깔끔하게)
+              2026-11-14: 입력창 오른쪽에 ＋ 버튼 (사진 보내기·인스타 아이디 교환) */}
+          <div className="flex items-end gap-2">
+          <div className="flex flex-1 items-end gap-1.5 rounded-[24px] border border-line bg-paper-card py-1 pl-4 pr-1 transition-colors focus-within:border-ink-soft">
             <textarea
               ref={inputRef}
               value={text}
@@ -315,6 +421,18 @@ export default function ChatPage() {
               </svg>
             </button>
           </div>
+          <button
+            type="button"
+            aria-label="사진 보내기·인스타 아이디 교환"
+            disabled={sendLocked}
+            onClick={() => setPanel("plus")}
+            className="mb-1 flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-line bg-paper-card text-ink transition-colors hover:border-ink-soft disabled:opacity-30"
+          >
+            <svg viewBox="0 0 16 16" className="h-4 w-4" aria-hidden>
+              <path d="M8 2.5v11M2.5 8h11" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+            </svg>
+          </button>
+          </div>
         </form>
       )}
 
@@ -332,14 +450,41 @@ export default function ChatPage() {
           <Button variant="secondary" className="w-full" onClick={() => endWith("block")}>
             차단하기
           </Button>
-          <Button variant="danger" className="w-full" onClick={() => setPanel("report")}>
+          <Button variant="danger" className="w-full" onClick={() => openReport()}>
             신고하기
           </Button>
           <p className="pt-2 text-center text-[12.5px] text-ink-faint">상대에게는 차단·신고 사실이 알려지지 않아요.</p>
         </div>
       </Modal>
 
-      <ReportModal open={panel === "report"} onClose={() => setPanel("none")} matchId={matchId} />
+      <ReportModal open={panel === "report"} onClose={() => setPanel("none")} matchId={matchId} initialReason={reportReason} />
+
+      <PlusMenu
+        open={panel === "plus"}
+        onClose={() => setPanel("none")}
+        onPhoto={() => setPanel("photo")}
+        onInsta={() => setPanel("insta")}
+        instaBlocked={instaBlocked}
+      />
+      <PhotoSendModal open={panel === "photo"} onClose={() => setPanel("none")} matchId={matchId} onSent={addSent} />
+      <InstaHandleModal
+        open={panel === "insta"}
+        onClose={() => setPanel("none")}
+        title="인스타 아이디 교환 요청"
+        submitLabel="교환 요청 보내기"
+        defaultHandle={myHandle}
+        onSubmit={requestInsta}
+      />
+      <InstaHandleModal
+        open={acceptShare !== null}
+        onClose={() => setAcceptShare(null)}
+        title="인스타 아이디 교환 수락"
+        submitLabel="수락하고 아이디 교환하기"
+        defaultHandle={myHandle}
+        onSubmit={(handle) => answerInsta(acceptShare!, "accept", handle)}
+      />
+      {onceUrl && <OnceViewer url={onceUrl} seconds={onceSeconds} onClose={closeOnce} />}
+      {zoomUrl && <PhotoZoom url={zoomUrl} onClose={() => setZoomUrl(null)} />}
     </div>
     </div>
   );

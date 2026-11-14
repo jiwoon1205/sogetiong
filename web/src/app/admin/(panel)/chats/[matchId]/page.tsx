@@ -9,7 +9,25 @@ import { errorMessage } from "@/lib/api";
 import { dateTime } from "@/lib/format";
 
 type Member = { user_id: string; subject_code: string; nickname: string | null };
-type Msg = { message_id: string; sender_subject_code: string; body: string; sent_at: string };
+/** 2026-11-14: 사진·인스타 교환. 관리자는 1회용 사진(90일 보관)과 두 사람의 인스타 아이디(수락 전·거절 포함)를 모두 본다 */
+type Msg = {
+  message_id: string;
+  type?: "TEXT" | "PHOTO" | "INSTA_REQUEST" | "INSTA_RESULT";
+  sender_subject_code: string;
+  body: string;
+  sent_at: string;
+  photo?: { photo_id: string; mode: "ONCE" | "KEEP"; viewed_at: string | null; expired: boolean; image_url: string | null };
+  insta?: {
+    status: string;
+    requester_code: string;
+    requester_handle: string;
+    responder_code: string;
+    responder_handle: string | null;
+    responded_at: string | null;
+  };
+};
+
+const INSTA_STATUS_LABEL: Record<string, string> = { PENDING: "답 기다리는 중", ACCEPTED: "교환됨", DECLINED: "거절됨", CANCELLED: "요청 취소" };
 type Chat = {
   match_id: string;
   status: string;
@@ -104,13 +122,43 @@ export default function ChatViewer() {
           return (
             <div key={m.message_id} className={`flex ${mine ? "justify-end" : "justify-start"}`}>
               <div className={`max-w-[75%] ${mine ? "text-right" : ""}`}>
-                <p
-                  className={`inline-block whitespace-pre-wrap break-words rounded-lg px-3.5 py-2 text-left text-[14.5px] leading-relaxed ${
-                    mine ? "bg-ink text-paper" : "border border-line bg-paper"
-                  }`}
-                >
-                  {m.body}
-                </p>
+                {m.photo ? (
+                  <div className="inline-block rounded-lg border border-line bg-paper p-2 text-left">
+                    <p className="mb-1.5 text-[12px] text-ink-soft">
+                      {m.photo.mode === "ONCE" ? "1회용 사진" : "보관 사진"}
+                      {m.photo.mode === "ONCE" && (m.photo.viewed_at ? ` · ${dateTime(m.photo.viewed_at)}에 상대가 봄` : " · 아직 안 봄")}
+                    </p>
+                    {m.photo.image_url ? (
+                      <a href={m.photo.image_url} target="_blank" rel="noreferrer">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={m.photo.image_url} alt="대화방 사진" className="max-h-64 max-w-full rounded-md" />
+                      </a>
+                    ) : (
+                      <p className="text-[13px] text-ink-faint">보관 기간(90일)이 지나 파일이 지워졌어요.</p>
+                    )}
+                  </div>
+                ) : m.insta ? (
+                  <div className="inline-block rounded-lg border border-line bg-paper px-3.5 py-2.5 text-left text-[13.5px] leading-relaxed">
+                    <p className="font-semibold">
+                      인스타 아이디 교환 요청 · {INSTA_STATUS_LABEL[m.insta.status] ?? m.insta.status}
+                    </p>
+                    <p>
+                      요청 <span className="font-mono">{m.insta.requester_code}</span> : <b>@{m.insta.requester_handle}</b>
+                    </p>
+                    <p>
+                      상대 <span className="font-mono">{m.insta.responder_code}</span> :{" "}
+                      {m.insta.responder_handle ? <b>@{m.insta.responder_handle}</b> : <span className="text-ink-faint">(적지 않음)</span>}
+                    </p>
+                  </div>
+                ) : (
+                  <p
+                    className={`inline-block whitespace-pre-wrap break-words rounded-lg px-3.5 py-2 text-left text-[14.5px] leading-relaxed ${
+                      m.type === "INSTA_RESULT" ? "bg-paper-deep text-ink-soft" : mine ? "bg-ink text-paper" : "border border-line bg-paper"
+                    }`}
+                  >
+                    {m.body}
+                  </p>
+                )}
                 <p className="mt-1 text-[11.5px] text-ink-faint">
                   <span className="font-mono">{m.sender_subject_code}</span> · {dateTime(m.sent_at)}
                 </p>

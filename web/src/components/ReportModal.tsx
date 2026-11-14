@@ -10,8 +10,22 @@ import { REPORT_REASONS } from "@/lib/types";
  * 신고 창. 대화방(matchId) 기준으로 신고한다.
  * → 대화가 끝났거나 상대가 탈퇴해서 프로필이 없어도 신고할 수 있다.
  */
-export function ReportModal({ open, onClose, matchId, onDone }: { open: boolean; onClose: () => void; matchId: string; onDone?: () => void }) {
-  const [reason, setReason] = useState("");
+type ReportProps = {
+  open: boolean;
+  onClose: () => void;
+  matchId: string;
+  onDone?: () => void;
+  /** 처음부터 골라 둘 사유 (예: 인스타 카드의 "가짜 아이디 신고" → FAKE_INSTA_ID, 2026-11-14) */
+  initialReason?: string;
+};
+
+/** 열 때마다 새로 그려서(골라 둔 사유로) 시작한다 */
+export function ReportModal(props: ReportProps) {
+  return props.open ? <ReportInner {...props} /> : null;
+}
+
+function ReportInner({ open, onClose, matchId, onDone, initialReason = "" }: ReportProps) {
+  const [reason, setReason] = useState(initialReason);
   const [desc, setDesc] = useState("");
   const [done, setDone] = useState(false);
   const [error, setError] = useState("");

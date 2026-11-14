@@ -20,7 +20,7 @@ from app.api.v1 import (
 from app.core.config import get_settings
 from app.core.dev_bootstrap import prepare_dev_database
 from app.db.session import SessionLocal
-from app.services import vip_service, withdrawal_service
+from app.services import chat_extra_service, vip_service, withdrawal_service
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +34,12 @@ def _purge_withdrawn_once() -> None:
         withdrawal_service.purge_expired(db)
     except Exception:  # 실패해도 서버는 계속 돌고, 다음 차례에 다시 시도한다
         logger.exception("withdrawn purge failed")
+        db.rollback()
+    try:
+        # 보관 기간(90일)이 지난 대화방 사진 파일도 같은 주기로 지운다 (2026-11-14)
+        chat_extra_service.purge_expired_photos(db)
+    except Exception:
+        logger.exception("chat photo purge failed")
         db.rollback()
     finally:
         db.close()

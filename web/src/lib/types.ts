@@ -248,7 +248,41 @@ export type MatchItem = {
   last_message: { body: string; is_mine: boolean; sent_at: string } | null;
 };
 
-export type ChatMessage = { message_id: string; body: string; is_mine: boolean; sent_at: string };
+/** 대화방 사진 (2026-11-14). state:
+ *  - 받은 1회용: UNOPENED(아직 안 봄) / OPENED(봄)
+ *  - 보낸 1회용: SENT_UNOPENED / SENT_OPENED
+ *  - 보관 사진: AVAILABLE (image_url로 볼 수 있음) / 보관 기간이 지나면 EXPIRED */
+export type ChatPhoto = {
+  photo_id: string;
+  mode: "ONCE" | "KEEP";
+  state: "UNOPENED" | "OPENED" | "SENT_UNOPENED" | "SENT_OPENED" | "AVAILABLE" | "EXPIRED";
+  width: number;
+  height: number;
+  image_url?: string;
+};
+
+/** 인스타 아이디 교환 (2026-11-14). 수락되기 전에는 partner_handle이 항상 null */
+export type InstaShare = {
+  share_id: string;
+  status: "PENDING" | "ACCEPTED" | "DECLINED" | "CANCELLED";
+  requested_by_me: boolean;
+  my_handle: string | null;
+  partner_handle: string | null;
+};
+
+export type ChatMessage = {
+  message_id: string;
+  /** TEXT / PHOTO / INSTA_REQUEST / INSTA_RESULT (2026-11-14). 예전 서버는 없음 → TEXT */
+  type?: "TEXT" | "PHOTO" | "INSTA_REQUEST" | "INSTA_RESULT";
+  body: string;
+  is_mine: boolean;
+  sent_at: string;
+  photo?: ChatPhoto | null;
+  insta?: InstaShare | null;
+};
+
+/** 대화방 사진·인스타 요청의 최신 상태 (message_id → 상태). 몇 초마다 새로 받아 예전 카드의 상태를 바꾼다 */
+export type ChatExtras = { photos: Record<string, ChatPhoto>; insta: Record<string, InstaShare> };
 
 export type Notification = {
   notification_id: string;
@@ -270,6 +304,7 @@ export const REPORT_REASONS: { value: string; label: string }[] = [
   { value: "MONEY_REQUEST", label: "금전 요구" },
   { value: "PERSONAL_INFO_REQUEST", label: "개인정보 요구" },
   { value: "UNWHOLESOME_MEETING", label: "불건전한 만남 요구 (파트너·FWB·원나잇)" },
+  { value: "FAKE_INSTA_ID", label: "가짜·오타 인스타 아이디" },
   { value: "SPAM", label: "스팸" },
   { value: "OTHER", label: "기타" },
 ];

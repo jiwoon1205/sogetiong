@@ -117,6 +117,38 @@ function InviteEventHero() {
  * 새 공지: 서버 services/announcement_service.py 의 CURRENT와 여기 NOTICES에 같은 이름으로 추가.
  */
 const NOTICES: Record<string, Notice> = {
+  // 2026-11-14: 대화방 ＋ 버튼(사진 보내기·인스타 아이디 교환) 출시 + 가짜·오타 아이디 영구정지 안내
+  "chat-extras-2026-11": {
+    title: "대화방에서 사진·인스타를 보낼 수 있어요",
+    body: (
+      <>
+        <p className="mb-4 text-[14px] leading-relaxed text-ink-soft">
+          대화방 입력창 오른쪽 <b className="font-semibold text-ink">＋ 버튼</b>을 눌러 보세요.
+        </p>
+        <ul className="space-y-3 text-[14px] leading-relaxed text-ink-soft">
+          <li>
+            📷 <b className="font-semibold text-ink">사진 보내기</b> — &lsquo;1회 보기&rsquo;로 보내면 상대가 한 번, 5초만 볼 수 있어요. &lsquo;대화에
+            보관&rsquo;을 고르면 대화방에 계속 남아요.
+          </li>
+          <li>
+            📸 <b className="font-semibold text-ink">인스타 아이디 교환</b> — 내 아이디를 적고 요청하면, 상대도 아이디를 적고 수락하는 순간 두 아이디가
+            동시에 공개돼요.
+          </li>
+        </ul>
+        <div className="mt-5 rounded-card border border-brick/30 bg-brick-wash px-4 py-3.5 text-[13.5px] leading-relaxed text-brick-deep">
+          <b className="font-semibold">⚠️ 가짜 아이디나 오타가 있는 아이디를 적으면 영구정지돼요.</b>
+          <br />
+          받은 아이디가 가짜라면 카드 아래 &lsquo;신고하기&rsquo;를 눌러 주세요. 운영진이 확인해요.
+        </div>
+        <p className="mt-4 text-[12.5px] leading-relaxed text-ink-faint">
+          훕팅은 웹사이트라 캡처를 완전히 막을 수는 없어요. 1회용 사진에는 보는 사람의 사용자 코드가 새겨져, 캡처가 퍼지면 누가 유출했는지 알 수 있어요.
+          보낸 사진은 신고 처리를 위해 운영진이 90일 동안 확인할 수 있어요.
+        </p>
+      </>
+    ),
+    action: { label: "대화하러 가기", href: "/matches" },
+    close: "확인",
+  },
   // 2026-11-07: 경희대 오픈·친구 초대(11/6까지) 공지("khu-notice-2026-10", "khu-event-2026-10")를 내리고 이 공지로 바꿈.
   // 여성 회원 기본 이용권 무료 + 경희대 친구 초대 이벤트(기간 없음). 받는 사람이 여성이면 무료 안내를 먼저 크게 보여준다
   "female-free-2026-11": {

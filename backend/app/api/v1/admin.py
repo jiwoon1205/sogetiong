@@ -18,6 +18,7 @@ from app.core.time import KST, as_utc, kst_today, utcnow
 from app.db.session import get_db
 from app.deps import CurrentAdmin, get_admin_pending_mfa, get_current_admin, require_permission
 from app.models.admin import AdminUser, AuditLog
+from app.models.chat_extra import ChatPhoto
 from app.models.matching import Match, MatchingPreference, Message, Report
 from app.models.payment import Payment
 from app.models.photo import AppearanceEvaluation, UserPhoto
@@ -36,7 +37,7 @@ from app.schemas.admin import (
     UserDepartmentRequest,
     UserStatusRequest,
 )
-from app.services import admin_alert_service, audit_service, match_limit_service, membership_service, payment_service, profile_service, rec_quota_service, referral_service, super_like_service, vip_service, withdrawal_service
+from app.services import admin_alert_service, audit_service, chat_extra_service, match_limit_service, membership_service, payment_service, profile_service, rec_quota_service, referral_service, super_like_service, vip_service, withdrawal_service
 from app.services.email_service import EmailDeliveryError, EmailService
 from app.services.notification_service import notify, notify_match_created
 from app.services.session_service import (
@@ -1250,6 +1251,7 @@ def read_match_messages(
     rows = list(reversed(rows[:limit]))
 
     nicknames = _nicknames(db, [match.user_a_id, match.user_b_id])
+    photos, shares = chat_extra_service.admin_extras(db, [m.id for m in rows])
     audit_service.record(
         db,
         admin_id=admin.id,
@@ -1266,17 +1268,68 @@ def read_match_messages(
         "matched_at": match.created_at.isoformat(),
         "ended_at": match.ended_at.isoformat() if match.ended_at else None,
         "members": [_person(match.user_a_id, nicknames), _person(match.user_b_id, nicknames)],
-        "messages": [
-            {
-                "message_id": str(m.id),
-                "sender_subject_code": pseudonymous_code(m.sender_user_id),
-                "body": m.body,
-                "sent_at": m.created_at.isoformat(),
-            }
-            for m in rows
-        ],
+        "messages": [_admin_message(m, photos, shares, nicknames) for m in rows],
         "has_more": has_more,
     }
+
+
+def _admin_message(m: Message, photos: dict, shares: dict, nicknames: dict) -> dict:
+    """관리자 대화 열람용 메시지 1개. 사진·인스타 아이디(수락 전·거절된 것 포함)도 보여준다 (2026-11-14)."""
+    view = {
+        "message_id": str(m.id),
+        "type": m.message_type or "TEXT",
+        "sender_subject_code": pseudonymous_code(m.sender_user_id),
+        "body": m.body,
+        "sent_at": m.created_at.isoformat(),
+    }
+    photo = photos.get(m.id)
+    if photo is not None:
+        view["photo"] = {
+            "photo_id": str(photo.id),
+            "mode": photo.mode,
+            "viewed_at": photo.viewed_at.isoformat() if photo.viewed_at else None,
+            "expired": not photo.storage_key,
+            "image_url": f"/api/v1/admin/chat-photos/{photo.id}/image" if photo.storage_key else None,
+        }
+    share = shares.get(m.id)
+    if share is not None:
+        view["insta"] = {
+            "status": share.status,
+            "requester_code": pseudonymous_code(share.requester_user_id),
+            "requester_handle": share.requester_handle,
+            "responder_code": pseudonymous_code(share.responder_user_id),
+            "responder_handle": share.responder_handle,
+            "responded_at": share.responded_at.isoformat() if share.responded_at else None,
+        }
+    return view
+
+
+@router.get("/chat-photos/{photo_id}/image")
+def get_chat_photo_image(
+    photo_id: uuid.UUID,
+    request: Request,
+    admin: CurrentAdmin = Depends(require_permission("chats:read")),
+    db: Session = Depends(get_db),
+):
+    """대화방 사진 원본 (1회 보기 사진 포함, 보관 90일). 관리자 이메일·시각을 새기고 감사 로그를 남긴다 (2026-11-14)."""
+    photo = db.get(ChatPhoto, photo_id)
+    if photo is None or not photo.storage_key:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="사진이 없거나 보관 기간이 지났습니다.")
+    try:
+        data = get_storage().read(photo.storage_key)
+    except (FileNotFoundError, ValueError) as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="사진 파일이 없습니다.") from exc
+    audit_service.record(
+        db, admin_id=admin.id, action="CHAT_PHOTO_VIEW", target_type="MATCH", target_id=photo.match_id, request=request,
+        metadata={"photo_id": str(photo.id)},
+    )
+    db.commit()
+    stamped = _watermark(data, f"{admin.admin.email} {utcnow():%Y-%m-%d %H:%M}")
+    return Response(
+        content=stamped,
+        media_type="image/jpeg",
+        headers={"Cache-Control": "no-store, private", "Content-Disposition": "inline", "X-Content-Type-Options": "nosniff"},
+    )
 
 
 # ---------- 신고 처리 ----------

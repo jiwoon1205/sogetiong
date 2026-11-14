@@ -70,6 +70,11 @@ class Settings(BaseSettings):
     photo_max_bytes: int = 10 * 1024 * 1024  # 한 장당. 화면에서 먼저 줄여서 보내므로 보통 1~2MB
     photo_max_count: int = 3  # 한 번에 제출할 수 있는 사진 수
     photo_max_side: int = 2048
+    # 대화방 사진 보내기 (2026-11-14)
+    chat_photo_max_side: int = 1600  # 대화방 사진은 조금 작게 저장
+    chat_photo_retention_days: int = 90  # 관리자 확인용 보관 기간. 지나면 파일 삭제 (신고 처리 중이면 끝날 때까지)
+    chat_photo_once_seconds: int = 5  # 1회 보기 사진이 보이는 시간 (화면에서 사용)
+    insta_rerequest_hours: int = 24  # 거절된 뒤 같은 대화방에서 다시 요청할 수 있을 때까지
     photo_resubmit_days: int = 7  # 평가 이후 새 사진(재검토)을 낼 수 있는 간격 (2026-10-01: 30일 → 7일)
 
     # --- 매칭 ---

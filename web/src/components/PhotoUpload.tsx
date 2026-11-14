@@ -137,12 +137,12 @@ export function PhotoUpload({ onUploaded, submitLabel = "검수 요청하기" }:
   );
 }
 
-/** 브라우저에서 사진을 일반 JPEG로 다시 그린다 (긴 변 2048px, 회전 보정).
+/** 브라우저에서 사진을 일반 JPEG로 다시 그린다 (긴 변 2048px — 대화방 사진은 1600px, 회전 보정).
  *  브라우저가 열지 못하는 사진이면 원본을 그대로 돌려준다. */
-async function toJpeg(file: File): Promise<File> {
+export async function toJpeg(file: File, maxSide: number = MAX_SIDE): Promise<File> {
   try {
     const bitmap = await createImageBitmap(file, { imageOrientation: "from-image" });
-    const ratio = Math.min(1, MAX_SIDE / Math.max(bitmap.width, bitmap.height));
+    const ratio = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height));
     const w = Math.max(1, Math.round(bitmap.width * ratio));
     const h = Math.max(1, Math.round(bitmap.height * ratio));
     const canvas = document.createElement("canvas");

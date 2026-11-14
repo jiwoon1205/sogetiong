@@ -75,10 +75,10 @@ def _daily(monkeypatch, s, *, opens_in=timedelta(days=1)):
     monkeypatch.setattr(s, "open_at", utcnow() + opens_in)
 
 
-def test_no_notice_now(sent_codes, db):
-    """2026-11-14: 경희대 친구 초대 이벤트 공지를 내렸다 → 지금은 아무 공지도 안 뜬다."""
+def test_chat_extras_notice_now(sent_codes, db):
+    """2026-11-14: 경희대 친구 초대 이벤트 공지를 내리고, 대화방 ＋ 버튼(사진·인스타) 공지로 바꿨다."""
     a = signup(sent_codes, db, "a@hufs.ac.kr")
-    assert a.get("/api/v1/me").json()["announcement"] is None
+    assert a.get("/api/v1/me").json()["announcement"].split("@")[0] == "chat-extras-2026-11"
 
 
 def test_payment_notice_once_a_day_before_open(sent_codes, db, paid_world, monkeypatch):

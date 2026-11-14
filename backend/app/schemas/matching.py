@@ -24,6 +24,20 @@ class SendMessageRequest(BaseModel):
         return value
 
 
+class InstaHandleRequest(BaseModel):
+    """인스타 아이디 교환 요청·수락 (2026-11-14).
+    agree: "가짜·오타 아이디는 영구정지돼요"에 동의했는지. 동의하지 않으면 보낼 수 없다."""
+
+    handle: str = Field(min_length=1, max_length=40)
+    agree: bool = False
+
+    @model_validator(mode="after")
+    def must_agree(self):
+        if not self.agree:
+            raise ValueError("가짜·오타 아이디는 영구정지된다는 안내에 동의해야 보낼 수 있어요.")
+        return self
+
+
 class ReportRequest(BaseModel):
     """신고 대상은 둘 중 하나로 정한다.
     - match_id: 대화방 상대 (상대가 탈퇴해서 프로필이 없어도, 대화가 끝났어도 신고 가능)

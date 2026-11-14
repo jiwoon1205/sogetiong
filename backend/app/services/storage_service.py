@@ -40,7 +40,8 @@ class ProcessedPhoto:
     height: int
 
 
-def process_upload(upload: UploadFile) -> ProcessedPhoto:
+def process_upload(upload: UploadFile, max_side: int | None = None) -> ProcessedPhoto:
+    """max_side: 긴 변 최대 길이. 없으면 프로필 사진 기준(photo_max_side). 대화방 사진은 더 작게 (2026-11-14)."""
     settings = get_settings()
 
     # 1) 확장자·MIME 타입 검사는 하지 않는다 → 3)에서 파일 내용으로 확인한다.
@@ -65,7 +66,7 @@ def process_upload(upload: UploadFile) -> ProcessedPhoto:
             raise PhotoValidationError("jpg, png, webp 사진만 올릴 수 있어요. (아이폰 HEIC 사진은 설정 > 카메라 > 포맷 > '높은 호환성'으로 찍거나 캡처해서 올려주세요)")
 
         # 4) 다시 열어서 크기 줄이기 → 회전 보정 → 메타데이터 없는 새 JPEG로 저장
-        max_side = settings.photo_max_side
+        max_side = max_side or settings.photo_max_side
         with Image.open(BytesIO(raw)) as image:
             _check_pixels(image.size)
             if image.format in JPEG_FAMILY:
@@ -137,3 +138,8 @@ def get_storage() -> LocalStorage:
 def new_storage_key(user_id: uuid.UUID) -> str:
     """서버가 만든 파일명. 사용자가 올린 원래 파일명은 쓰지 않는다."""
     return f"photos/{user_id}/{uuid.uuid4()}.jpg"
+
+
+def new_chat_storage_key(match_id: uuid.UUID) -> str:
+    """대화방 사진 파일명 (2026-11-14). 프로필 사진과 폴더를 나눠 둔다."""
+    return f"chat/{match_id}/{uuid.uuid4()}.jpg"

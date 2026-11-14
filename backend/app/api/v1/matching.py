@@ -3,7 +3,7 @@
 import uuid
 from datetime import timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Response, UploadFile, status
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -16,8 +16,9 @@ from app.deps import CurrentUser, get_current_user
 from app.models.matching import Like, LikeEvent, Match, MatchingPreference, MatchRead, Message, Report
 from app.models.profile import PublicProfile
 from app.models.user import User
-from app.schemas.matching import SendMessageRequest, TargetRequest
+from app.schemas.matching import InstaHandleRequest, SendMessageRequest, TargetRequest
 from app.services import (
+    chat_extra_service,
     matching_service,
     membership_service,
     profile_service,
@@ -26,7 +27,9 @@ from app.services import (
     super_like_service,
     vip_service,
 )
+from app.services.chat_extra_service import ChatExtraError
 from app.services.notification_service import has_unread, notify, notify_match_created
+from app.services.storage_service import PhotoValidationError, process_upload
 
 router = APIRouter()
 
@@ -663,7 +666,7 @@ def unmatch(match_id: uuid.UUID, current: CurrentUser = Depends(get_current_user
     return {"unmatched": True}
 
 
-# ---------- 채팅 (MVP: 텍스트/이모지, 폴링 방식) ----------
+# ---------- 채팅 (텍스트/이모지 + 2026-11-14 사진·인스타 교환, 폴링 방식) ----------
 
 @router.get("/matches/{match_id}/messages")
 def list_messages(
@@ -704,12 +707,14 @@ def list_messages(
     # 읽음 기록 (2026-10-08): 처음 열 때, 또는 새로 받아 간 메시지에 상대 메시지가 있을 때만 (예전 메시지 더 보기는 제외)
     if not before and (after is None or any(m.sender_user_id != current.id for m in rows)):
         _mark_read(db, match.id, current.id)
+    # 사진·인스타 요청의 최신 상태 (2026-11-14). 예전 카드도 이걸로 상태가 바뀐다
+    extras = chat_extra_service.match_extras(db, match.id, current.id)
     # 상대의 내부 user_id 대신 is_mine만 보낸다
     return {
-        "messages": [
-            {"message_id": str(m.id), "body": m.body, "is_mine": m.sender_user_id == current.id, "sent_at": m.created_at.isoformat()}
-            for m in rows
-        ],
+        "messages": [_message_view(m, current.id, extras) for m in rows],
+        "extras": extras,
+        "my_insta_handle": chat_extra_service.last_handle(db, current.id),
+        "once_seconds": get_settings().chat_photo_once_seconds,
         # 슈퍼 라이크 매칭 (2026-10-12): sent(내가 보냄) / received(내가 받음) / null
         "super_like": _super_like_side(match, current.id),
         "super_like_reason": _super_like_reason(match),
@@ -727,15 +732,172 @@ def send_message(
 ):
     enforce_rate_limit(f"message:{current.id}", 30, 60)
     match = _my_match(db, current, match_id)
-    if super_like_service.message_locked(db, match, current.id):
-        # 슈퍼 라이크를 보낸 사람은 상대가 답장하기 전까지 메시지 1개만 (2026-10-12)
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="SUPER_LIKE_WAIT_REPLY")
+    _check_send_lock(db, match, current.id)
     message = Message(match_id=match.id, sender_user_id=current.id, body=payload.body)
     db.add(message)
-    partner = match.partner_of(current.id)
+    _notify_partner(db, match, current.id)
+    db.commit()
+    return _message_view(message, current.id, None)
+
+
+def _message_view(m: Message, me: uuid.UUID, extras: dict | None) -> dict:
+    """화면에 보내는 메시지 1개. type: TEXT / PHOTO / INSTA_REQUEST / INSTA_RESULT (2026-11-14)"""
+    view = {
+        "message_id": str(m.id),
+        "type": m.message_type or "TEXT",
+        "body": m.body,
+        "is_mine": m.sender_user_id == me,
+        "sent_at": m.created_at.isoformat(),
+    }
+    if extras is not None:
+        if m.message_type == chat_extra_service.PHOTO:
+            view["photo"] = extras["photos"].get(str(m.id))
+        elif m.message_type == chat_extra_service.INSTA_REQUEST:
+            view["insta"] = extras["insta"].get(str(m.id))
+    return view
+
+
+def _notify_partner(db: Session, match: Match, me: uuid.UUID) -> None:
+    """상대에게 새 메시지 알림 (앱 안 + 휴대폰/메일). 상대가 지금 이 대화방을 보고 있으면 휴대폰 알림은 안 보냄 (2026-10-06)."""
+    partner = match.partner_of(me)
     if not has_unread(db, partner, "NEW_MESSAGE", match.id):
         notify(db, partner, "NEW_MESSAGE", "새 메시지가 도착했어요", "매칭된 상대가 메시지를 보냈습니다.", match.id)
-    # 휴대폰 알림 (못 켠 사람은 메일): 메시지마다. 상대가 지금 이 대화방을 보고 있으면 안 보냄 (2026-10-06)
     push_service.queue(db, partner, push_service.MESSAGE, match.id)
+
+
+def _extra_error(exc: ChatExtraError) -> HTTPException:
+    return HTTPException(status_code=exc.status, detail=str(exc))
+
+
+def _check_send_lock(db: Session, match: Match, me: uuid.UUID) -> None:
+    if super_like_service.message_locked(db, match, me):
+        # 슈퍼 라이크를 보낸 사람은 상대가 답장하기 전까지 메시지 1개만 (2026-10-12). 사진·인스타 요청도 메시지로 친다
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="SUPER_LIKE_WAIT_REPLY")
+
+
+def _view_with_extras(db: Session, message: Message, match: Match, me: uuid.UUID) -> dict:
+    return _message_view(message, me, chat_extra_service.match_extras(db, match.id, me))
+
+
+# ---------- 대화방 ＋ 버튼: 사진 보내기 (2026-11-14). 규칙은 chat_extra_service 맨 위 설명 ----------
+
+_NO_STORE = {"Cache-Control": "no-store, private", "Content-Disposition": "inline", "X-Content-Type-Options": "nosniff"}
+
+
+@router.post("/matches/{match_id}/photos", status_code=status.HTTP_201_CREATED)
+def send_photo(
+    match_id: uuid.UUID,
+    file: UploadFile = File(...),
+    mode: str = Form(...),
+    current: CurrentUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """사진 보내기. mode: ONCE(1회 보기, 5초) / KEEP(대화에 보관)"""
+    enforce_rate_limit(f"chat-photo:{current.id}", 20, 3600)
+    match = _my_match(db, current, match_id)
+    _check_send_lock(db, match, current.id)
+    if mode not in ("ONCE", "KEEP"):
+        raise HTTPException(status_code=422, detail="사진 보내는 방식을 골라주세요.")
+    try:
+        processed = process_upload(file, max_side=get_settings().chat_photo_max_side)
+    except PhotoValidationError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    message, _photo = chat_extra_service.create_photo(db, match, current.id, mode, processed)
+    _notify_partner(db, match, current.id)
     db.commit()
-    return {"message_id": str(message.id), "body": message.body, "is_mine": True, "sent_at": message.created_at.isoformat()}
+    return _view_with_extras(db, message, match, current.id)
+
+
+@router.get("/matches/{match_id}/photos/{photo_id}/image")
+def get_kept_photo(
+    match_id: uuid.UUID, photo_id: uuid.UUID, current: CurrentUser = Depends(get_current_user), db: Session = Depends(get_db)
+):
+    """'대화에 보관' 사진. 대화가 이어지는 동안 두 사람만 볼 수 있다."""
+    match = _my_match(db, current, match_id)
+    try:
+        data = chat_extra_service.read_keep_photo(chat_extra_service.get_photo(db, match, photo_id))
+    except ChatExtraError as exc:
+        raise _extra_error(exc) from exc
+    except (FileNotFoundError, ValueError) as exc:
+        raise HTTPException(status_code=status.HTTP_410_GONE, detail="사진 파일이 없어요.") from exc
+    return Response(content=data, media_type="image/jpeg", headers=_NO_STORE)
+
+
+@router.post("/matches/{match_id}/photos/{photo_id}/open")
+def open_once_photo(
+    match_id: uuid.UUID, photo_id: uuid.UUID, current: CurrentUser = Depends(get_current_user), db: Session = Depends(get_db)
+):
+    """'1회 보기' 사진 열기. 받은 사람만, 딱 한 번. 사진에 보는 사람의 사용자 코드가 흐리게 새겨진다."""
+    enforce_rate_limit(f"chat-photo-open:{current.id}", 60, 3600)
+    match = _my_match(db, current, match_id)
+    try:
+        data = chat_extra_service.open_once_photo(db, chat_extra_service.get_photo(db, match, photo_id), current.id)
+    except ChatExtraError as exc:
+        raise _extra_error(exc) from exc
+    except (FileNotFoundError, ValueError) as exc:
+        raise HTTPException(status_code=status.HTTP_410_GONE, detail="사진 파일이 없어요.") from exc
+    return Response(content=data, media_type="image/jpeg", headers=_NO_STORE)
+
+
+# ---------- 대화방 ＋ 버튼: 인스타 아이디 교환 (2026-11-14) ----------
+
+@router.post("/matches/{match_id}/insta", status_code=status.HTTP_201_CREATED)
+def request_insta(
+    match_id: uuid.UUID,
+    payload: InstaHandleRequest,
+    current: CurrentUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """내 아이디를 적고 교환 요청. 상대가 수락하기 전에는 내 아이디가 상대에게 보이지 않는다."""
+    enforce_rate_limit(f"insta:{current.id}", 10, 3600)
+    match = _my_match(db, current, match_id)
+    _check_send_lock(db, match, current.id)
+    try:
+        message, _share = chat_extra_service.request_insta(db, match, current.id, payload.handle)
+    except ChatExtraError as exc:
+        db.rollback()
+        raise _extra_error(exc) from exc
+    _notify_partner(db, match, current.id)
+    db.commit()
+    return _view_with_extras(db, message, match, current.id)
+
+
+def _answer_insta(db: Session, current: CurrentUser, match_id: uuid.UUID, share_id: uuid.UUID, action: str, handle: str | None):
+    enforce_rate_limit(f"insta:{current.id}", 10, 3600)
+    match = _my_match(db, current, match_id)
+    try:
+        share = chat_extra_service.get_share(db, match, share_id)
+        message = chat_extra_service.respond_insta(db, match, share, current.id, action, handle)
+    except ChatExtraError as exc:
+        db.rollback()
+        raise _extra_error(exc) from exc
+    _notify_partner(db, match, current.id)
+    db.commit()
+    return _view_with_extras(db, message, match, current.id)
+
+
+@router.post("/matches/{match_id}/insta/{share_id}/accept")
+def accept_insta(
+    match_id: uuid.UUID,
+    share_id: uuid.UUID,
+    payload: InstaHandleRequest,
+    current: CurrentUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """내 아이디를 적고 수락 → 그 순간 두 아이디가 서로에게 동시에 보인다."""
+    return _answer_insta(db, current, match_id, share_id, "ACCEPT", payload.handle)
+
+
+@router.post("/matches/{match_id}/insta/{share_id}/decline")
+def decline_insta(
+    match_id: uuid.UUID, share_id: uuid.UUID, current: CurrentUser = Depends(get_current_user), db: Session = Depends(get_db)
+):
+    return _answer_insta(db, current, match_id, share_id, "DECLINE", None)
+
+
+@router.post("/matches/{match_id}/insta/{share_id}/cancel")
+def cancel_insta(
+    match_id: uuid.UUID, share_id: uuid.UUID, current: CurrentUser = Depends(get_current_user), db: Session = Depends(get_db)
+):
+    """요청한 사람이, 상대가 답하기 전에 요청을 취소."""
+    return _answer_insta(db, current, match_id, share_id, "CANCEL", None)
