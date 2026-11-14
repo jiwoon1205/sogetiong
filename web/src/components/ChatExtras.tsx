@@ -392,7 +392,7 @@ export function OnceViewer({ url, seconds, onClose }: { url: string; seconds: nu
         role="img"
         aria-label="1회용 사진"
       />
-      <p className="px-5 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3 text-center text-[12px] leading-relaxed text-white/60">
+      <p className="px-5 pb-[calc(max(1rem,env(safe-area-inset-bottom))_+_0.5rem)] pt-3 text-center text-[12px] leading-relaxed text-white/60">
         사진에 내 사용자 코드가 새겨져 있어요. 캡처해서 퍼뜨리면 누가 유출했는지 알 수 있어요.
         <br />
         화면을 누르면 닫혀요. 닫으면 다시 볼 수 없어요.

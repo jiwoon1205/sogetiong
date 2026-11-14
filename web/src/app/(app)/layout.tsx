@@ -70,7 +70,7 @@ function Shell({ children }: { children: React.ReactNode }) {
     );
 
   return (
-    <div className="min-h-dvh pb-20 sm:pb-0">
+    <div className="min-h-dvh pb-[calc(5.5rem_+_env(safe-area-inset-bottom))] sm:pb-0">
       <header className="sticky top-0 z-30 border-b border-line bg-paper/95 backdrop-blur">
         <div className="mx-auto flex h-14 max-w-3xl items-center justify-between px-5">
           <div className="flex items-center gap-3">
@@ -104,8 +104,8 @@ function Shell({ children }: { children: React.ReactNode }) {
 
       <main className="mx-auto max-w-3xl px-5 py-8 sm:py-12">{children}</main>
 
-      {/* 모바일 하단 탭 */}
-      <nav className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-4 border-t border-line bg-paper sm:hidden">
+      {/* 모바일 하단 탭. 2026-11-14: 화면 맨 아래에 딱 붙어 보여서 아래를 조금(8px) 띄움 (아이폰 홈 막대 자리도 비움) */}
+      <nav className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-4 border-t border-line bg-paper pb-[calc(0.5rem_+_env(safe-area-inset-bottom))] sm:hidden">
         {NAV.map((n) => (
           <Link key={n.href} href={n.href} className={cn("flex h-16 items-center justify-center text-[13px]", path.startsWith(n.href) ? "font-semibold text-ink" : "text-ink-faint")}>
             {n.label}

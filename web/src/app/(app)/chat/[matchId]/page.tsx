@@ -355,7 +355,7 @@ export default function ChatPage() {
       {hasNew && (
         <button
           onClick={scrollToBottom}
-          className="absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full bg-ink px-4 py-2 text-[13px] text-paper shadow-md"
+          className="absolute bottom-5 left-1/2 -translate-x-1/2 rounded-full bg-ink px-4 py-2 text-[13px] text-paper shadow-md"
         >
           새 메시지 ↓
         </button>
@@ -363,14 +363,15 @@ export default function ChatPage() {
       </div>
 
       {closed ? (
-        <div className="shrink-0 border-t border-line py-4 pb-[max(1rem,env(safe-area-inset-bottom))] text-center text-[14px] text-ink-soft">
+        <div className="shrink-0 border-t border-line py-4 pb-[calc(max(1rem,env(safe-area-inset-bottom))_+_0.5rem)] text-center text-[14px] text-ink-soft">
           {closed}{" "}
           <button onClick={() => setPanel("report")} className="ml-2 text-brick underline underline-offset-4">
             신고하기
           </button>
         </div>
       ) : (
-        <form onSubmit={send} className="shrink-0 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2">
+        // 2026-11-14: 입력창이 화면 맨 아래에 딱 붙어 보여서 아래를 조금(8px) 더 띄움
+        <form onSubmit={send} className="shrink-0 pb-[calc(max(0.5rem,env(safe-area-inset-bottom))_+_0.5rem)] pt-2">
           {error && <p className="mb-2 px-1 text-[13px] text-brick">{error}</p>}
           {superLike === "received" && !messages.some((m) => m.is_mine) && (
             <p className="mb-2 rounded-md bg-brick-wash px-3 py-2 text-[12.5px] leading-relaxed text-ink-soft">
