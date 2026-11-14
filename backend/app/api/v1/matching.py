@@ -13,7 +13,7 @@ from app.core.rate_limit import enforce_rate_limit
 from app.core.time import as_utc, kst_today, utcnow
 from app.db.session import get_db
 from app.deps import CurrentUser, get_current_user
-from app.models.matching import Like, Match, MatchingPreference, MatchRead, Message, Report
+from app.models.matching import Like, LikeEvent, Match, MatchingPreference, MatchRead, Message, Report
 from app.models.profile import PublicProfile
 from app.models.user import User
 from app.schemas.matching import SendMessageRequest, TargetRequest
@@ -240,6 +240,8 @@ def _upsert_action(
                 from_user_id=from_id, to_user_id=to_id, action=action, is_trial=is_trial, is_super=is_super, like_count=count
             )
         )
+        # 통계용: 좋아요 한 번마다 한 줄 (2026-11-14). 날짜별 남녀 좋아요 수를 센다
+        db.add(LikeEvent(from_user_id=from_id, to_user_id=to_id, like_no=count, is_trial=is_trial, is_super=is_super))
         return count
     if row is None:
         db.add(Like(from_user_id=from_id, to_user_id=to_id, action=action, like_count=0))

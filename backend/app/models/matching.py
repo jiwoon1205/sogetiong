@@ -5,6 +5,7 @@ from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Integer, 
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
+from app.core.time import utcnow
 from app.models._common import created_at, pk, updated_at
 
 
@@ -95,6 +96,24 @@ class Like(Base):
     like_count: Mapped[int] = mapped_column(Integer, default=1, server_default="1", nullable=False)
     created_at: Mapped[datetime] = created_at()
     updated_at: Mapped[datetime] = updated_at()
+
+
+class LikeEvent(Base):
+    """좋아요를 한 번 보낼 때마다 한 줄 (2026-11-14, 마이그레이션 0037). 통계용 기록.
+
+    likes 표는 두 사람 사이에 한 줄만 두고 다시 보낼 때마다 지우고 새로 만들어서,
+    날짜별로 좋아요를 몇 번 보냈는지 알 수 없었다. 이 표는 지우지 않는다 (서비스 동작에는 쓰지 않음).
+    """
+
+    __tablename__ = "like_events"
+
+    id: Mapped[uuid.UUID] = pk()
+    from_user_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("users.id"), nullable=False, index=True)
+    to_user_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("users.id"), nullable=False)
+    like_no: Mapped[int] = mapped_column(Integer, nullable=False)  # 이 사람에게 보낸 몇 번째 좋아요인지
+    is_trial: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false(), nullable=False)
+    is_super: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False, index=True)
 
 
 class RecQuotaSlot(Base):

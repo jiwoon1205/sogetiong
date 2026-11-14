@@ -13,6 +13,7 @@ from app.models.matching import (
     Notification,
     PreferredCampus,
     PreferredDepartment,
+    LikeEvent,
     RecQuotaSlot,
     Report,
 )

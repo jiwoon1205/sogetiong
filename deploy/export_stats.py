@@ -19,6 +19,10 @@ stats_daily.csv : 하루에 한 줄 (성별 가입자 수·접속자 수·매칭
 stats_superlikes.csv : 슈퍼 라이크·좋아요 5번으로 생긴 매칭 하나에 한 줄 (2026-11-12)
    보낸 사람·받은 사람의 성별·점수·찾는 관계와 결과(받은 사람이 답장했나, 대화가 끝났나).
    사람은 stats_users.csv의 row 번호로만 이어진다.
+stats_daily.csv의 좋아요 칸 (2026-11-14):
+   likes_FEMALE·likes_MALE = 그날 보낸 좋아요 수 (like_events 표, 정확). likes_exact=1인 날만 믿는다
+   (기록을 시작한 날은 하루 중간부터라 0). likes_est_* = 기록 전 날짜용 어림값(최소값):
+   두 사람 사이 마지막 좋아요만 남아 있어서, 같은 사람에게 보낸 그 전 좋아요는 빠진다.
 stats_payments.csv : 입금 확인된 결제 하나에 한 줄 (2026-11-12, 이용권 연장률 분석용)
    언제·누가(row)·무엇을·얼마에 샀는지, 그 사람의 몇 번째 이용권 결제인지, 지난 이용권 결제와 며칠 차이인지.
 """
@@ -399,6 +403,28 @@ def main():
             day[t.date()][f"paid_{g}"] += 1
             day[t.date()][f"paid_amount_{g}"] += r["amount"] or 0
             day[t.date()][f"paid_{r['kind']}"] += 1
+    # 좋아요 수 (2026-11-14). 정확한 값은 like_events, 그 전은 likes 표로 어림 (위 설명)
+    for r in q("SELECT from_user_id f, to_user_id t, action, created_at FROM likes WHERE action = 'LIKE'"):
+        if r["f"] in skip or r["t"] in skip:
+            continue
+        t = ts(r["created_at"])
+        if t:
+            day[t.date()][f"likes_est_{gender_of.get(r['f'], 'UNKNOWN')}"] += 1
+    has_events = q("SELECT name FROM sqlite_master WHERE type='table' AND name='like_events'")
+    first_event = None
+    if has_events:
+        for r in q("SELECT from_user_id f, to_user_id t, created_at FROM like_events"):
+            if r["f"] in skip or r["t"] in skip:
+                continue
+            t = ts(r["created_at"])
+            if t:
+                day[t.date()][f"likes_{gender_of.get(r['f'], 'UNKNOWN')}"] += 1
+                first_event = t.date() if first_event is None or t.date() < first_event else first_event
+    for dd in day:
+        day[dd]["likes_exact"] = int(first_event is not None and dd > first_event)
+        for g in ("FEMALE", "MALE"):
+            day[dd][f"likes_{g}"] += 0
+            day[dd][f"likes_est_{g}"] += 0
     keys = sorted({k for v in day.values() for k in v})
     out_daily = os.path.join(OUT, "stats_daily.csv")
     with open(out_daily, "w", newline="", encoding="utf-8-sig") as f:
