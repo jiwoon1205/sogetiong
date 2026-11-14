@@ -34,9 +34,12 @@ export type Card = {
   appearance: Scores | null;
   /** 추천 카드: 내가 이 사람에게 보낸 좋아요 횟수 (2026-10-24 좋아요 쌓기). 0이면 처음 */
   my_likes?: number;
+  /** 찾는 관계가 달라(진지한 연애 ↔ 캐주얼한 만남) 좋아요·슈퍼 라이크를 못 보내는 사람 (2026-11-14). 추천에는 나온다 */
+  goal_mismatch?: boolean;
 };
 
-/** 내가 찾는 관계 (2026-10-24). 서버 app/schemas/profile.py의 RELATIONSHIP_GOALS와 같아야 한다. 추천에는 영향 없음. */
+/** 내가 찾는 관계 (2026-10-24). 서버 app/schemas/profile.py의 RELATIONSHIP_GOALS와 같아야 한다. 추천 순서에는 영향 없음.
+ *  2026-11-14: 진지한 연애 ↔ 캐주얼한 만남은 서로 좋아요를 못 보낸다 (Card.goal_mismatch) */
 export const RELATIONSHIP_GOALS = [
   { value: "SERIOUS", label: "진지한 연애" },
   { value: "FRIEND", label: "대학교 친구" },

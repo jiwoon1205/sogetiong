@@ -19,7 +19,7 @@ from tests.conftest import (
 )
 
 PUBLIC_CARD_KEYS = {
-    "profile_id", "nickname", "age", "gender", "university", "campus", "department", "my_likes",
+    "profile_id", "nickname", "age", "gender", "university", "campus", "department", "my_likes", "goal_mismatch",
     "mbti", "bio", "ideal_type", "face_type", "height_cm", "relationship_goal", "interests", "appearance",
 }
 

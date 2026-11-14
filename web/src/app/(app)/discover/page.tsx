@@ -1,6 +1,7 @@
 "use client";
 
 import { DiscountTag, SalePrice } from "@/components/DiscountTag";
+import { useGoalWarning } from "@/components/GoalWarning";
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -69,6 +70,8 @@ export default function DiscoverPage() {
   // 같은 사람에게 이 횟수째 좋아요면 바로 매칭 (2026-10-24 좋아요 쌓기)
   const [repeatCount, setRepeatCount] = useState(5);
   const [error, setError] = useState("");
+  // 찾는 관계가 달라 좋아요를 못 보낼 때 화면 가운데 빨간 바 (2026-11-14)
+  const { bar: goalBar, show: showGoalWarning } = useGoalWarning();
   // 남은 좋아요
   // - paid: 오늘 남은 좋아요 (한국 시간 자정에 다시 충전). VIP는 하루 10개를 "5+5"로 보여준다 (base = 무료 몫, 2026-10-03)
   // - trial: 무료 체험 좋아요 (평생 3개, 다시 안 생김, 2026-10-06)
@@ -130,6 +133,11 @@ export default function DiscoverPage() {
   const act = useCallback(
     async (action: "like" | "pass") => {
       if (state.kind !== "cards" || !state.cards[0] || busy) return;
+      // 진지한 연애 ↔ 캐주얼한 만남 (2026-11-14): 좋아요 대신 경고만. 좋아요 개수는 줄지 않고 카드도 그대로
+      if (action === "like" && state.cards[0].goal_mismatch) {
+        showGoalWarning();
+        return;
+      }
       if (action === "like" && likes && likes.mode !== "paid" && likes.left <= 0) {
         setOutOfLikes(true);
         return;
@@ -183,12 +191,16 @@ export default function DiscoverPage() {
           void refresh();
           return;
         }
+        if (err instanceof ApiError && err.code === "GOAL_MISMATCH") {
+          showGoalWarning();
+          return;
+        }
         setError(errorMessage(err));
       } finally {
         setBusy(false);
       }
     },
-    [state, busy, load, likes, refresh],
+    [state, busy, load, likes, refresh, showGoalWarning],
   );
 
   // 슈퍼 라이크 보내기 (2026-10-12): 상대가 LIKE하지 않아도 바로 매칭
@@ -214,11 +226,14 @@ export default function DiscoverPage() {
       void refresh();
     } catch (err) {
       if (err instanceof ApiError && err.code === "SUPER_LIKE_REQUIRED") setSuperLikes(0); // 창이 구매 화면으로 바뀐다
-      else setSuperError(errorMessage(err));
+      else if (err instanceof ApiError && err.code === "GOAL_MISMATCH") {
+        setSuperOpen(false);
+        showGoalWarning();
+      } else setSuperError(errorMessage(err));
     } finally {
       setSuperSending(false);
     }
-  }, [state, superSending, load, refresh]);
+  }, [state, superSending, load, refresh, showGoalWarning]);
 
   // 키보드: ← 넘기기, → 좋아요
   useEffect(() => {
@@ -254,6 +269,7 @@ export default function DiscoverPage() {
     <>
       {renderBody()}
       {celebration}
+      {goalBar}
       {state.kind === "cards" && state.cards[0] && (
         <SuperLikeSheet
           open={superOpen}
@@ -362,6 +378,8 @@ export default function DiscoverPage() {
             <button
               type="button"
               onClick={() => {
+                // 찾는 관계가 다르면 슈퍼 라이크도 못 보낸다 → 창을 열지 않고 경고만 (2026-11-14)
+                if (current.goal_mismatch) return showGoalWarning();
                 setSuperError("");
                 setSuperOpen(true);
               }}
@@ -383,6 +401,8 @@ export default function DiscoverPage() {
             onClick={() => act("like")}
             // 좋아요를 못 하는 사람(체험 끝·이용권 끝)도 누를 수 있게 둔다 → 누르면 이용권 안내가 열린다
             disabled={busy || (likes !== null && likes.mode === "paid" && likes.left <= 0)}
+            // 찾는 관계가 달라 못 보내는 사람: 흐리게만 보이고 누를 수는 있다 → 누르면 빨간 경고 (2026-11-14)
+            className={current.goal_mismatch ? "opacity-40" : undefined}
           >
             좋아요
             {likes && likes.left > 0 && (

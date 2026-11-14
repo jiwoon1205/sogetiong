@@ -243,7 +243,7 @@ export function ProfileForm({
           ))}
         </div>
         <p className="text-[12.5px] leading-relaxed text-ink-faint">
-          다른 학생 카드에 보여요. 추천에는 영향이 없어요. 고르거나 바꾼 뒤 {p.relationship_goal_change_days ?? 3}일 동안은 다시 바꿀 수 없어요.
+          다른 학생 카드에 보여요. 추천 순서에는 영향이 없어요. 고르거나 바꾼 뒤 {p.relationship_goal_change_days ?? 3}일 동안은 다시 바꿀 수 없어요.
           {p.relationship_goal_next_change_at && (
             <>
               {" "}
@@ -257,6 +257,10 @@ export function ProfileForm({
           <br />
           &lsquo;캐주얼한 만남&rsquo;을 고르지 않고 <b className="font-semibold text-ink">파트너·FWB·원나잇</b> 같은 불건전한 만남을 요구하다 신고로
           확인되면 <b className="font-semibold text-ink">영구 정지</b>돼요.
+          {/* 2026-11-14 사용자 결정: 진지한 연애 ↔ 캐주얼한 만남은 서로 좋아요 불가 */}
+          <br />
+          <b className="font-semibold text-ink">&lsquo;진지한 연애&rsquo;와 &lsquo;캐주얼한 만남&rsquo;은 서로 좋아요를 보낼 수 없어요.</b> 추천에는 나오지만
+          좋아요·슈퍼 라이크는 막혀요. &lsquo;대학교 친구&rsquo;는 누구와도 주고받을 수 있어요.
         </div>
       </div>
 

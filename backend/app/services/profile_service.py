@@ -174,6 +174,19 @@ def build_cards(db: Session, profiles: list[PublicProfile]) -> list[dict]:
     return cards
 
 
+# 서로 좋아요를 못 보내는 "찾는 관계" 짝 (2026-11-14 사용자 결정).
+# 진지한 연애 ↔ 캐주얼한 만남. 대학교 친구·아직 안 고른 사람은 누구와도 된다. 추천에는 그대로 나온다.
+GOAL_CONFLICTS = {frozenset({"SERIOUS", "CASUAL"})}
+
+
+def goals_conflict(a: str | None, b: str | None) -> bool:
+    return a is not None and b is not None and frozenset({a, b}) in GOAL_CONFLICTS
+
+
+def my_goal(db: Session, user_id: uuid.UUID) -> str | None:
+    return db.query(PublicProfile.relationship_goal).filter(PublicProfile.user_id == user_id).scalar()
+
+
 def build_card(db: Session, profile: PublicProfile) -> dict:
     return build_cards(db, [profile])[0]
 

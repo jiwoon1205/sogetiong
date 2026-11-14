@@ -120,6 +120,8 @@ const CODE_MESSAGES: Record<string, string> = {
   MEMBERSHIP_REQUIRED: "이용권이 있어야 해요. 이용권을 사면 다시 좋아요를 보낼 수 있어요. 추천 보기·넘기기·대화는 계속할 수 있어요.",
   // 무료 체험 (2026-10-06): 체험 좋아요 3개를 다 씀
   TRIAL_ENDED: "무료 체험 좋아요를 모두 사용했어요. 이용권을 사면 계속 좋아요를 보낼 수 있어요.",
+  // 찾는 관계가 다름 (2026-11-14): 진지한 연애 ↔ 캐주얼한 만남
+  GOAL_MISMATCH: "진지한 연애와 캐주얼한 만남은 서로 좋아요를 보낼 수 없어요",
 };
 
 export function errorMessage(err: unknown): string {

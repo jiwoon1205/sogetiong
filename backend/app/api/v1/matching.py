@@ -137,8 +137,11 @@ def discover(
     # 카드에는 외모 등급도, "나를 LIKE했는지"도 들어가지 않는다 (build_cards가 보내는 항목만 나감)
     cards = profile_service.build_cards(db, [by_user[p.user_id] for p in ranked])
     # 내가 보낸 좋아요 횟수는 카드에도 보여준다 (내 행동이라 보여줘도 된다): "좋아요 n번 보냈어요 · 5번이면 바로 매칭" 안내용
+    goal = profile_service.my_goal(db, current.id)
     for card, person in zip(cards, ranked):
         card["my_likes"] = sent.get(person.user_id, 0)
+        # 찾는 관계가 달라(진지한 연애 ↔ 캐주얼한 만남) 좋아요를 못 보내는 사람 (2026-11-14). 추천에는 나온다
+        card["goal_mismatch"] = profile_service.goals_conflict(goal, card.get("relationship_goal"))
     # 후보가 없을 때 조건을 자동으로 넓히지 않는다 (설계도 §56, §57)
     trial = access != "paid"
     return {
@@ -199,10 +202,13 @@ def liked_me(current: CurrentUser = Depends(get_current_user), db: Session = Dep
     passed = {to_id for to_id, _ in profile_service._passes(db, current.id)}
     cards = profile_service.build_cards(db, ok)
     counts = profile_service.liked_counts(db, current.id)
+    goal = profile_service.my_goal(db, current.id)
     return {
         "profiles": [
             {
                 **card,
+                # 찾는 관계가 달라 좋아요(맞좋아요)를 못 보내는 사람 (2026-11-14)
+                "goal_mismatch": profile_service.goals_conflict(goal, card.get("relationship_goal")),
                 "liked_at": liked_at[p.user_id].isoformat(),
                 "passed": p.user_id in passed,
                 # 나에게 좋아요를 보낸 횟수 (2026-10-24 좋아요 쌓기). VIP 받은 LIKE 목록에서만 보여준다
@@ -224,6 +230,13 @@ def _target(db: Session, current: CurrentUser, profile_id: uuid.UUID) -> PublicP
     if target_user is None or not profile_service.school_visible(db, current.user, target_user):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="프로필을 찾을 수 없습니다.")
     return target
+
+
+def _check_goal(db: Session, current: CurrentUser, target: PublicProfile) -> None:
+    """진지한 연애 ↔ 캐주얼한 만남은 서로 좋아요·슈퍼 라이크를 못 보낸다 (2026-11-14 사용자 결정).
+    체험·하루 좋아요·슈퍼 라이크를 쓰기 전에 막는다 (개수가 줄지 않는다)."""
+    if profile_service.goals_conflict(profile_service.my_goal(db, current.id), target.relationship_goal):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="GOAL_MISMATCH")
 
 
 def _upsert_action(
@@ -260,6 +273,7 @@ def _upsert_action(
 def like(payload: TargetRequest, current: CurrentUser = Depends(get_current_user), db: Session = Depends(get_db)):
     enforce_rate_limit(f"like:{current.id}", 60, 60)
     target = _target(db, current, payload.profile_id)
+    _check_goal(db, current, target)
     viewer = _viewer(db, current)
     vip = vip_service.is_vip(current.user)
     # 무료 체험 (2026-10-06): 이용권이 없으면 체험 LIKE(평생 3개)로만. 다 쓰면 상대가 누구든 똑같이 막는다.
@@ -379,6 +393,7 @@ def super_like(payload: TargetRequest, current: CurrentUser = Depends(get_curren
     """
     enforce_rate_limit(f"superlike:{current.id}", 20, 60)
     target = _target(db, current, payload.profile_id)
+    _check_goal(db, current, target)
     viewer = _viewer(db, current)
     # 추천에 나올 수 있는 사람에게만: 차단·이미 LIKE·PASS 숨김·매칭(끝난 것 포함)이 아니고 조건이 맞아야 한다
     excluded = profile_service.excluded_user_ids(

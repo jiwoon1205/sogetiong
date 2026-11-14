@@ -6,7 +6,8 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 # 얼굴상 목록 (2026-10-02). 1개만 고르거나 안 고른다. 순서대로 화면에 보인다.
 FACE_TYPES = ("강아지상", "고양이상", "여우상", "토끼상", "곰상", "공룡상", "사슴상", "늑대상", "다람쥐상", "햄스터상")
-# 내가 찾는 관계 (2026-10-24). 화면 이름: 진지한 연애 / 대학교 친구 / 캐주얼한 만남. 추천에는 영향 없음
+# 내가 찾는 관계 (2026-10-24). 화면 이름: 진지한 연애 / 대학교 친구 / 캐주얼한 만남. 추천 순서에는 영향 없음
+# 2026-11-14: 진지한 연애 ↔ 캐주얼한 만남은 서로 좋아요·슈퍼 라이크를 못 보낸다 (추천에는 그대로 나옴) → profile_service.goals_conflict
 RELATIONSHIP_GOALS = ("SERIOUS", "FRIEND", "CASUAL")
 RelationshipGoal = Literal["SERIOUS", "FRIEND", "CASUAL"]
 FaceType = Literal["강아지상", "고양이상", "여우상", "토끼상", "곰상", "공룡상", "사슴상", "늑대상", "다람쥐상", "햄스터상"]

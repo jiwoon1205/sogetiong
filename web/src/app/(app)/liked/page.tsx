@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
+import { useGoalWarning } from "@/components/GoalWarning";
 import { MatchCelebration } from "@/components/MatchCelebration";
 import { PaymentPanel } from "@/components/PaymentStep";
 import { ProfileCard } from "@/components/ProfileCard";
@@ -54,6 +55,8 @@ function LikedList({ vip, onRenew }: { vip: VipInfo; onRenew: () => void }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [matched, setMatched] = useState<{ name: string; matchId: string } | null>(null);
+  // 찾는 관계가 달라 좋아요를 못 보낼 때 화면 가운데 빨간 바 (2026-11-14)
+  const { bar: goalBar, show: showGoalWarning } = useGoalWarning();
 
   const load = useCallback(async () => {
     try {
@@ -68,6 +71,8 @@ function LikedList({ vip, onRenew }: { vip: VipInfo; onRenew: () => void }) {
   usePolling(load, 60_000);
 
   async function act(card: LikedMeCard, action: "like" | "pass") {
+    // 진지한 연애 ↔ 캐주얼한 만남 (2026-11-14): 좋아요 대신 경고만
+    if (action === "like" && card.goal_mismatch) return showGoalWarning();
     setBusy(true);
     setError("");
     try {
@@ -83,7 +88,8 @@ function LikedList({ vip, onRenew }: { vip: VipInfo; onRenew: () => void }) {
       setOpen(null);
       await load();
     } catch (err) {
-      setError(errorMessage(err));
+      if (err instanceof ApiError && err.code === "GOAL_MISMATCH") showGoalWarning();
+      else setError(errorMessage(err));
     } finally {
       setBusy(false);
     }
@@ -91,6 +97,7 @@ function LikedList({ vip, onRenew }: { vip: VipInfo; onRenew: () => void }) {
 
   return (
     <div className="mx-auto max-w-app">
+      {goalBar}
       {vip.renewal && vip.can_buy && (
         <RenewalBanner
           title={vip.until ? `VIP가 ${untilDay(vip.until).replace("까지", "에")} 끝나요` : "VIP가 곧 끝나요"}
@@ -121,7 +128,7 @@ function LikedList({ vip, onRenew }: { vip: VipInfo; onRenew: () => void }) {
             <Button variant="secondary" size="lg" disabled={busy} onClick={() => act(open, "pass")}>
               넘기기
             </Button>
-            <Button size="lg" loading={busy} onClick={() => act(open, "like")}>
+            <Button size="lg" loading={busy} onClick={() => act(open, "like")} className={open.goal_mismatch ? "opacity-40" : undefined}>
               좋아요 · 바로 매칭
             </Button>
           </div>
