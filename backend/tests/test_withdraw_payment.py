@@ -11,6 +11,6 @@ def test_cannot_confirm_payment_of_withdrawn_user(sent_codes, db, world):
     me = ready_user(sent_codes, db, admin, "me@hufs.ac.kr", gender="MALE", want="FEMALE")
     assert me.post("/api/v1/me/payment/request").status_code == 200
     pid = admin.get("/api/v1/admin/payments").json()["payments"][0]["payment_id"]
-    assert me.delete("/api/v1/me", json={"password": "goodpass123"}).status_code == 200
+    assert me.delete("/api/v1/me", json={"password": "goodpass123", "reason": "테스트 탈퇴"}).status_code == 200
     r = admin.post(f"/api/v1/admin/payments/{pid}/confirm")
     assert r.status_code == 409 and "탈퇴" in r.json()["detail"]

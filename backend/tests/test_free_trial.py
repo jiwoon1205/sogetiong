@@ -148,7 +148,7 @@ def test_trial_count_survives_rejoin(sent_codes, db, world):
     w = women(sent_codes, db, admin, 4)
     for i in range(3):
         assert like(me, w[i]).status_code == 200
-    assert me.delete("/api/v1/me", json={"password": "goodpass123"}).status_code == 200
+    assert me.delete("/api/v1/me", json={"password": "goodpass123", "reason": "테스트 탈퇴"}).status_code == 200
     again = signup(sent_codes, db, "me@hufs.ac.kr", gender="MALE", want="FEMALE")
     choose_department(again, db, "경영학부")
     set_preferences(again)

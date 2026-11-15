@@ -71,7 +71,7 @@ export default function SettingsPage() {
         </p>
       </section>
 
-      <DeleteAccount open={deleteOpen} onClose={() => setDeleteOpen(false)} onDone={() => router.replace("/")} />
+      <DeleteAccount email={me.email} open={deleteOpen} onClose={() => setDeleteOpen(false)} onDone={() => router.replace("/")} />
     </div>
   );
 }
@@ -180,19 +180,47 @@ function MySuperLikes({ onBought }: { onBought: () => void }) {
   );
 }
 
-function DeleteAccount({ open, onClose, onDone }: { open: boolean; onClose: () => void; onDone: () => void }) {
+// 탈퇴 사유 목록 (2026-11-16). 서버 schemas/auth.py WITHDRAWAL_REASONS와 같은 순서·이름
+const WITHDRAWAL_REASONS = [
+  { value: "DATING", label: "썸/연애 시작" },
+  { value: "PRICE", label: "이용료 부담" },
+  { value: "NO_MATCH", label: "매칭이 안 됨" },
+  { value: "NO_ONE", label: "마음에 드는 사람이 없음" },
+  { value: "CHAT", label: "대화가 잘 안 이어짐" },
+  { value: "BAD_USER", label: "불쾌한 사용자를 만남" },
+  { value: "BREAK", label: "잠깐 쉬고 싶음 / 다시 올게요" },
+  { value: "OTHER", label: "기타" },
+] as const;
+
+function DeleteAccount({ email, open, onClose, onDone }: { email: string; open: boolean; onClose: () => void; onDone: () => void }) {
   const [password, setPassword] = useState("");
-  // 탈퇴 사유 (선택, 2026-11-07). 운영진만 봐요
+  // 탈퇴 사유 (2026-11-16): 목록에서 하나 필수, 기타만 글을 적는다. 운영진만 봐요
+  const [code, setCode] = useState("");
   const [reason, setReason] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
+    // 비밀번호 자동완성이 사유 칸에 아이디(메일)를 채우는 일이 많았다 (2026-11-16). 서버도 같은 검사를 한다
+    if (!code) {
+      setError("탈퇴하는 이유를 골라주세요.");
+      return;
+    }
+    const text = code === "OTHER" ? reason.trim() : "";
+    const compact = text.replace(/\s+/g, "").toLowerCase();
+    if (code === "OTHER" && !text) {
+      setError("기타를 고르면 이유를 적어주세요.");
+      return;
+    }
+    if (code === "OTHER" && (/^[^@\s]+@[^@\s]+$/.test(compact) || compact === email.toLowerCase() || compact === email.toLowerCase().split("@")[0])) {
+      setError("탈퇴하는 이유 칸에 아이디(메일 주소)가 들어간 것 같아요. 이유를 다시 적어주세요.");
+      return;
+    }
     setLoading(true);
     setError("");
     try {
-      await api("/me", { method: "DELETE", body: { password, reason: reason.trim() || null } });
+      await api("/me", { method: "DELETE", body: { password, reason_code: code, reason: text || null } });
       onDone();
     } catch (err) {
       setError(errorMessage(err));
@@ -214,18 +242,71 @@ function DeleteAccount({ open, onClose, onDone }: { open: boolean; onClose: () =
         <p className="text-[13px] leading-relaxed text-ink-faint">
           같은 학교 메일로 <b className="font-semibold text-ink-soft">언제든 다시 가입</b>할 수 있어요. 다시 가입하면 사진 평가 점수, 사진 재검토 대기 기간, 무료 체험 좋아요 사용 개수는 그대로 이어져요. (이용권·VIP 기간은 이어지지 않아요) 차단했던 상대는 다시 가입해도 계속 차단돼요.
         </p>
-        <Field label="탈퇴하는 이유 (선택)" htmlFor="del-reason" hint="더 나은 훕팅을 만드는 데만 써요. 운영진만 볼 수 있어요.">
-          <Textarea
-            id="del-reason"
-            rows={3}
-            maxLength={500}
-            value={reason}
-            onChange={(e) => setReason(e.target.value)}
-            placeholder="예: 추천되는 사람이 적어요 / 이용권 가격이 부담돼요 / 연애를 시작했어요"
-          />
-        </Field>
+        <fieldset>
+          <legend className="mb-2 text-[14px] font-medium text-ink">탈퇴하는 이유 (필수)</legend>
+          <div className="grid gap-1.5">
+            {WITHDRAWAL_REASONS.map((r) => (
+              <label
+                key={r.value}
+                className={`flex cursor-pointer items-center gap-2.5 rounded-md border px-3 py-2.5 text-[14px] transition-colors ${
+                  code === r.value ? "border-ink bg-paper-card text-ink" : "border-line text-ink-soft"
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="withdraw-reason-code"
+                  value={r.value}
+                  checked={code === r.value}
+                  onChange={() => {
+                    setCode(r.value);
+                    setError("");
+                  }}
+                  className="accent-current"
+                />
+                {r.label}
+              </label>
+            ))}
+          </div>
+          <p className="mt-1.5 text-[12.5px] text-ink-faint">더 나은 훕팅을 만드는 데만 써요. 운영진만 볼 수 있어요.</p>
+        </fieldset>
+        {code === "OTHER" && (
+          <Field label="기타 이유" htmlFor="del-reason">
+            <Textarea
+              id="del-reason"
+              name="withdraw-reason"
+              autoComplete="off"
+              rows={3}
+              maxLength={500}
+              required
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              placeholder="어떤 점 때문에 떠나시는지 적어주세요"
+            />
+          </Field>
+        )}
+        {/* 2026-11-16: 비밀번호 자동완성이 바로 위 글 칸(예전 사유 칸)에 아이디를 채우던 문제
+            → ① 사유는 고르기로 바꾸고 ② 보이지 않는 아이디 칸을 비밀번호 바로 앞에 두어 자동완성이 여기를 채우게 하고
+              ③ 기타 글 칸은 자동완성을 끈다 */}
+        <input
+          type="email"
+          name="username"
+          autoComplete="username"
+          value={email}
+          readOnly
+          tabIndex={-1}
+          aria-hidden
+          className="sr-only"
+        />
         <Field label="비밀번호 확인" htmlFor="del-pw">
-          <Input id="del-pw" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
+          <Input
+            id="del-pw"
+            name="password"
+            type="password"
+            autoComplete="current-password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+          />
         </Field>
         {error && <Notice tone="error">{error}</Notice>}
         <Button type="submit" variant="danger" className="w-full" loading={loading}>

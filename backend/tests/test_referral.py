@@ -108,7 +108,7 @@ def test_rejoin_within_7_days_is_not_a_referral(monkeypatch, sent_codes, db):
     a = signup(sent_codes, db, "a@hufs.ac.kr")
     code = _code(a)
     old = signup(sent_codes, db, "old@hufs.ac.kr", gender="FEMALE")
-    assert old.delete("/api/v1/me", json={"password": "goodpass123"}).status_code == 200
+    assert old.delete("/api/v1/me", json={"password": "goodpass123", "reason": "테스트 탈퇴"}).status_code == 200
     _signup_with(sent_codes, db, "old@hufs.ac.kr", code)  # 탈퇴 직후 재가입
     db.expire_all()
     me = db.query(User).filter(User.email == "old@hufs.ac.kr").one()
@@ -123,7 +123,7 @@ def test_rejoin_after_7_days_counts(monkeypatch, sent_codes, db):
     a = signup(sent_codes, db, "a@hufs.ac.kr")
     code = _code(a)
     old = signup(sent_codes, db, "old@hufs.ac.kr", gender="FEMALE")
-    assert old.delete("/api/v1/me", json={"password": "goodpass123"}).status_code == 200
+    assert old.delete("/api/v1/me", json={"password": "goodpass123", "reason": "테스트 탈퇴"}).status_code == 200
     db.query(User).filter(User.deleted_at.isnot(None)).update({"deleted_at": utcnow() - timedelta(days=8)})
     db.commit()
     again = _signup_with(sent_codes, db, "old@hufs.ac.kr", code)

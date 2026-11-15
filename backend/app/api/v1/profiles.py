@@ -1,5 +1,6 @@
 """/api/v1/me — 내 계정, 내 공개 프로필, 매칭 조건, 사진, 외적 평가."""
 
+import re
 import uuid
 from datetime import timedelta
 
@@ -170,6 +171,28 @@ def _end_paid_periods(db: Session, user: User, now) -> None:
         )
 
 
+def _withdrawal_reason(reason: str | None, email: str) -> str:
+    """탈퇴 사유 확인 (2026-11-16): 필수, 아이디(학교 메일)만 들어간 것은 막는다.
+
+    비밀번호 자동완성이 탈퇴 사유 칸에 아이디(메일)를 채우는 일이 자주 있었다.
+    → 메일 주소 하나만 있거나, 메일 앞부분(아이디)과 똑같으면 다시 적게 한다."""
+    text = (reason or "").strip()
+    if not text:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="기타를 고르면 이유를 적어주세요.")
+    compact = "".join(text.split()).lower()
+    email = (email or "").lower()
+    local = email.split("@", 1)[0]
+    looks_like_email = re.fullmatch(r"[^@\s]+@[^@\s]+", compact) is not None
+    if looks_like_email or compact in (email, local):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="탈퇴하는 이유 칸에 아이디(메일 주소)가 들어간 것 같아요. 이유를 다시 적어주세요.",
+        )
+    if len(compact) < 2:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="탈퇴하는 이유를 두 글자 이상 적어주세요.")
+    return text
+
+
 @router.delete("/me")
 def delete_me(
     payload: DeleteAccountRequest,
@@ -189,6 +212,11 @@ def delete_me(
     """
     if not verify_password(payload.password, current.user.password_hash):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="비밀번호가 올바르지 않습니다.")
+    # 탈퇴 사유 (2026-11-16): 목록에서 하나 필수. 기타만 글 필수. 예전 화면(글만 보냄)은 기타로 본다
+    reason_code = payload.reason_code or ("OTHER" if (payload.reason or "").strip() else None)
+    if reason_code is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="탈퇴하는 이유를 골라주세요.")
+    reason = _withdrawal_reason(payload.reason, current.user.email) if reason_code == "OTHER" else None
 
     uid = current.id
     # 7일 뒤 공개 프로필이 지워져도 관리자가 찾을 수 있게 닉네임·성별을 따로 남겨 둔다
@@ -205,8 +233,9 @@ def delete_me(
     current.user.email = auth_service.anonymized_email(uid)
     current.user.status = "DELETED"
     current.user.deleted_at = now
-    # 탈퇴 사유 (선택, 2026-11-07). 빈 칸이면 None
-    current.user.deleted_reason = (payload.reason or "").strip() or None
+    # 탈퇴 사유 (2026-11-16 필수)
+    current.user.deleted_reason_code = reason_code
+    current.user.deleted_reason = reason
     _end_paid_periods(db, current.user, now)
     revoke_all_user_sessions(db, uid)
     db.commit()

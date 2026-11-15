@@ -188,8 +188,8 @@ def test_delete_account(sent_codes, db):
     a = ready_user(sent_codes, db, admin, "a@hufs.ac.kr")
     b = ready_user(sent_codes, db, admin, "b@hufs.ac.kr")
     assert a.profile_id in discover_ids(b)
-    assert a.delete("/api/v1/me", json={"password": "wrong-pass1"}).status_code == 401
-    assert a.delete("/api/v1/me", json={"password": "goodpass123"}).status_code == 200
+    assert a.delete("/api/v1/me", json={"password": "wrong-pass1", "reason": "테스트 탈퇴"}).status_code == 401
+    assert a.delete("/api/v1/me", json={"password": "goodpass123", "reason": "테스트 탈퇴"}).status_code == 200
     assert a.get("/api/v1/me").status_code == 401
     assert a.profile_id not in discover_ids(b)
 

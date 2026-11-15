@@ -173,7 +173,7 @@ def test_signup_gift_super_like_first_signup_only(sent_codes, db, monkeypatch):
     # 탈퇴 후 다시 가입하면 선물 없음
     from tests.conftest import signup
 
-    assert me.delete("/api/v1/me", json={"password": "goodpass123"}).status_code == 200
+    assert me.delete("/api/v1/me", json={"password": "goodpass123", "reason": "테스트 탈퇴"}).status_code == 200
     again = signup(sent_codes, db, "me@hufs.ac.kr", gender="MALE")
     assert again.get("/api/v1/me/super-likes").json()["count"] == 0
 

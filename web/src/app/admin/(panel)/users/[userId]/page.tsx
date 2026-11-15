@@ -64,6 +64,8 @@ type Detail = {
   deleted_nickname?: string | null;
   /** 탈퇴 사유 (사용자가 적은 글, 선택, 2026-11-07) */
   deleted_reason?: string | null;
+  /** 고른 탈퇴 사유 (2026-11-16) */
+  deleted_reason_label?: string | null;
   /** 탈퇴자의 프로필·사진이 지워지는(지워진) 시각 */
   data_purge_at?: string | null;
   photos?: { photo_id: string; review_status: string; uploaded_at: string | null; image_url: string }[];
@@ -145,7 +147,10 @@ export default function UserDetail() {
           {d.deleted_at && (
             <div className="rounded-card border border-line bg-paper-card px-4 py-3">
               <p className="text-[12.5px] text-ink-faint">탈퇴 사유</p>
-              <p className="mt-1 whitespace-pre-wrap break-words text-[14px] text-ink">{d.deleted_reason || "적지 않음"}</p>
+              {d.deleted_reason_label && <p className="mt-1 text-[14px] font-medium text-ink">{d.deleted_reason_label}</p>}
+              {(d.deleted_reason || !d.deleted_reason_label) && (
+                <p className="mt-1 whitespace-pre-wrap break-words text-[14px] text-ink">{d.deleted_reason || "적지 않음"}</p>
+              )}
             </div>
           )}
           <GoalHistory history={d.relationship_goal_history ?? []} everCasual={!!d.ever_casual} />

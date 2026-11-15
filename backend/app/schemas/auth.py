@@ -91,7 +91,23 @@ class PasswordResetConfirm(BaseModel):
         return check_password_policy(value)
 
 
+# 탈퇴 사유 목록 (2026-11-16). 하나만 고른다. OTHER(기타)는 글을 꼭 적는다. 화면 순서도 이 순서
+WITHDRAWAL_REASONS: dict[str, str] = {
+    "DATING": "썸/연애 시작",
+    "PRICE": "이용료 부담",
+    "NO_MATCH": "매칭이 안 됨",
+    "NO_ONE": "마음에 드는 사람이 없음",
+    "CHAT": "대화가 잘 안 이어짐",
+    "BAD_USER": "불쾌한 사용자를 만남",
+    "BREAK": "잠깐 쉬고 싶음 / 다시 올게요",
+    "OTHER": "기타",
+}
+
+
 class DeleteAccountRequest(BaseModel):
     password: str = Field(max_length=128)
-    # 탈퇴 사유 (선택, 2026-11-07). 관리자만 본다
+    # 탈퇴 사유 (2026-11-16 필수, 목록에서 하나). 관리자만 본다
+    reason_code: Literal["DATING", "PRICE", "NO_MATCH", "NO_ONE", "CHAT", "BAD_USER", "BREAK", "OTHER"] | None = None
+    # 기타(OTHER)일 때 적는 글. 빈 칸·아이디(메일)만 적은 것은 delete_me에서 막는다.
+    # reason_code 없이 글만 오면(예전 화면) 기타로 본다
     reason: str | None = Field(default=None, max_length=500)

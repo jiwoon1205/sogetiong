@@ -34,7 +34,7 @@ def test_can_report_partner_who_deleted_account(sent_codes, db, mails):
     b.post(f"/api/v1/matches/{match_id}/messages", json={"body": "나쁜 말"})
 
     # 상대가 탈퇴 → 공개 프로필이 사라짐 → 예전 방식(profile_id)으로는 신고 불가
-    assert b.delete("/api/v1/me", json={"password": "goodpass123"}).status_code == 200
+    assert b.delete("/api/v1/me", json={"password": "goodpass123", "reason": "테스트 탈퇴"}).status_code == 200
     assert a.post("/api/v1/reports", json={"profile_id": b.profile_id, "reason": "ABUSIVE_LANGUAGE"}).status_code == 404
 
     # 끝난 대화 목록에 "탈퇴한 사용자"로 보인다

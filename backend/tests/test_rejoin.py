@@ -20,7 +20,7 @@ EMAIL = "a@hufs.ac.kr"
 
 
 def _delete(client: UserClient):
-    r = client.delete("/api/v1/me", json={"password": "goodpass123"})
+    r = client.delete("/api/v1/me", json={"password": "goodpass123", "reason": "테스트 탈퇴"})
     assert r.status_code == 200, r.text
 
 

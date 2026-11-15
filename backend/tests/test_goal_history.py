@@ -58,7 +58,7 @@ def test_history_survives_rejoin(sent_codes, db):
     a = signup(sent_codes, db, "a@hufs.ac.kr")
     admin = admin_login(db)
     assert a.patch("/api/v1/me/profile", json={"relationship_goal": "CASUAL"}).status_code == 200
-    assert a.delete("/api/v1/me", json={"password": "goodpass123"}).status_code == 200
+    assert a.delete("/api/v1/me", json={"password": "goodpass123", "reason": "테스트 탈퇴"}).status_code == 200
     new = signup(sent_codes, db, "a@hufs.ac.kr")
     assert new.patch("/api/v1/me/profile", json={"relationship_goal": "SERIOUS"}).status_code == 200
 

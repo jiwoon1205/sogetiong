@@ -21,7 +21,7 @@ from tests.conftest import admin_login, discover_ids, ready_user, signup
 
 
 def _delete(client):
-    assert client.delete("/api/v1/me", json={"password": "goodpass123"}).status_code == 200
+    assert client.delete("/api/v1/me", json={"password": "goodpass123", "reason": "테스트 탈퇴"}).status_code == 200
 
 
 def _users(admin, query=""):

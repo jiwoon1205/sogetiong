@@ -25,6 +25,7 @@ from app.models.photo import AppearanceEvaluation, UserPhoto
 from app.models.profile import PrivateProfile, PublicProfile
 from app.models.university import Department, University
 from app.models.user import User, UserDailyVisit
+from app.schemas.auth import WITHDRAWAL_REASONS
 from app.schemas.admin import (
     GiveLikesRequest,
     SuperVipRequest,
@@ -110,7 +111,9 @@ def recent_withdrawals(
     """최근 탈퇴한 사람과 탈퇴 사유 (2026-11-07). 사유를 안 적은 사람도 나온다 (reason = null).
     이메일·실명은 보내지 않는다 (닉네임·성별·학교·날짜만)."""
     rows = (
-        db.query(User.id, User.deleted_at, User.deleted_nickname, User.deleted_gender, User.deleted_reason, University.name)
+        db.query(
+            User.id, User.deleted_at, User.deleted_nickname, User.deleted_gender, User.deleted_reason, User.deleted_reason_code, University.name
+        )
         .outerjoin(University, University.id == User.university_id)
         .filter(User.deleted_at.isnot(None))
         .order_by(User.deleted_at.desc())
@@ -125,9 +128,11 @@ def recent_withdrawals(
                 "nickname": nickname,
                 "gender": gender,
                 "school": school,
-                "reason": reason,
+                "reason": reason,  # 기타일 때 적은 글 (2026-11-16 전에는 자유롭게 적은 글)
+                "reason_code": code,  # 고른 사유 (2026-11-16)
+                "reason_label": WITHDRAWAL_REASONS.get(code) if code else None,
             }
-            for uid, deleted_at, nickname, gender, reason, school in rows
+            for uid, deleted_at, nickname, gender, reason, code, school in rows
         ]
     }
 
@@ -753,6 +758,7 @@ def get_user(
         "deleted_nickname": user.deleted_nickname,
         # 탈퇴 사유 (사용자가 적은 글, 선택, 2026-11-07)
         "deleted_reason": user.deleted_reason,
+        "deleted_reason_label": WITHDRAWAL_REASONS.get(user.deleted_reason_code) if user.deleted_reason_code else None,
         "preferred_gender": private.preferred_gender if private else None,
         # 외모 등급 (내부 전용). None = 아직 없음 → 추천에 나오지 않는다
         "appearance_tier": profile_service.current_tier(db, user.id),

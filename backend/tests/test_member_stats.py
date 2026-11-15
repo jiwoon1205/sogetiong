@@ -38,7 +38,7 @@ def test_member_stats_ratio_uses_all_members_except_withdrawn(sent_codes, db):
     db.add(UserDailyVisit(user_id=old.id, visit_date=kst_today() - timedelta(days=10)))
     db.query(User).filter(User.email == "ban@hufs.ac.kr").one().status = "SUSPENDED"
     db.commit()
-    assert gone.delete("/api/v1/me", json={"password": "goodpass123"}).status_code == 200
+    assert gone.delete("/api/v1/me", json={"password": "goodpass123", "reason": "테스트 탈퇴"}).status_code == 200
 
     body = TestClient(app).get("/api/v1/stats/members").json()
     assert body["total"] == 6

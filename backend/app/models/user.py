@@ -36,6 +36,8 @@ class User(Base):
     deleted_gender: Mapped[str | None] = mapped_column(String(10), nullable=True)
     # 탈퇴 사유 (2026-11-07, 마이그레이션 0031). 탈퇴할 때 사용자가 적은 글 (선택). 관리자만 본다
     deleted_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # 탈퇴 사유 고른 것 (2026-11-16, 0040). schemas.auth.WITHDRAWAL_REASONS 중 하나. 기타면 위 deleted_reason에 글
+    deleted_reason_code: Mapped[str | None] = mapped_column(String(20), nullable=True)
     # 가입비 (2026-10-03, 마이그레이션 0014)
     # is_beta_member: 유료화(MEMBERSHIP_ENABLED)를 켜기 전에 가입한 사람 (기록용, 2026-10-04부터 결제 면제 아님)
     # signup_paid_at: 첫 이용권 입금을 확인한 시각 (기록용. 첫 이용권을 환불하면 다시 비운다)

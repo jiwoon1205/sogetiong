@@ -64,7 +64,7 @@ def test_admin_cannot_change_gender(sent_codes, db):
 def test_rejoin_must_keep_the_same_gender(sent_codes, db):
     """탈퇴 → 재가입으로 성별을 바꿀 수 없다 (여성 회원 무료 악용 방지, 2026-11-07)."""
     a = signup(sent_codes, db, "a@hufs.ac.kr", gender="MALE")
-    assert a.delete("/api/v1/me", json={"password": "goodpass123"}).status_code == 200
+    assert a.delete("/api/v1/me", json={"password": "goodpass123", "reason": "테스트 탈퇴"}).status_code == 200
     c = UserClient()
     c.post("/api/v1/auth/email/send-code", json={"email": "a@hufs.ac.kr"})
     ticket = c.post("/api/v1/auth/email/verify", json={"email": "a@hufs.ac.kr", "code": sent_codes["a@hufs.ac.kr"]}).json()[

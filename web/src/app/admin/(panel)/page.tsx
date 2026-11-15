@@ -193,9 +193,20 @@ function SchoolTable({ schools }: { schools: NonNullable<Stats["schools"]> }) {
   );
 }
 
-type Withdrawal = { user_id: string; deleted_at: string; nickname: string | null; gender: "MALE" | "FEMALE" | null; school: string | null; reason: string | null };
+type Withdrawal = {
+  user_id: string;
+  deleted_at: string;
+  nickname: string | null;
+  gender: "MALE" | "FEMALE" | null;
+  school: string | null;
+  /** 기타일 때 적은 글 (11-16 전 탈퇴자는 자유롭게 적은 글) */
+  reason: string | null;
+  /** 고른 사유 (2026-11-16) */
+  reason_code?: string | null;
+  reason_label?: string | null;
+};
 
-/** 최근 탈퇴 사유 (2026-11-07). 사유는 사용자가 탈퇴할 때 적은 글 (선택) */
+/** 최근 탈퇴 사유 (2026-11-07 글 → 2026-11-16 목록에서 고르기 + 기타 글) */
 function RecentWithdrawals() {
   const [rows, setRows] = useState<Withdrawal[] | null>(null);
   const [onlyWritten, setOnlyWritten] = useState(true);
@@ -207,16 +218,30 @@ function RecentWithdrawals() {
   }, []);
 
   if (!rows) return null;
-  const shown = onlyWritten ? rows.filter((w) => w.reason) : rows;
+  const shown = onlyWritten ? rows.filter((w) => w.reason || w.reason_label) : rows;
+  // 고른 사유별 수 (아래 목록 기준)
+  const counts = new Map<string, number>();
+  for (const w of rows) if (w.reason_label) counts.set(w.reason_label, (counts.get(w.reason_label) ?? 0) + 1);
   return (
     <section className="mt-8">
       <div className="mb-3 flex items-center justify-between gap-3">
         <h2 className="text-[14px] font-medium text-ink-soft">최근 탈퇴 사유</h2>
         <label className="flex items-center gap-1.5 text-[12.5px] text-ink-faint">
           <input type="checkbox" checked={onlyWritten} onChange={(e) => setOnlyWritten(e.target.checked)} />
-          사유를 적은 사람만
+          사유가 있는 사람만
         </label>
       </div>
+      {counts.size > 0 && (
+        <p className="mb-3 flex flex-wrap gap-1.5 text-[12.5px]">
+          {[...counts.entries()]
+            .sort((a, b) => b[1] - a[1])
+            .map(([label, n]) => (
+              <span key={label} className="rounded-full border border-line bg-paper-card px-2.5 py-0.5 text-ink-soft">
+                {label} <span className="num font-medium text-ink">{n}</span>
+              </span>
+            ))}
+        </p>
+      )}
       {shown.length === 0 ? (
         <p className="rounded-card border border-line bg-paper-card px-5 py-4 text-[13.5px] text-ink-faint">아직 없어요.</p>
       ) : (
@@ -228,7 +253,18 @@ function RecentWithdrawals() {
                 {w.gender === "FEMALE" ? "여성" : w.gender === "MALE" ? "남성" : "—"}
                 {w.school ? ` · ${w.school}` : ""}
               </Link>
-              <p className="mt-1 whitespace-pre-wrap break-words text-[14px] text-ink">{w.reason ?? <span className="text-ink-faint">적지 않음</span>}</p>
+              <p className="mt-1 whitespace-pre-wrap break-words text-[14px] text-ink">
+                {w.reason_label && w.reason_code !== "OTHER" ? (
+                  <b className="font-medium">{w.reason_label}</b>
+                ) : w.reason ? (
+                  <>
+                    {w.reason_label && <b className="mr-1.5 font-medium">기타:</b>}
+                    {w.reason}
+                  </>
+                ) : (
+                  <span className="text-ink-faint">적지 않음</span>
+                )}
+              </p>
             </li>
           ))}
         </ul>

@@ -29,7 +29,7 @@ EMAIL = "a@hufs.ac.kr"
 
 
 def _delete(client):
-    assert client.delete("/api/v1/me", json={"password": "goodpass123"}).status_code == 200
+    assert client.delete("/api/v1/me", json={"password": "goodpass123", "reason": "테스트 탈퇴"}).status_code == 200
 
 
 def _rejoin(sent_codes, db, **kw):
