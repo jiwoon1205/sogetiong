@@ -20,6 +20,8 @@ type UserRow = {
   university?: string | null;
   /** 내가 찾는 관계 (2026-11-11). null = 안 고름 */
   relationship_goal?: RelationshipGoal | null;
+  /** 캐주얼한 만남을 한 번이라도 고른 적 있음 (2026-11-15) */
+  ever_casual?: boolean;
   status: string;
   onboarding_stage?: string;
   reports_received: number;
@@ -147,6 +149,7 @@ function UsersList() {
             </option>
           ))}
           <option value="NONE">안 고름</option>
+          <option value="EVER_CASUAL">캐주얼 고른 적 있음</option>
         </Select>
         <Select value={visited} onChange={(e) => setVisited(e.target.value)}>
           <option value="">모든 접속</option>
@@ -193,6 +196,12 @@ function UsersList() {
                   {multiSchool && <td className="px-5 py-3 text-ink-soft">{u.university ? shortSchoolName(u.university) : "—"}</td>}
                   <td className="px-5 py-3 text-ink-soft">
                     {u.relationship_goal ? RELATIONSHIP_LABEL[u.relationship_goal] ?? u.relationship_goal : <span className="text-ink-faint">—</span>}
+                    {/* 지금은 다른 값이어도 예전에 캐주얼한 만남을 고른 적이 있으면 표시 (2026-11-15) */}
+                    {u.ever_casual && u.relationship_goal !== "CASUAL" && (
+                      <span className="ml-1.5 rounded bg-brick-wash px-1.5 py-0.5 text-[11px] text-brick" title="예전에 캐주얼한 만남을 고른 적 있음">
+                        캐주얼 이력
+                      </span>
+                    )}
                   </td>
                   <td className={cn("px-5 py-3", u.status !== "ACTIVE" && "text-brick")}>{USER_STATUS_LABEL[u.status] ?? u.status}</td>
                   <td className={cn("px-5 py-3", u.onboarding_stage === "DONE" ? "text-ink-soft" : "text-brick")}>

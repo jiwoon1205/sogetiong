@@ -8,7 +8,7 @@ import { Button, Field, Input, Notice, Segmented, Select, Spinner } from "@/comp
 import { USER_STATUS_LABEL, adminApi, useAdmin } from "@/lib/admin";
 import { api, errorMessage } from "@/lib/api";
 import { dateTime, timeAgo } from "@/lib/format";
-import { GENDER_LABEL, TIER_LABEL, TIER_OPTIONS, type AppearanceTier, type Card } from "@/lib/types";
+import { GENDER_LABEL, RELATIONSHIP_LABEL, TIER_LABEL, TIER_OPTIONS, type AppearanceTier, type Card } from "@/lib/types";
 
 type Gender = "MALE" | "FEMALE";
 type WantGender = Gender | "ANY";
@@ -39,6 +39,10 @@ type Detail = {
   /** 슈퍼 라이크 남은 개수 (2026-10-12) */
   super_likes?: number;
   profile: Card | null;
+  /** 찾는 관계 변경 기록 (최신순, 2026-11-15). BACKFILL = 기록을 시작한 날 그때 값 */
+  relationship_goal_history?: { old_goal: string | null; new_goal: string; source: string; changed_at: string }[];
+  /** 캐주얼한 만남을 한 번이라도 고른 적 있음 (2026-11-15) */
+  ever_casual?: boolean;
   campus: { id: string; name: string } | null;
   /** 학교 이름 (2026-10-24) */
   university?: string | null;
@@ -144,6 +148,7 @@ export default function UserDetail() {
               <p className="mt-1 whitespace-pre-wrap break-words text-[14px] text-ink">{d.deleted_reason || "적지 않음"}</p>
             </div>
           )}
+          <GoalHistory history={d.relationship_goal_history ?? []} everCasual={!!d.ever_casual} />
           {d.campus && (
             <p className="text-[13px] text-ink-soft">
               실제 소속: {d.university ? `${d.university} ` : ""}{d.campus.name} · {d.department?.name ?? "학과 미선택"}
@@ -756,5 +761,40 @@ function TierForm({ userId, current, onDone }: { userId: string; current: Appear
         등급 저장
       </Button>
     </form>
+  );
+}
+
+/** 찾는 관계 변경 기록 (2026-11-15). 캐주얼한 만남을 한 번이라도 고른 적 있으면 빨갛게 표시 */
+function GoalHistory({ history, everCasual }: { history: NonNullable<Detail["relationship_goal_history"]>; everCasual: boolean }) {
+  const label = (g: string | null) => (g ? (RELATIONSHIP_LABEL as Record<string, string>)[g] ?? g : "없음");
+  return (
+    <div className="rounded-card border border-line bg-paper-card px-4 py-3">
+      <p className="flex items-center gap-2 text-[12.5px] text-ink-faint">
+        찾는 관계 변경 기록
+        {everCasual && <span className="rounded bg-brick-wash px-1.5 py-0.5 text-[11px] text-brick">캐주얼 고른 적 있음</span>}
+      </p>
+      {history.length === 0 ? (
+        <p className="mt-1 text-[13px] text-ink-soft">기록 없음</p>
+      ) : (
+        <ul className="mt-1.5 space-y-1 text-[13px]">
+          {history.map((h, i) => (
+            <li key={i} className={h.new_goal === "CASUAL" ? "text-brick" : "text-ink"}>
+              <span className="num text-ink-faint">{dateTime(h.changed_at)}</span>{" "}
+              {h.source === "BACKFILL" ? (
+                <>
+                  {label(h.new_goal)} <span className="text-[11.5px] text-ink-faint">(기록 시작 때 값 · 그 전 기록 없음)</span>
+                </>
+              ) : h.old_goal ? (
+                <>
+                  {label(h.old_goal)} → {label(h.new_goal)}
+                </>
+              ) : (
+                <>처음 고름: {label(h.new_goal)}</>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }

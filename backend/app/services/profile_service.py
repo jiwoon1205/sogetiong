@@ -21,7 +21,7 @@ from app.models.matching import (
     PreferredCampus,
 )
 from app.models.photo import AppearanceEvaluation, UserPhoto
-from app.models.profile import Interest, PrivateProfile, PublicProfile, UserInterest
+from app.models.profile import Interest, PrivateProfile, PublicProfile, RelationshipGoalChange, UserInterest
 from app.models.university import Campus, Department, University
 from app.models.user import User, UserDailyVisit
 from app.services import vip_service
@@ -185,6 +185,58 @@ def goals_conflict(a: str | None, b: str | None) -> bool:
 
 def my_goal(db: Session, user_id: uuid.UUID) -> str | None:
     return db.query(PublicProfile.relationship_goal).filter(PublicProfile.user_id == user_id).scalar()
+
+
+# ---------- 찾는 관계 변경 기록 (2026-11-15, 0039) ----------
+
+def record_goal_change(db: Session, user_id: uuid.UUID, old: str | None, new: str) -> None:
+    """찾는 관계를 고르거나 바꿀 때 한 줄 남긴다. commit은 부르는 쪽에서."""
+    db.add(RelationshipGoalChange(user_id=user_id, old_goal=old, new_goal=new, source="USER"))
+
+
+def ever_casual_ids(db: Session, user_ids: list[uuid.UUID]) -> set[uuid.UUID]:
+    """캐주얼한 만남을 한 번이라도 고른 적 있는 사람 (변경 기록 + 지금 값)."""
+    if not user_ids:
+        return set()
+    found = {
+        uid
+        for (uid,) in db.query(RelationshipGoalChange.user_id).filter(
+            RelationshipGoalChange.user_id.in_(user_ids), RelationshipGoalChange.new_goal == "CASUAL"
+        )
+    }
+    found |= {
+        uid
+        for (uid,) in db.query(PublicProfile.user_id).filter(
+            PublicProfile.user_id.in_(user_ids), PublicProfile.relationship_goal == "CASUAL"
+        )
+    }
+    return found
+
+
+def ever_casual_query(db: Session):
+    """관리자 사용자 목록 걸러보기용: 캐주얼한 만남을 한 번이라도 고른 사람의 user_id 하위 쿼리."""
+    from_history = db.query(RelationshipGoalChange.user_id).filter(RelationshipGoalChange.new_goal == "CASUAL")
+    now = db.query(PublicProfile.user_id).filter(PublicProfile.relationship_goal == "CASUAL")
+    return from_history.union(now)
+
+
+def goal_history(db: Session, user_id: uuid.UUID) -> list[dict]:
+    """한 사람의 찾는 관계 변경 기록 (최신순)."""
+    rows = (
+        db.query(RelationshipGoalChange)
+        .filter(RelationshipGoalChange.user_id == user_id)
+        .order_by(RelationshipGoalChange.created_at.desc())
+        .all()
+    )
+    return [
+        {
+            "old_goal": r.old_goal,
+            "new_goal": r.new_goal,
+            "source": r.source,
+            "changed_at": as_utc(r.created_at).isoformat(),
+        }
+        for r in rows
+    ]
 
 
 def build_card(db: Session, profile: PublicProfile) -> dict:

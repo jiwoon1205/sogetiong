@@ -10,6 +10,7 @@ from app.core.security import hash_token, new_token, new_verification_code, toke
 from app.core.time import as_utc, utcnow
 from app.models.matching import Block
 from app.models.photo import AppearanceEvaluation, UserPhoto
+from app.models.profile import RelationshipGoalChange
 from app.models.university import University
 from app.models.user import User, VerificationToken
 
@@ -118,6 +119,10 @@ def carry_over_account(db: Session, previous: list[User], new_user: User) -> Non
     ids = [u.id for u in old]
     db.query(UserPhoto).filter(UserPhoto.user_id.in_(ids)).update({"user_id": new_user.id}, synchronize_session=False)
     db.query(AppearanceEvaluation).filter(AppearanceEvaluation.user_id.in_(ids)).update(
+        {"user_id": new_user.id}, synchronize_session=False
+    )
+    # 찾는 관계 변경 기록도 옮긴다 (2026-11-15): 탈퇴·재가입으로 "캐주얼 선택 이력"을 지우지 못하게
+    db.query(RelationshipGoalChange).filter(RelationshipGoalChange.user_id.in_(ids)).update(
         {"user_id": new_user.id}, synchronize_session=False
     )
 

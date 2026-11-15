@@ -45,6 +45,24 @@ class PublicProfile(Base):
     department = relationship("Department")
 
 
+class RelationshipGoalChange(Base):
+    """찾는 관계를 고르거나 바꿀 때마다 한 줄 (2026-11-15, 마이그레이션 0039). 관리자 확인용 기록.
+
+    지우지 않는다: 탈퇴해서 공개 프로필이 지워져도 남고, 재가입하면 새 계정으로 옮겨진다
+    (auth_service.carry_over_account). → "캐주얼한 만남을 한 번이라도 고른 적 있는지" 관리자가 알 수 있다.
+    source: USER(사용자가 직접 고름·바꿈) / BACKFILL(0039 배포 때 그 시점의 값을 한 줄로 채움. 그 전 변경 기록은 없음)
+    """
+
+    __tablename__ = "relationship_goal_changes"
+
+    id: Mapped[uuid.UUID] = pk()
+    user_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("users.id"), nullable=False, index=True)
+    old_goal: Mapped[str | None] = mapped_column(String(20), nullable=True)  # None = 처음 고름
+    new_goal: Mapped[str] = mapped_column(String(20), nullable=False)
+    source: Mapped[str] = mapped_column(String(20), default="USER", nullable=False)
+    created_at: Mapped[datetime] = created_at()
+
+
 class PrivateProfile(Base):
     """Layer 3 — 관리자/내부 시스템만 접근 (설계도 §8)."""
 

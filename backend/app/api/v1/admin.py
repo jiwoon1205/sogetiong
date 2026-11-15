@@ -533,7 +533,8 @@ def list_users(
     membership: str | None = Query(default=None, pattern="^(active|vip|expiring)$"),
     school: str | None = Query(default=None, max_length=120),  # 학교 메일 뒷부분 (예: khu.ac.kr), 2026-10-24
     # 내가 찾는 관계 (2026-11-11): SERIOUS / FRIEND / CASUAL, NONE = 아직 안 고름(예전 회원·탈퇴자)
-    goal: str | None = Query(default=None, pattern="^(SERIOUS|FRIEND|CASUAL|NONE)$"),
+    # EVER_CASUAL = 캐주얼한 만남을 한 번이라도 고른 적 있는 사람 (지금 값이 달라도, 탈퇴자 포함, 2026-11-15)
+    goal: str | None = Query(default=None, pattern="^(SERIOUS|FRIEND|CASUAL|NONE|EVER_CASUAL)$"),
     # 오늘 접속한 사람만 (2026-11-13): 현황의 "오늘 접속" 칸을 누르면 ?visited=today 로 들어온다
     visited: str | None = Query(default=None, pattern="^today$"),
     admin: CurrentAdmin = Depends(require_permission("users:read")),
@@ -569,6 +570,8 @@ def list_users(
         query = query.filter(User.university_id.in_(uni_ids))
     if goal == "NONE":
         query = query.filter(PublicProfile.relationship_goal.is_(None))
+    elif goal == "EVER_CASUAL":
+        query = query.filter(User.id.in_(profile_service.ever_casual_query(db)))
     elif goal:
         query = query.filter(PublicProfile.relationship_goal == goal)
     if visited == "today":
@@ -606,6 +609,7 @@ def list_users(
     schools = _school_names(db)
     # 전체적인 인상 점수 (2026-11-13): 가장 최근 평가. 관리자 화면이라 보여줘도 된다 (등급은 넣지 않음)
     evals = profile_service.latest_evaluations(db, [u.id for u, *_ in rows])
+    ever_casual = profile_service.ever_casual_ids(db, [u.id for u, *_ in rows])
     return {
         "total": total,
         "users": [
@@ -617,6 +621,7 @@ def list_users(
                 "overall_impression": evals[u.id].overall_impression if u.id in evals else None,
                 "university": schools.get(u.university_id),  # 학교 이름 (2026-10-24)
                 "relationship_goal": user_goal,  # 내가 찾는 관계 (2026-11-11). None = 안 고름
+                "ever_casual": u.id in ever_casual,  # 캐주얼한 만남을 한 번이라도 고른 적 있음 (2026-11-15)
                 "status": u.status,
                 "onboarding_stage": stages.get(u.id, "PROFILE"),
                 "reports_received": reports or 0,
@@ -719,6 +724,9 @@ def get_user(
         # 탈퇴 7일 뒤 사진 파일이 지워진 다음 재가입한 사람 (2026-10-11): 볼 수 있는 사진이 없다 → 새 사진을 내야 추천에 나온다
         "photo_files_purged": user.deleted_at is None and profile_service.photo_files_purged(db, user.id),
         "profile": profile_service.build_card(db, profile) if profile else None,
+        # 찾는 관계 변경 기록 (2026-11-15, 최신순)과 캐주얼한 만남을 한 번이라도 골랐는지
+        "relationship_goal_history": profile_service.goal_history(db, user.id),
+        "ever_casual": user.id in profile_service.ever_casual_ids(db, [user.id]),
         # 카드는 공개 설정에 따라 캠퍼스·학과가 숨겨질 수 있어서, 관리자에게는 실제 값을 따로 보여준다
         "campus": {"id": str(profile.campus_id), "name": profile.campus.name} if profile else None,
         # 학교 (2026-10-24 경희대 확장)

@@ -293,6 +293,8 @@ def update_my_profile(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=f"찾는 관계는 {days}일에 한 번 바꿀 수 있어요. {t.month}월 {t.day}일 {t.hour}시 {t.minute:02d}분부터 바꿀 수 있어요.",
             )
+        # 변경 기록 (2026-11-15): 관리자가 "캐주얼한 만남을 한 번이라도 골랐는지" 볼 수 있게 모두 남긴다
+        profile_service.record_goal_change(db, current.id, profile.relationship_goal, data["relationship_goal"])
         profile.relationship_goal = data["relationship_goal"]
         profile.relationship_goal_changed_at = utcnow()
     for field in ("mbti", "bio", "ideal_type"):
