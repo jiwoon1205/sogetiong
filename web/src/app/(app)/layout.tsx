@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 import { AnnouncementModal } from "@/components/AnnouncementModal";
+import { MatchTipModal } from "@/components/MatchTipModal";
 import { Brand } from "@/components/Brand";
 import { MemberStat } from "@/components/MemberStat";
 import { TopBanner } from "@/components/TopBanner";
@@ -101,6 +102,8 @@ function Shell({ children }: { children: React.ReactNode }) {
       <TopBanner />
       {/* 한 번만 보여주는 공지 팝업 (2026-10-05) */}
       <AnnouncementModal announcement={me.announcement} />
+      {/* 매칭 확률 높이기 안내 (2026-11-16): 공지 팝업과 겹치지 않게 공지가 없을 때만 */}
+      {!me.announcement && <MatchTipModal tip={me.match_tip} />}
 
       <main className="mx-auto max-w-3xl px-5 py-8 sm:py-12">{children}</main>
 

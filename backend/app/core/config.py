@@ -126,6 +126,11 @@ class Settings(BaseSettings):
     super_like_max_quantity: int = 10
     # 가입 선물 (2026-11-12): 처음 가입한 사람에게 슈퍼 라이크 N개. 탈퇴 후 다시 가입한 계정은 받지 않는다. 0이면 끔
     signup_super_likes: int = 1
+    # 이탈 막기 (2026-11-16): 매칭 확률 높이기 팝업 = 남성·접속한 날 N일 이상·매칭 0회 (0이면 끔)
+    match_tip_min_visit_days: int = 3
+    # 휴면(마지막 접속 N일 넘음) 계정이 좋아요를 받으면 알림 (0이면 끔), 같은 사람에게 N일에 최대 1번
+    winback_dormant_days: int = 7
+    winback_interval_days: int = 3
     # 우대를 적용할 확률. 항상 넣으면 "이 카드 = 나를 좋아하는 사람"이라고 티가 난다.
     liked_me_probability: float = 0.7
 

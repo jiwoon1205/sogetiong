@@ -47,6 +47,7 @@ MATCH = "MATCH"
 VIP_ENDING = "VIP_ENDING"  # VIP가 곧 끝나요 (2026-11-12)
 VIP_ENDED = "VIP_ENDED"  # VIP가 끝났어요
 VIP_KINDS = (VIP_ENDING, VIP_ENDED)
+LIKED = "LIKED"  # 휴면 계정이 좋아요를 받음 (2026-11-16). 휴대폰 알림이 안 되면 메일
 
 # 잠금화면에 보이는 글. 상대 닉네임·대화 내용은 절대 넣지 않는다.
 PUSH_TITLE = "훕팅"
@@ -55,6 +56,7 @@ PUSH_BODY = {
     MATCH: "새로운 매칭이 생겼어요",
     VIP_ENDING: "VIP가 곧 끝나요 · 지금 연장하면 할인돼요",
     VIP_ENDED: "VIP가 끝났어요 · 며칠 안에 다시 사면 할인돼요",
+    LIKED: "누군가 회원님에게 좋아요를 보냈어요",
 }
 
 # 알림 배달 회사 주소만 받는다. 아무 주소나 받으면 우리 서버가 엉뚱한 곳으로 요청을 보내게 만들 수 있다.
@@ -196,7 +198,9 @@ def deliver(alert: Alert) -> str:
     finally:
         db.close()
     try:
-        if alert.kind == MESSAGE:
+        if alert.kind == LIKED:
+            EmailService.send_liked_notice(email)
+        elif alert.kind == MESSAGE:
             EmailService.send_new_message_notice(email, alert.match_id)
         else:
             EmailService.send_new_match_notice(email, alert.match_id)
@@ -208,6 +212,8 @@ def deliver(alert: Alert) -> str:
 def payload_for(alert: Alert) -> dict:
     if alert.kind in VIP_KINDS:
         return {"title": PUSH_TITLE, "body": PUSH_BODY[alert.kind], "url": "/liked", "tag": "vip-renewal"}
+    if alert.kind == LIKED:
+        return {"title": PUSH_TITLE, "body": PUSH_BODY[LIKED], "url": "/discover", "tag": "liked"}
     return {
         "title": PUSH_TITLE,
         "body": PUSH_BODY[alert.kind],

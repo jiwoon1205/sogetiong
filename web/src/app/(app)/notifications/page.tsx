@@ -10,6 +10,7 @@ import type { Notification } from "@/lib/types";
 function targetOf(n: Notification): string | null {
   if ((n.type === "MATCH_CREATED" || n.type === "NEW_MESSAGE") && n.related_id) return `/chat/${n.related_id}`;
   if (n.type === "PHOTO_REVIEWED") return "/profile";
+  if (n.type === "MATCH_TIP") return "/profile"; // 매칭 확률 높이기 안내 (2026-11-16)
   if (n.type === "VIP_RENEWAL") return "/liked"; // VIP 재구매 할인 안내 (2026-11-12)
   if (n.type === "SUPER_LIKE_GIFT") return "/discover"; // 가입 선물 슈퍼 라이크 (2026-11-12)
   return null;

@@ -109,6 +109,20 @@ class EmailService:
             dev_log="새 매칭 안내 메일",
         )
 
+    @staticmethod
+    def send_liked_notice(email: str) -> None:
+        """휴면 계정이 좋아요를 받음 (2026-11-16). 누가 보냈는지는 쓰지 않는다. 3일에 최대 1번."""
+        site = get_settings().site_url
+        _send(
+            email,
+            "[훕팅] 누군가 회원님에게 좋아요를 보냈어요",
+            "오랜만이에요. 그사이 누군가 회원님에게 좋아요를 보냈어요.\n"
+            "추천에서 마음에 드는 사람에게 좋아요를 보내면 바로 매칭될 수도 있어요.\n\n"
+            f"추천 보러 가기: {site}/discover\n\n"
+            + _ALERT_MAIL_FOOTER.format(site=site),
+            dev_log="휴면 좋아요 안내 메일",
+        )
+
     # ---------- 운영진 알림 ----------
 
     @staticmethod

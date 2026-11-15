@@ -77,6 +77,9 @@ class User(Base):
     super_vip: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false(), nullable=False)
     # 슈퍼 라이크 남은 개수 (2026-10-12, 마이그레이션 0025). 입금 확인·관리자 지급으로 늘고, 보낼 때 1개씩 준다. 기간 없음
     super_likes: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
+    # 이탈 막기 (2026-11-16, 마이그레이션 0041): 매칭 확률 높이기 팝업을 닫은 시각, 휴면 좋아요 알림을 마지막으로 보낸 시각
+    match_tip_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    winback_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # 친구 초대 이벤트 (2026-10-24, 마이그레이션 0027). 계산은 services/referral_service.py
     # referral_code: 내 초대 링크 코드 (처음 볼 때 만든다). referred_by_id: 나를 초대한 사람.
     # referral_rewarded_at: 내 첫 사진이 승인돼 초대한 사람에게 슈퍼 라이크 1개를 준 시각 (한 번만)

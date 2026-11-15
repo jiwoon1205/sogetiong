@@ -24,6 +24,7 @@ from app.schemas.profile import PreferencesRequest, ProfileUpdateRequest
 from app.services import (
     admin_alert_service,
     announcement_service,
+    engagement_service,
     audit_service,
     auth_service,
     membership_service,
@@ -136,12 +137,22 @@ def get_me(current: CurrentUser = Depends(get_current_user), db: Session = Depen
         "relationship_goal_required": _needs_relationship_goal(db, current),
         # 한 번만 보여주는 공지 팝업 (2026-10-05). 아직 안 본 공지 이름, 없으면 null
         "announcement": announcement_service.pending(current.user, multi_school=profile_service.multi_school(db)),
+        # 매칭 확률 높이기 팝업 (2026-11-16): 남성·접속한 날 3일 이상·매칭 0회 → 한 번만. 아니면 null
+        "match_tip": engagement_service.match_tip(db, current.user),
         # 친구 초대 이벤트 (2026-10-24): 화면 맨 윗줄 배너용. 기간 안이면 active, end = 끝나는 시각
         "referral_event": {
             "active": referral_service.active(),
             "end": get_settings().referral_end_utc.isoformat() if get_settings().referral_end_utc else None,
         },
     }
+
+
+@router.post("/me/match-tip/seen")
+def match_tip_seen(current: CurrentUser = Depends(get_current_user), db: Session = Depends(get_db)):
+    """매칭 확률 높이기 팝업을 닫음 (2026-11-16) → 다시 안 띄우고 알림 목록에 남긴다."""
+    engagement_service.mark_match_tip_seen(db, current.user)
+    db.commit()
+    return {"ok": True}
 
 
 def _end_paid_periods(db: Session, user: User, now) -> None:

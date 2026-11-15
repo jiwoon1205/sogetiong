@@ -19,6 +19,7 @@ from app.models.user import User
 from app.schemas.matching import InstaHandleRequest, SendMessageRequest, TargetRequest
 from app.services import (
     chat_extra_service,
+    engagement_service,
     matching_service,
     membership_service,
     profile_service,
@@ -360,6 +361,9 @@ def like(payload: TargetRequest, current: CurrentUser = Depends(get_current_user
             match.id,
         )
         push_service.queue(db, target.user_id, push_service.MATCH, match.id)
+    else:
+        # 휴면 계정이 좋아요를 받으면 알림 (2026-11-16, 3일에 최대 1번). 매칭이 됐으면 매칭 알림이 이미 간다
+        engagement_service.maybe_winback(db, target.user_id)
     try:
         db.commit()
     except IntegrityError:

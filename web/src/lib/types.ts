@@ -106,6 +106,19 @@ export type Me = {
   relationship_goal_required?: boolean;
   /** 아직 안 본 한 번짜리 공지 이름 (2026-10-05). 없으면 null */
   announcement?: string | null;
+  /** 매칭 확률 높이기 팝업 (2026-11-16). 남성·접속 3일 이상·매칭 0회면 내 프로필 점검 내용, 아니면 null */
+  match_tip?: MatchTip | null;
+};
+
+/** 매칭 확률 높이기 팝업의 내 프로필 점검 (2026-11-16) */
+export type MatchTip = {
+  bio_chars: number;
+  bio_good: boolean;
+  interests: number;
+  interests_good: boolean;
+  mbti_set: boolean;
+  good_bio_chars: number;
+  good_interests: number;
 };
 
 /** 이용권 상태 (2026-10-04 구독제). 기본 / VIP(기본 포함). 2026-10-06: 정식 배포 뒤 2주, 베타 기간 구매 4주 */
