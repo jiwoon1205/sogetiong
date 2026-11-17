@@ -9,6 +9,7 @@
 - 대상: '찾는 관계'가 생긴 2026-10-24(한국 시간) 이후에 생긴 매칭 중에서
   한쪽은 캐주얼한 만남을 고른 적이 있고(변경 기록 또는 지금 값), 다른 쪽은 고른 적이 없는 매칭.
   한 줄 = 그런 매칭 하나. "회원코드" 칸이 캐주얼을 고르지 않은 쪽이다.
+  캐주얼이 보낸 슈퍼 라이크를 받아서 생긴 매칭은 뺀다 (2026-11-17). 이 사람이 캐주얼에게 슈퍼 라이크를 보낸 매칭은 넣는다.
 - 한계: 변경 기록은 2026-11-15부터 남았다. 그 전에 캐주얼을 골랐다가 바꾼 사람은 "고른 적 없음"으로 보일 수 있다.
   탈퇴해서 프로필이 지워진 사람은 지금 값을 알 수 없다 → 찾는관계 칸에 "모름(탈퇴)".
 - 엑셀에서 한글이 깨지지 않게 UTF-8 BOM을 붙인다. 요약은 화면(stderr)에 따로 찍는다.
@@ -83,7 +84,9 @@ for m in sorted(matches, key=lambda x: x.created_at):
     if (a in ever_casual) == (b in ever_casual):
         continue  # 둘 다 캐주얼이거나 둘 다 아님
     casual, other = (a, b) if a in ever_casual else (b, a)
-    how = "슈퍼 라이크" if m.super_like_by else ("좋아요 5번" if m.by_repeat_likes else "서로 좋아요")
+    if m.super_like_by == casual:
+        continue  # 캐주얼이 보낸 슈퍼 라이크를 받아서 생긴 매칭은 뺀다 (2026-11-17)
+    how = "슈퍼 라이크(보냄)" if m.super_like_by else ("좋아요 5번" if m.by_repeat_likes else "서로 좋아요")
     first = first_liker(a, b)
     first_label = "" if first is None else ("이 사람" if first == other else "상대(캐주얼)")
     out.writerow(

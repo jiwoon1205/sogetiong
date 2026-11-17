@@ -9,6 +9,10 @@
 - 탈퇴한 계정이 같은 메일로 다시 가입했으면 새 계정에 올린다.
 - 이미 감시 대상인 사람은 그대로 둔다 (상태·메모를 덮어쓰지 않는다). 새로 올리는 사람은 origin=MATCH_IMPORT, '지켜보는 중'.
 - 여러 번 실행해도 같은 사람이 두 번 올라가지 않는다.
+- 2026-11-17 추가: 캐주얼이 보낸 슈퍼 라이크를 **받아서만** 매칭된 사람은 올리지 않는다.
+  올릴지는 파일이 아니라 지금 DB로 다시 판단한다 (watch_service.qualifies: 캐주얼과 매칭(받은 슈퍼 라이크 제외)·
+  캐주얼에게 좋아요·막힌 시도 중 하나라도 있어야 함).
+  예전에 이 스크립트로 올렸는데 이제 해당이 안 되는 사람(MATCH_IMPORT, 메모·기록 없음)은 감시 대상에서 내린다.
 """
 
 import csv
@@ -20,6 +24,7 @@ from app.core.time import utcnow
 from app.db.session import SessionLocal
 from app.models.user import User
 from app.models.watch import WatchTarget
+from app.services import watch_service
 
 KST = timezone(timedelta(hours=9))
 
@@ -46,8 +51,9 @@ users = db.query(User).all()
 by_code = {pseudonymous_code(u.id): u for u in users}
 active_by_hash = {u.email_hash: u for u in users if u.status != "DELETED" and u.email_hash}
 
-added = kept = moved = missing = 0
+added = kept = moved = missing = skipped = removed = 0
 now = utcnow()
+people = {}
 for code, dates in when.items():
     user = by_code.get(code)
     if user is None:
@@ -56,6 +62,23 @@ for code, dates in when.items():
     if user.status == "DELETED" and user.email_hash in active_by_hash:
         user = active_by_hash[user.email_hash]  # 다시 가입한 새 계정
         moved += 1
+    people.setdefault(user.id, (user, []))[1].extend(dates)
+
+stats = watch_service.casual_stats(db, list(people))
+
+# 예전에 파일로 올렸는데 이제 해당이 안 되는 사람은 내린다 (관리자가 메모를 남겼거나 좋아요 기록이 생긴 사람은 그대로)
+imported = db.query(WatchTarget).filter(WatchTarget.origin == "MATCH_IMPORT").all()
+imported_stats = watch_service.casual_stats(db, [t.user_id for t in imported])
+for t in imported:
+    if not watch_service.qualifies(imported_stats[t.user_id]) and not t.note and (t.event_count or 0) == 0:
+        db.delete(t)
+        removed += 1
+db.flush()
+
+for uid, (user, dates) in people.items():
+    if not watch_service.qualifies(stats[uid]):
+        skipped += 1  # 받은 슈퍼 라이크로만 매칭됨
+        continue
     if db.get(WatchTarget, user.id) is not None:
         kept += 1
         continue
@@ -75,4 +98,7 @@ for code, dates in when.items():
     db.flush()
     added += 1
 db.commit()
-print(f"[감시 대상 올리기] 파일 속 {len(when)}명 → 새로 {added}명 · 이미 있음 {kept}명 · 재가입 계정으로 {moved}명 · 못 찾음 {missing}명")
+print(
+    f"[감시 대상 올리기] 파일 속 {len(when)}명 → 새로 {added}명 · 이미 있음 {kept}명 · "
+    f"받은 슈퍼 라이크로만 매칭돼서 뺌 {skipped}명 · 예전에 올렸다가 내림 {removed}명 · 재가입 계정으로 {moved}명 · 못 찾음 {missing}명"
+)

@@ -14,7 +14,9 @@ import runpy
 import sys
 from pathlib import Path
 
+from app.models.profile import PublicProfile
 from app.models.watch import WatchEvent, WatchTarget
+from app.services import watch_service
 from tests.conftest import admin_login, ready_user
 
 
@@ -169,3 +171,55 @@ def test_import_from_casual_match_file(sent_codes, db, monkeypatch):
     assert len(data["targets"]) == 1
     t = data["targets"][0]
     assert t["origin"] == "MATCH_IMPORT" and t["relationship_goal"] == "FRIEND" and t["casual_matches"] == 1
+
+
+def _give_super(admin, db, client, count=2):
+    from tests.test_membership import user_of
+
+    uid = user_of(db, client).id
+    assert admin.post(f"/api/v1/admin/users/{uid}/super-likes", json={"count": count, "reason": "테스트"}).status_code == 200
+
+
+def test_received_super_like_is_excluded_but_sent_counts(sent_codes, db, monkeypatch):
+    """캐주얼이 보낸 슈퍼 라이크를 받아서 생긴 매칭은 감시 숫자·파일 올리기에서 뺀다. 내가 캐주얼에게 보낸 슈퍼 라이크는 센다."""
+    admin, casual, friend, serious, nogoal = _setup(sent_codes, db)
+    _give_super(admin, db, casual)
+    _give_super(admin, db, nogoal)
+    # 캐주얼 → 친구: 슈퍼 라이크로 매칭 (친구는 받기만 함)
+    r = casual.post("/api/v1/super-likes", json={"profile_id": friend.profile_id})
+    assert r.status_code == 200, r.text
+    # 안 고름 → 캐주얼: 슈퍼 라이크로 매칭 (센다)
+    r = nogoal.post("/api/v1/super-likes", json={"profile_id": casual.profile_id})
+    assert r.status_code == 200, r.text
+
+    db.expire_all()
+    friend_id = db.query(PublicProfile.user_id).filter(PublicProfile.id == uuid.UUID(friend.profile_id)).scalar()
+    nogoal_id = db.query(PublicProfile.user_id).filter(PublicProfile.id == uuid.UUID(nogoal.profile_id)).scalar()
+    stats = watch_service.casual_stats(db, [friend_id, nogoal_id])
+    assert stats[friend_id]["casual_matches"] == 0 and not watch_service.qualifies(stats[friend_id])
+    assert stats[nogoal_id]["casual_matches"] == 1 and stats[nogoal_id]["casual_super_likes"] == 1
+    assert stats[nogoal_id]["casual_matches_started"] == 1
+    assert db.get(WatchTarget, friend_id) is None  # 받기만 해서 자동으로도 안 올라감
+    assert db.get(WatchTarget, nogoal_id) is not None
+
+    # 파일 내보내기에도 받은 슈퍼 라이크 매칭은 없다 → 안 고름 한 줄만
+    out = io.StringIO()
+    monkeypatch.setattr(sys, "stdout", out)
+    monkeypatch.setattr(sys, "stderr", io.StringIO())
+    runpy.run_path(str(Path(__file__).resolve().parents[2] / "deploy" / "casual_match_export.py"), run_name="__main__")
+    lines = out.getvalue().lstrip("﻿").strip().splitlines()
+    assert len(lines) == 2 and "슈퍼 라이크(보냄)" in lines[1]
+
+    # 예전 파일로 친구가 올라가 있었다면(MATCH_IMPORT, 메모 없음) 다시 돌리면 내려간다
+    db.add(WatchTarget(user_id=friend_id, status="WATCHING", origin="MATCH_IMPORT", event_count=0))
+    db.commit()
+    from app.core.security import pseudonymous_code
+
+    csv_text = "회원코드,매칭일(한국시간)\n" + f"{pseudonymous_code(friend_id)},2026-11-01 10:00\n"
+    out = io.StringIO()
+    monkeypatch.setattr(sys, "stdout", out)
+    monkeypatch.setattr(sys, "stdin", io.StringIO(csv_text))
+    runpy.run_path(str(Path(__file__).resolve().parents[2] / "deploy" / "watch_import.py"), run_name="__main__")
+    assert "받은 슈퍼 라이크로만 매칭돼서 뺌 1명" in out.getvalue() and "예전에 올렸다가 내림 1명" in out.getvalue(), out.getvalue()
+    db.expire_all()
+    assert db.get(WatchTarget, friend_id) is None

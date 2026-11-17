@@ -65,6 +65,13 @@ def watching_ids(db: Session, user_ids: list[uuid.UUID]) -> dict[uuid.UUID, str]
 # ---------- 모니터링 숫자 (2026-11-17) ----------
 # 저장해 두지 않고 볼 때마다 DB에서 센다 → 예전 기록(감시 기능 전 좋아요·매칭)까지 항상 최신으로 보인다.
 # "캐주얼" = 캐주얼한 만남을 한 번이라도 고른 사람 (찾는 관계 변경 기록 + 지금 값, profile_service.ever_casual_*).
+# 캐주얼이 보낸 슈퍼 라이크를 받아서 어쩔 수 없이 생긴 매칭은 세지 않는다 (2026-11-17 사용자 결정).
+# 반대로 이 사람이 캐주얼에게 슈퍼 라이크를 보낸 매칭은 센다.
+
+
+def received_super_from(match, me) -> bool:
+    """상대(캐주얼)가 보낸 슈퍼 라이크로 생긴 매칭인가 → 감시 숫자에서 뺀다."""
+    return match.super_like_by is not None and match.super_like_by != me
 
 
 def _casual_set(db: Session) -> set[uuid.UUID]:
@@ -107,7 +114,7 @@ def casual_stats(db: Session, user_ids: list[uuid.UUID]) -> dict[uuid.UUID, dict
                 first_like[(frm, to)] = at
     for m in matches:
         for me, partner in ((m.user_a_id, m.user_b_id), (m.user_b_id, m.user_a_id)):
-            if me not in ids or partner not in casual:
+            if me not in ids or partner not in casual or received_super_from(m, me):
                 continue
             row = out[me]
             row["casual_matches"] += 1
@@ -128,6 +135,11 @@ def casual_stats(db: Session, user_ids: list[uuid.UUID]) -> dict[uuid.UUID, dict
     return out
 
 
+def qualifies(stats: dict) -> bool:
+    """감시할 이유가 있나: 캐주얼과 매칭(받은 슈퍼 라이크 제외) / 캐주얼에게 좋아요 / 막힌 시도 중 하나라도."""
+    return stats["casual_matches"] > 0 or stats["casual_likes"] > 0 or stats["blocked"] > 0
+
+
 def casual_detail(db: Session, user_id: uuid.UUID) -> dict:
     """한 사람의 캐주얼 매칭 목록과 캐주얼에게 보낸 좋아요 목록."""
     from sqlalchemy import or_
@@ -138,7 +150,7 @@ def casual_detail(db: Session, user_id: uuid.UUID) -> dict:
     matches = [
         m
         for m in db.query(Match).filter(or_(Match.user_a_id == user_id, Match.user_b_id == user_id)).order_by(Match.created_at.desc())
-        if (m.user_b_id if m.user_a_id == user_id else m.user_a_id) in casual
+        if (m.user_b_id if m.user_a_id == user_id else m.user_a_id) in casual and not received_super_from(m, user_id)
     ]
     my_msgs: dict = {}
     if matches:
@@ -160,9 +172,9 @@ def casual_detail(db: Session, user_id: uuid.UUID) -> dict:
     match_rows = []
     for m in matches:
         partner = m.user_b_id if m.user_a_id == user_id else m.user_a_id
-        if m.super_like_by is not None:
-            started = "me" if m.super_like_by == user_id else "them"
-            how = "슈퍼 라이크"
+        if m.super_like_by is not None:  # 받은 슈퍼 라이크는 위에서 뺐으므로 여기는 내가 보낸 것
+            started = "me"
+            how = "슈퍼 라이크 (보냄)"
         else:
             how = "좋아요 5번" if m.by_repeat_likes else "서로 좋아요"
             mine = likes_to.get(partner, (None, None, None))[1]
