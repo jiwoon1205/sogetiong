@@ -37,6 +37,8 @@ class WatchTarget(Base):
 
     user_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("users.id"), primary_key=True)
     status: Mapped[str] = mapped_column(String(20), default="WATCHING", nullable=False)  # WATCHING / CLEARED
+    # 어떻게 올라왔나 (2026-11-17, 0043): LIKE = 캐주얼에게 좋아요를 보내서 / MATCH_IMPORT = 예전 캐주얼 매칭 파일로 한꺼번에
+    origin: Mapped[str] = mapped_column(String(20), default="LIKE", nullable=False)
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
     event_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     first_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)

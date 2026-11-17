@@ -1048,40 +1048,69 @@ def _watch_people(db: Session, ids: set) -> dict:
     return out
 
 
+WATCH_SORTS = {
+    "recent": lambda t: as_utc(t["_last_at"]).timestamp(),
+    "matches": lambda t: (t["casual_matches"], t["casual_likes"]),
+    "likes": lambda t: (t["casual_likes"], t["casual_matches"]),
+    "started": lambda t: (t["casual_matches_started"], t["casual_likes"]),
+}
+
+
 @router.get("/watchlist")
 def watchlist(
     status_filter: str = Query(default="WATCHING", alias="status", pattern="^(WATCHING|CLEARED|ALL)$"),
+    sort: str = Query(default="recent", pattern="^(recent|matches|likes|started)$"),
     admin: CurrentAdmin = Depends(require_permission("users:read")),
     db: Session = Depends(get_db),
 ):
-    """감시 대상 목록 (최근에 보낸 순)."""
+    """감시 대상 목록 + 모니터링 숫자 (볼 때마다 새로 센다, 예전 기록 포함).
+
+    casual_matches = 캐주얼(한 번이라도 고른 사람)과 매칭 수, casual_matches_started = 그중 내가 먼저 좋아요·슈퍼 라이크로 시작한 수,
+    casual_super_likes = 캐주얼에게 슈퍼 라이크로 매칭한 수, casual_likes = 캐주얼에게 보낸 좋아요 수(같은 사람에게 여러 번이면 그만큼),
+    casual_liked_people = 좋아요를 보낸 캐주얼 사람 수, blocked_count = 보내려다 막힌 수.
+    """
     q = db.query(WatchTarget)
     if status_filter != "ALL":
         q = q.filter(WatchTarget.status == status_filter)
-    rows = q.order_by(WatchTarget.last_at.desc()).limit(300).all()
-    ids = {r.user_id for r in rows}
-    people = _watch_people(db, ids)
-    blocked = dict(
-        db.query(WatchEvent.user_id, func.count(WatchEvent.id))
-        .filter(WatchEvent.user_id.in_(ids), WatchEvent.blocked.is_(True))
-        .group_by(WatchEvent.user_id)
-        .all()
-    ) if ids else {}
-    counts = dict(db.query(WatchTarget.status, func.count()).group_by(WatchTarget.status).all())
-    return {
-        "counts": {"WATCHING": counts.get("WATCHING", 0), "CLEARED": counts.get("CLEARED", 0)},
-        "targets": [
+    rows = q.all()
+    ids = [r.user_id for r in rows]
+    people = _watch_people(db, set(ids))
+    stats = watch_service.casual_stats(db, ids)
+    items = []
+    for r in rows:
+        s = stats[r.user_id]
+        items.append(
             {
                 **people[r.user_id],
                 "status": r.status,
+                "origin": r.origin,
                 "note": r.note,
                 "event_count": r.event_count,
-                "blocked_count": blocked.get(r.user_id, 0),
+                "blocked_count": s["blocked"],
+                "casual_matches": s["casual_matches"],
+                "casual_matches_started": s["casual_matches_started"],
+                "casual_super_likes": s["casual_super_likes"],
+                "casual_likes": s["casual_likes"],
+                "casual_liked_people": s["casual_liked_people"],
                 "first_at": as_utc(r.first_at).isoformat(),
                 "last_at": as_utc(r.last_at).isoformat(),
+                "_last_at": r.last_at,
             }
-            for r in rows
-        ],
+        )
+    items.sort(key=WATCH_SORTS[sort], reverse=True)
+    for it in items:
+        it.pop("_last_at")
+    counts = dict(db.query(WatchTarget.status, func.count()).group_by(WatchTarget.status).all())
+    return {
+        "counts": {"WATCHING": counts.get("WATCHING", 0), "CLEARED": counts.get("CLEARED", 0)},
+        "totals": {
+            "people": len(items),
+            "casual_matches": sum(i["casual_matches"] for i in items),
+            "casual_matches_started": sum(i["casual_matches_started"] for i in items),
+            "casual_likes": sum(i["casual_likes"] for i in items),
+            "blocked": sum(i["blocked_count"] for i in items),
+        },
+        "targets": items[:500],
     }
 
 
@@ -1094,11 +1123,36 @@ def watchlist_detail(
     """한 사람의 감시 기록 (누구에게 언제 보냈는지)."""
     target = db.get(WatchTarget, user_id)
     events = db.query(WatchEvent).filter(WatchEvent.user_id == user_id).order_by(WatchEvent.created_at.desc()).limit(500).all()
-    people = _watch_people(db, {user_id} | {e.target_user_id for e in events})
+    detail = watch_service.casual_detail(db, user_id)
+    people = _watch_people(
+        db,
+        {user_id}
+        | {e.target_user_id for e in events}
+        | {m["partner_id"] for m in detail["matches"]}
+        | {lk["partner_id"] for lk in detail["likes"]},
+    )
     return {
-        "person": people.get(user_id) or _watch_people(db, {user_id}).get(user_id),
+        "person": people[user_id],
         "status": target.status if target else None,
+        "origin": target.origin if target else None,
         "note": target.note if target else None,
+        # 캐주얼과의 매칭 (최신순, 예전 기록 포함)
+        "casual_matches": [
+            {
+                "at": as_utc(m["at"]).isoformat(),
+                "how": m["how"],
+                "started": m["started"],  # me = 이 사람이 먼저 / them = 캐주얼 쪽이 먼저 / None = 모름
+                "my_messages": m["my_messages"],
+                "status": m["status"],
+                "partner": people[m["partner_id"]],
+            }
+            for m in detail["matches"]
+        ],
+        # 캐주얼에게 보낸 좋아요 (사람별, 마지막으로 보낸 순)
+        "casual_likes": [
+            {"count": lk["count"], "last_at": as_utc(lk["last_at"]).isoformat(), "is_super": lk["is_super"], "partner": people[lk["partner_id"]]}
+            for lk in detail["likes"]
+        ],
         "events": [
             {
                 "at": as_utc(e.created_at).isoformat(),

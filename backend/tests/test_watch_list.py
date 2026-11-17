@@ -111,3 +111,61 @@ def test_casual_match_export_script(sent_codes, db, monkeypatch):
     assert row[1] == "대학교 친구" and row[4] == "캐주얼한 만남" and row[6] == "서로 좋아요" and row[7] == "이 사람"
     assert row[0].startswith("U") and len(row[0]) == 7
     assert "해당 매칭 1개" in err.getvalue()
+
+
+def test_monitoring_counts_include_history(sent_codes, db, monkeypatch):
+    """감시 목록 숫자: 캐주얼과 매칭 수·내가 먼저 시작한 수·캐주얼에게 보낸 좋아요 수 (볼 때마다 새로 셈)."""
+    admin, casual, friend, serious, nogoal = _setup(sent_codes, db)
+    # 캐주얼이 먼저 좋아요 → 친구가 받아서 매칭 (친구가 먼저 시작한 건 아님)
+    assert casual.post("/api/v1/likes", json={"profile_id": friend.profile_id}).status_code == 200
+    assert friend.post("/api/v1/likes", json={"profile_id": casual.profile_id}).json()["matched"] is True
+    # 안 고름 → 다른 캐주얼에게 먼저 좋아요, 그 캐주얼이 받아서 매칭 (안 고름이 먼저 시작)
+    other = ready_user(sent_codes, db, admin, "c2@hufs.ac.kr", gender="FEMALE")
+    _goal(other, "CASUAL")
+    assert nogoal.post("/api/v1/likes", json={"profile_id": other.profile_id}).status_code == 200
+    assert other.post("/api/v1/likes", json={"profile_id": nogoal.profile_id}).json()["matched"] is True
+    assert nogoal.post("/api/v1/likes", json={"profile_id": casual.profile_id}).status_code == 200
+
+    data = admin.get("/api/v1/admin/watchlist?sort=likes").json()
+    rows = {t["relationship_goal"] or "NONE": t for t in data["targets"]}
+    assert rows["FRIEND"]["casual_matches"] == 1 and rows["FRIEND"]["casual_matches_started"] == 0
+    assert rows["FRIEND"]["casual_likes"] == 1
+    assert rows["NONE"]["casual_matches"] == 1 and rows["NONE"]["casual_matches_started"] == 1
+    assert rows["NONE"]["casual_likes"] == 2 and rows["NONE"]["casual_liked_people"] == 2
+    assert data["targets"][0]["relationship_goal"] is None  # 좋아요 많은 순
+    assert data["totals"]["casual_matches"] == 2
+
+    d = admin.get(f"/api/v1/admin/watchlist/{rows['FRIEND']['user_id']}").json()
+    assert len(d["casual_matches"]) == 1
+    m = d["casual_matches"][0]
+    assert m["started"] == "them" and m["how"] == "서로 좋아요" and m["partner"]["relationship_goal"] == "CASUAL"
+    assert d["casual_likes"][0]["count"] == 1
+
+
+def test_import_from_casual_match_file(sent_codes, db, monkeypatch):
+    """캐주얼 매칭 파일의 회원코드로 감시 대상에 한꺼번에 올린다 (이미 있는 사람은 그대로)."""
+    admin, casual, friend, serious, nogoal = _setup(sent_codes, db)
+    assert casual.post("/api/v1/likes", json={"profile_id": friend.profile_id}).status_code == 200
+    assert friend.post("/api/v1/likes", json={"profile_id": casual.profile_id}).json()["matched"] is True
+    db.query(WatchEvent).delete()
+    db.query(WatchTarget).delete()
+    db.commit()
+
+    root = Path(__file__).resolve().parents[2] / "deploy"
+    out, err = io.StringIO(), io.StringIO()
+    monkeypatch.setattr(sys, "stdout", out)
+    monkeypatch.setattr(sys, "stderr", err)
+    runpy.run_path(str(root / "casual_match_export.py"), run_name="__main__")
+    csv_text = out.getvalue()
+
+    for expected in ("새로 1명", "이미 있음 1명"):
+        out = io.StringIO()
+        monkeypatch.setattr(sys, "stdout", out)
+        monkeypatch.setattr(sys, "stdin", io.StringIO(csv_text))
+        runpy.run_path(str(root / "watch_import.py"), run_name="__main__")
+        assert expected in out.getvalue(), out.getvalue()
+
+    data = admin.get("/api/v1/admin/watchlist").json()
+    assert len(data["targets"]) == 1
+    t = data["targets"][0]
+    assert t["origin"] == "MATCH_IMPORT" and t["relationship_goal"] == "FRIEND" and t["casual_matches"] == 1
