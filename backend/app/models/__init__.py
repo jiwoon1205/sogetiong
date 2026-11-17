@@ -23,5 +23,6 @@ from app.models.photo import AppearanceEvaluation, UserPhoto
 from app.models.push import PushSubscription
 from app.models.profile import Interest, PrivateProfile, PublicProfile, RelationshipGoalChange, UserInterest
 from app.models.university import Campus, Department, University
+from app.models.watch import WatchEvent, WatchTarget
 from app.models.user import User, UserDailyVisit, UserSession, VerificationToken
 from app.models.survey import AppSetting, SurveyResponse

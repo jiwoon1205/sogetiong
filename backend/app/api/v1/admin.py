@@ -25,6 +25,7 @@ from app.models.photo import AppearanceEvaluation, UserPhoto
 from app.models.profile import PrivateProfile, PublicProfile
 from app.models.university import Department, University
 from app.models.user import User, UserDailyVisit
+from app.models.watch import WatchEvent, WatchTarget
 from app.schemas.auth import WITHDRAWAL_REASONS
 from app.schemas.admin import (
     GiveLikesRequest,
@@ -38,7 +39,7 @@ from app.schemas.admin import (
     UserDepartmentRequest,
     UserStatusRequest,
 )
-from app.services import admin_alert_service, audit_service, chat_extra_service, match_limit_service, membership_service, payment_service, profile_service, rec_quota_service, referral_service, super_like_service, vip_service, withdrawal_service
+from app.services import admin_alert_service, audit_service, chat_extra_service, match_limit_service, membership_service, payment_service, profile_service, rec_quota_service, referral_service, super_like_service, vip_service, watch_service, withdrawal_service
 from app.services.email_service import EmailDeliveryError, EmailService
 from app.services.notification_service import notify, notify_match_created
 from app.services.session_service import (
@@ -615,6 +616,7 @@ def list_users(
     # 전체적인 인상 점수 (2026-11-13): 가장 최근 평가. 관리자 화면이라 보여줘도 된다 (등급은 넣지 않음)
     evals = profile_service.latest_evaluations(db, [u.id for u, *_ in rows])
     ever_casual = profile_service.ever_casual_ids(db, [u.id for u, *_ in rows])
+    watched = watch_service.watching_ids(db, [u.id for u, *_ in rows])
     return {
         "total": total,
         "users": [
@@ -627,6 +629,7 @@ def list_users(
                 "university": schools.get(u.university_id),  # 학교 이름 (2026-10-24)
                 "relationship_goal": user_goal,  # 내가 찾는 관계 (2026-11-11). None = 안 고름
                 "ever_casual": u.id in ever_casual,  # 캐주얼한 만남을 한 번이라도 고른 적 있음 (2026-11-15)
+                "watch_status": watched.get(u.id),  # 감시 대상 (2026-11-17): WATCHING / CLEARED / None
                 "status": u.status,
                 "onboarding_stage": stages.get(u.id, "PROFILE"),
                 "reports_received": reports or 0,
@@ -732,6 +735,7 @@ def get_user(
         # 찾는 관계 변경 기록 (2026-11-15, 최신순)과 캐주얼한 만남을 한 번이라도 골랐는지
         "relationship_goal_history": profile_service.goal_history(db, user.id),
         "ever_casual": user.id in profile_service.ever_casual_ids(db, [user.id]),
+        "watch_status": watch_service.watching_ids(db, [user.id]).get(user.id),  # 감시 대상 (2026-11-17)
         # 카드는 공개 설정에 따라 캠퍼스·학과가 숨겨질 수 있어서, 관리자에게는 실제 값을 따로 보여준다
         "campus": {"id": str(profile.campus_id), "name": profile.campus.name} if profile else None,
         # 학교 (2026-10-24 경희대 확장)
@@ -1015,6 +1019,133 @@ def update_user_status(
     )
     db.commit()
     return {"user_id": str(user.id), "status": user.status}
+
+
+# ---------- 감시 대상 (2026-11-17) ----------
+# 캐주얼한 만남을 고르지 않은 사람이 캐주얼한 만남을 고른 사람에게 좋아요를 보내면(막힌 것 포함) 기록된다.
+# 관리자 전용. 사용자 화면·API에는 어떤 흔적도 없다.
+
+WATCH_GOAL = {"SERIOUS": "진지한 연애", "FRIEND": "대학교 친구", "CASUAL": "캐주얼한 만남"}
+
+
+def _watch_people(db: Session, ids: set) -> dict:
+    """user_id → {code, nickname, gender, goal, deleted}"""
+    if not ids:
+        return {}
+    users = {u.id: u for u in db.query(User).filter(User.id.in_(ids))}
+    profiles = {p.user_id: p for p in db.query(PublicProfile).filter(PublicProfile.user_id.in_(ids))}
+    out = {}
+    for uid in ids:
+        u, p = users.get(uid), profiles.get(uid)
+        out[uid] = {
+            "user_id": str(uid),
+            "subject_code": pseudonymous_code(uid),
+            "nickname": p.nickname if p else (u.deleted_nickname if u else None),
+            "gender": p.gender if p else (u.deleted_gender if u else None),
+            "relationship_goal": p.relationship_goal if p else None,
+            "deleted": bool(u and u.deleted_at is not None),
+        }
+    return out
+
+
+@router.get("/watchlist")
+def watchlist(
+    status_filter: str = Query(default="WATCHING", alias="status", pattern="^(WATCHING|CLEARED|ALL)$"),
+    admin: CurrentAdmin = Depends(require_permission("users:read")),
+    db: Session = Depends(get_db),
+):
+    """감시 대상 목록 (최근에 보낸 순)."""
+    q = db.query(WatchTarget)
+    if status_filter != "ALL":
+        q = q.filter(WatchTarget.status == status_filter)
+    rows = q.order_by(WatchTarget.last_at.desc()).limit(300).all()
+    ids = {r.user_id for r in rows}
+    people = _watch_people(db, ids)
+    blocked = dict(
+        db.query(WatchEvent.user_id, func.count(WatchEvent.id))
+        .filter(WatchEvent.user_id.in_(ids), WatchEvent.blocked.is_(True))
+        .group_by(WatchEvent.user_id)
+        .all()
+    ) if ids else {}
+    counts = dict(db.query(WatchTarget.status, func.count()).group_by(WatchTarget.status).all())
+    return {
+        "counts": {"WATCHING": counts.get("WATCHING", 0), "CLEARED": counts.get("CLEARED", 0)},
+        "targets": [
+            {
+                **people[r.user_id],
+                "status": r.status,
+                "note": r.note,
+                "event_count": r.event_count,
+                "blocked_count": blocked.get(r.user_id, 0),
+                "first_at": as_utc(r.first_at).isoformat(),
+                "last_at": as_utc(r.last_at).isoformat(),
+            }
+            for r in rows
+        ],
+    }
+
+
+@router.get("/watchlist/{user_id}")
+def watchlist_detail(
+    user_id: uuid.UUID,
+    admin: CurrentAdmin = Depends(require_permission("users:read")),
+    db: Session = Depends(get_db),
+):
+    """한 사람의 감시 기록 (누구에게 언제 보냈는지)."""
+    target = db.get(WatchTarget, user_id)
+    events = db.query(WatchEvent).filter(WatchEvent.user_id == user_id).order_by(WatchEvent.created_at.desc()).limit(500).all()
+    people = _watch_people(db, {user_id} | {e.target_user_id for e in events})
+    return {
+        "person": people.get(user_id) or _watch_people(db, {user_id}).get(user_id),
+        "status": target.status if target else None,
+        "note": target.note if target else None,
+        "events": [
+            {
+                "at": as_utc(e.created_at).isoformat(),
+                "actor_goal": e.actor_goal,
+                "is_super": e.is_super,
+                "blocked": e.blocked,
+                "to": people[e.target_user_id],
+            }
+            for e in events
+        ],
+    }
+
+
+@router.patch("/watchlist/{user_id}")
+def update_watch(
+    user_id: uuid.UUID,
+    payload: dict,
+    request: Request,
+    admin: CurrentAdmin = Depends(require_permission("users:status")),
+    db: Session = Depends(get_db),
+):
+    """상태(WATCHING 지켜보는 중 / CLEARED 문제없음)와 메모를 바꾼다."""
+    row = db.get(WatchTarget, user_id)
+    if row is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="감시 대상이 아닙니다.")
+    new_status = payload.get("status")
+    if new_status is not None:
+        if new_status not in ("WATCHING", "CLEARED"):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="상태가 올바르지 않습니다.")
+        row.status = new_status
+    if "note" in payload:
+        note = (payload.get("note") or "").strip()
+        if len(note) > 1000:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="메모는 1000자까지예요.")
+        row.note = note or None
+    row.updated_at = utcnow()
+    audit_service.record(
+        db,
+        admin_id=admin.id,
+        action="WATCH_UPDATE",
+        target_type="USER",
+        target_id=user_id,
+        request=request,
+        metadata={"status": row.status, "note_changed": "note" in payload},
+    )
+    db.commit()
+    return {"user_id": str(user_id), "status": row.status, "note": row.note}
 
 
 # ---------- 매칭 정지 ----------

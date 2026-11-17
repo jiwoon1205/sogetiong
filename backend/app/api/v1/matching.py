@@ -26,6 +26,7 @@ from app.services import (
     push_service,
     rec_quota_service,
     super_like_service,
+    watch_service,
     vip_service,
 )
 from app.services.chat_extra_service import ChatExtraError
@@ -237,6 +238,9 @@ def _check_goal(db: Session, current: CurrentUser, target: PublicProfile) -> Non
     """진지한 연애 ↔ 캐주얼한 만남은 서로 좋아요·슈퍼 라이크를 못 보낸다 (2026-11-14 사용자 결정).
     체험·하루 좋아요·슈퍼 라이크를 쓰기 전에 막는다 (개수가 줄지 않는다)."""
     if profile_service.goals_conflict(profile_service.my_goal(db, current.id), target.relationship_goal):
+        # 감시 대상 기록 (2026-11-17, 관리자 전용·사용자에게 비밀): 캐주얼에게 보내려다 막힌 것도 남긴다
+        if watch_service.record(db, current.id, target.user_id, blocked=True):
+            db.commit()
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="GOAL_MISMATCH")
 
 
@@ -259,6 +263,8 @@ def _upsert_action(
         )
         # 통계용: 좋아요 한 번마다 한 줄 (2026-11-14). 날짜별 남녀 좋아요 수를 센다
         db.add(LikeEvent(from_user_id=from_id, to_user_id=to_id, like_no=count, is_trial=is_trial, is_super=is_super))
+        # 감시 대상 기록 (2026-11-17, 관리자 전용·사용자에게 비밀): 캐주얼을 안 고른 사람 → 캐주얼에게 좋아요
+        watch_service.record(db, from_id, to_id, is_super=is_super)
         return count
     if row is None:
         db.add(Like(from_user_id=from_id, to_user_id=to_id, action=action, like_count=0))

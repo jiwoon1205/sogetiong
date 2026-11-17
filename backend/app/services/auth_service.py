@@ -11,6 +11,7 @@ from app.core.time import as_utc, utcnow
 from app.models.matching import Block
 from app.models.photo import AppearanceEvaluation, UserPhoto
 from app.models.profile import RelationshipGoalChange
+from app.models.watch import WatchEvent, WatchTarget
 from app.models.university import University
 from app.models.user import User, VerificationToken
 
@@ -125,6 +126,22 @@ def carry_over_account(db: Session, previous: list[User], new_user: User) -> Non
     db.query(RelationshipGoalChange).filter(RelationshipGoalChange.user_id.in_(ids)).update(
         {"user_id": new_user.id}, synchronize_session=False
     )
+    # 감시 대상 기록도 옮긴다 (2026-11-17, 관리자 전용): 탈퇴·재가입으로 지우지 못하게
+    db.query(WatchEvent).filter(WatchEvent.user_id.in_(ids)).update({"user_id": new_user.id}, synchronize_session=False)
+    old_targets = db.query(WatchTarget).filter(WatchTarget.user_id.in_(ids)).all()
+    if old_targets and db.get(WatchTarget, new_user.id) is None:
+        db.add(
+            WatchTarget(
+                user_id=new_user.id,
+                status="WATCHING" if any(t.status == "WATCHING" for t in old_targets) else "CLEARED",
+                note="\n".join(t.note for t in old_targets if t.note) or None,
+                event_count=sum(t.event_count or 0 for t in old_targets),
+                first_at=min(t.first_at for t in old_targets),
+                last_at=max(t.last_at for t in old_targets),
+            )
+        )
+    for t in old_targets:
+        db.delete(t)
 
     def latest(values):
         values = [as_utc(v) for v in values if v is not None]

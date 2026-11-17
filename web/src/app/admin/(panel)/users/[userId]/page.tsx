@@ -43,6 +43,8 @@ type Detail = {
   relationship_goal_history?: { old_goal: string | null; new_goal: string; source: string; changed_at: string }[];
   /** 캐주얼한 만남을 한 번이라도 고른 적 있음 (2026-11-15) */
   ever_casual?: boolean;
+  /** 감시 대상 (2026-11-17): WATCHING / CLEARED / null */
+  watch_status?: "WATCHING" | "CLEARED" | null;
   campus: { id: string; name: string } | null;
   /** 학교 이름 (2026-10-24) */
   university?: string | null;
@@ -154,6 +156,11 @@ export default function UserDetail() {
             </div>
           )}
           <GoalHistory history={d.relationship_goal_history ?? []} everCasual={!!d.ever_casual} />
+          {d.watch_status && (
+            <Link href="/admin/watchlist" className="block rounded-card border border-brick/40 bg-brick-wash px-4 py-2.5 text-[13px] text-brick">
+              감시 대상 · {d.watch_status === "WATCHING" ? "지켜보는 중" : "문제없음"} — 캐주얼 상대에게 좋아요를 보낸 기록 보기 →
+            </Link>
+          )}
           {d.campus && (
             <p className="text-[13px] text-ink-soft">
               실제 소속: {d.university ? `${d.university} ` : ""}{d.campus.name} · {d.department?.name ?? "학과 미선택"}

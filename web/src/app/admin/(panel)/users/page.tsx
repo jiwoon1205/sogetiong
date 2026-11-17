@@ -22,6 +22,8 @@ type UserRow = {
   relationship_goal?: RelationshipGoal | null;
   /** 캐주얼한 만남을 한 번이라도 고른 적 있음 (2026-11-15) */
   ever_casual?: boolean;
+  /** 감시 대상 (2026-11-17): WATCHING / CLEARED / null */
+  watch_status?: "WATCHING" | "CLEARED" | null;
   status: string;
   onboarding_stage?: string;
   reports_received: number;
@@ -197,6 +199,11 @@ function UsersList() {
                   <td className="px-5 py-3 text-ink-soft">
                     {u.relationship_goal ? RELATIONSHIP_LABEL[u.relationship_goal] ?? u.relationship_goal : <span className="text-ink-faint">—</span>}
                     {/* 지금은 다른 값이어도 예전에 캐주얼한 만남을 고른 적이 있으면 표시 (2026-11-15) */}
+                    {u.watch_status === "WATCHING" && (
+                      <span className="ml-1.5 rounded bg-brick px-1.5 py-0.5 text-[11px] text-paper" title="캐주얼 상대에게 좋아요를 보냄 (감시 대상)">
+                        감시
+                      </span>
+                    )}
                     {u.ever_casual && u.relationship_goal !== "CASUAL" && (
                       <span className="ml-1.5 rounded bg-brick-wash px-1.5 py-0.5 text-[11px] text-brick" title="예전에 캐주얼한 만남을 고른 적 있음">
                         캐주얼 이력
