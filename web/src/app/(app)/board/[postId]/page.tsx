@@ -277,6 +277,18 @@ function CommentItem({
         size={small ? 24 : 28}
         onClick={!c.mine && c.author.id ? () => onAuthor(c.author.id!) : undefined}
         badge={c.by_post_author ? <span className="shrink-0 rounded bg-ink px-1.5 py-0.5 text-[10.5px] text-paper">글쓴이</span> : undefined}
+        trailing={
+          // 신고 버튼은 댓글 오른쪽 위 (2026-11-22)
+          !c.mine ? (
+            <button
+              type="button"
+              onClick={() => onReport(c.id)}
+              className="shrink-0 pl-2 text-[12px] text-ink-faint underline underline-offset-4 hover:text-brick"
+            >
+              신고
+            </button>
+          ) : undefined
+        }
       />
       <p className={`whitespace-pre-wrap break-words ${pad} text-[14.5px] leading-relaxed`}>
         {c.reply_to && <span className="mr-1 font-semibold text-ink-soft">@{c.reply_to}</span>}
@@ -289,13 +301,9 @@ function CommentItem({
             답글
           </button>
         )}
-        {c.mine ? (
+        {c.mine && (
           <button onClick={() => onDelete(c.id)} className="underline underline-offset-4">
             삭제
-          </button>
-        ) : (
-          <button onClick={() => onReport(c.id)} className="underline underline-offset-4">
-            신고
           </button>
         )}
         {c.hidden && <span className="text-brick">신고로 숨겨짐</span>}

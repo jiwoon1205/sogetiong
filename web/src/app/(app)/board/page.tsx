@@ -72,7 +72,11 @@ export default function BoardPage() {
     <div className="mx-auto max-w-app">
       <div className="mb-6 flex items-center justify-between gap-3">
         <div className="min-w-0 flex-1">
-          <AuthorLine author={me.profile} size={40} onClick={() => setEditing(true)} trailing={<span className="shrink-0 text-[12.5px] text-ink-faint underline underline-offset-4">프로필 수정</span>} />
+          <AuthorLine author={me.profile} size={40} onClick={() => setEditing(true)} trailing={
+              <button type="button" onClick={() => setEditing(true)} className="shrink-0 text-[12.5px] text-ink-faint underline underline-offset-4">
+                프로필 수정
+              </button>
+            } />
         </div>
       </div>
 
