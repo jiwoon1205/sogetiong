@@ -307,3 +307,34 @@ def test_new_message_types_notify_partner(sent_codes, db):
     # 일반 메시지에도 type이 붙는다
     r = a.post(f"/api/v1/matches/{match_id}/messages", json={"body": "안녕"})
     assert r.json()["type"] == "TEXT"
+
+
+# ---------- SNS 아이디 교환: 카톡 추가 (2026-11-22) ----------
+
+def test_kakao_exchange_and_other_platform_after_instagram(sent_codes, db):
+    admin, a, b, match_id = _pair(sent_codes, db)
+    # 카톡 아이디 형식 (4~20자, 빼기 허용)
+    assert a.post(f"/api/v1/matches/{match_id}/insta", json={"handle": "abc", "agree": True, "platform": "KAKAO"}).status_code == 422
+    assert a.post(f"/api/v1/matches/{match_id}/insta", json={"handle": "x", "agree": True, "platform": "LINE"}).status_code == 422
+
+    # 먼저 인스타 교환
+    r = a.post(f"/api/v1/matches/{match_id}/insta", json={"handle": "a_insta", "agree": True})
+    share = r.json()["insta"]
+    assert share["platform"] == "INSTAGRAM"
+    assert b.post(f"/api/v1/matches/{match_id}/insta/{share['share_id']}/accept", json={"handle": "b_insta", "agree": True}).status_code == 200
+    # 인스타는 또 못 하지만 카톡은 된다
+    assert a.post(f"/api/v1/matches/{match_id}/insta", json={"handle": "a_insta", "agree": True}).status_code == 409
+    r = b.post(f"/api/v1/matches/{match_id}/insta", json={"handle": "B-Kakao", "agree": True, "platform": "KAKAO"})
+    assert r.status_code == 201, r.text
+    card = r.json()
+    assert card["body"] == "카톡 아이디 교환을 요청했어요" and card["insta"]["platform"] == "KAKAO"
+    assert card["insta"]["my_handle"] == "b-kakao"
+    # 수락할 때는 카톡 규칙으로 확인 (요청과 같은 SNS)
+    sid = card["insta"]["share_id"]
+    assert a.post(f"/api/v1/matches/{match_id}/insta/{sid}/accept", json={"handle": "ab", "agree": True}).status_code == 422
+    ok = a.post(f"/api/v1/matches/{match_id}/insta/{sid}/accept", json={"handle": "a.kakao", "agree": True})
+    assert ok.status_code == 200 and ok.json()["body"] == "카톡 아이디를 교환했어요"
+    got = _messages(a, match_id)
+    assert got["my_sns_handles"] == {"KAKAO": "a.kakao", "INSTAGRAM": "a_insta"}
+    kakao = [s for s in got["extras"]["insta"].values() if s["platform"] == "KAKAO"][0]
+    assert kakao["partner_handle"] == "b-kakao"

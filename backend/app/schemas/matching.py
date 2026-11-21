@@ -30,6 +30,8 @@ class InstaHandleRequest(BaseModel):
 
     handle: str = Field(min_length=1, max_length=40)
     agree: bool = False
+    # SNS 종류 (2026-11-22): KAKAO / INSTAGRAM. 요청할 때만 쓰고, 수락할 때는 요청과 같은 SNS로 정해진다
+    platform: str = "INSTAGRAM"
 
     @model_validator(mode="after")
     def must_agree(self):

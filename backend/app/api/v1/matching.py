@@ -739,6 +739,8 @@ def list_messages(
         "messages": [_message_view(m, current.id, extras) for m in rows],
         "extras": extras,
         "my_insta_handle": chat_extra_service.last_handle(db, current.id),
+        # SNS별로 마지막에 적은 아이디 (2026-11-22)
+        "my_sns_handles": {p: chat_extra_service.last_handle(db, current.id, p) for p in chat_extra_service.PLATFORMS},
         "once_seconds": get_settings().chat_photo_once_seconds,
         # 슈퍼 라이크 매칭 (2026-10-12): sent(내가 보냄) / received(내가 받음) / null
         "super_like": _super_like_side(match, current.id),
@@ -864,7 +866,7 @@ def open_once_photo(
     return Response(content=data, media_type="image/jpeg", headers=_NO_STORE)
 
 
-# ---------- 대화방 ＋ 버튼: 인스타 아이디 교환 (2026-11-14) ----------
+# ---------- 대화방 ＋ 버튼: SNS(인스타·카톡) 아이디 교환 (2026-11-14, 카톡 2026-11-22) ----------
 
 @router.post("/matches/{match_id}/insta", status_code=status.HTTP_201_CREATED)
 def request_insta(
@@ -878,7 +880,7 @@ def request_insta(
     match = _my_match(db, current, match_id)
     _check_send_lock(db, match, current.id)
     try:
-        message, _share = chat_extra_service.request_insta(db, match, current.id, payload.handle)
+        message, _share = chat_extra_service.request_insta(db, match, current.id, payload.handle, payload.platform)
     except ChatExtraError as exc:
         db.rollback()
         raise _extra_error(exc) from exc

@@ -277,9 +277,15 @@ export type ChatPhoto = {
   image_url?: string;
 };
 
-/** 인스타 아이디 교환 (2026-11-14). 수락되기 전에는 partner_handle이 항상 null */
+/** SNS 종류 (2026-11-22): 카톡 · 인스타 */
+export type SnsPlatform = "KAKAO" | "INSTAGRAM";
+export const SNS_LABEL: Record<SnsPlatform, string> = { KAKAO: "카톡", INSTAGRAM: "인스타" };
+
+/** SNS(인스타·카톡) 아이디 교환 (2026-11-14 인스타, 2026-11-22 카톡). 수락되기 전에는 partner_handle이 항상 null */
 export type InstaShare = {
   share_id: string;
+  /** 예전 서버는 없음 → INSTAGRAM */
+  platform?: SnsPlatform;
   status: "PENDING" | "ACCEPTED" | "DECLINED" | "CANCELLED";
   requested_by_me: boolean;
   my_handle: string | null;
@@ -320,7 +326,7 @@ export const REPORT_REASONS: { value: string; label: string }[] = [
   { value: "MONEY_REQUEST", label: "금전 요구" },
   { value: "PERSONAL_INFO_REQUEST", label: "개인정보 요구" },
   { value: "UNWHOLESOME_MEETING", label: "불건전한 만남 요구 (파트너·FWB·원나잇)" },
-  { value: "FAKE_INSTA_ID", label: "가짜·오타 인스타 아이디" },
+  { value: "FAKE_INSTA_ID", label: "가짜·오타 SNS 아이디" },
   { value: "SPAM", label: "스팸" },
   { value: "OTHER", label: "기타" },
 ];

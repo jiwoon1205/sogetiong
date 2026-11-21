@@ -1493,6 +1493,7 @@ def _admin_message(m: Message, photos: dict, shares: dict, nicknames: dict) -> d
     share = shares.get(m.id)
     if share is not None:
         view["insta"] = {
+            "platform": share.platform,
             "status": share.status,
             "requester_code": pseudonymous_code(share.requester_user_id),
             "requester_handle": share.requester_handle,

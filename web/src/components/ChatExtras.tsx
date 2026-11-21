@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * 대화방 ＋ 버튼: 사진 보내기 · 인스타 아이디 교환 (2026-11-14)
+ * 대화방 ＋ 버튼: 사진 보내기 · SNS 아이디 교환 (2026-11-14 인스타, 2026-11-22 카톡·인스타 중 고르기)
  * 규칙은 백엔드 app/services/chat_extra_service.py 맨 위 설명.
  *
  * - 훕팅은 웹사이트라 캡처를 막거나 캡처 사실을 알아낼 수 없다.
@@ -13,11 +13,22 @@ import { toJpeg } from "@/components/PhotoUpload";
 import { Button, Checkbox, Input, Modal, Notice } from "@/components/ui";
 import { ApiError, errorMessage } from "@/lib/api";
 import { cn } from "@/lib/format";
-import type { ChatMessage, ChatPhoto, InstaShare } from "@/lib/types";
+import { SNS_LABEL, type ChatMessage, type ChatPhoto, type InstaShare, type SnsPlatform } from "@/lib/types";
 
 const CHAT_PHOTO_MAX_SIDE = 1600;
 // 인스타그램 아이디 규칙 (서버와 같음): 영문 소문자·숫자·마침표·밑줄 1~30자, 마침표로 끝나거나 두 개 연속은 안 됨
 const HANDLE_RE = /^(?!.*\.\.)(?!.*\.$)[a-z0-9._]{1,30}$/;
+// 카톡 아이디 규칙 (서버와 같음): 영문 소문자·숫자·마침표·밑줄·빼기 4~20자 (2026-11-22)
+const KAKAO_RE = /^[a-z0-9._-]{4,20}$/;
+const HANDLE_RULE: Record<SnsPlatform, { re: RegExp; error: string; placeholder: string }> = {
+  INSTAGRAM: { re: HANDLE_RE, error: "인스타 아이디는 영문·숫자·마침표(.)·밑줄(_)로 된 30자 이하만 적을 수 있어요.", placeholder: "instagram_id" },
+  KAKAO: { re: KAKAO_RE, error: "카톡 아이디는 영문·숫자·마침표(.)·밑줄(_)·빼기(-)로 된 4~20자만 적을 수 있어요.", placeholder: "kakao_id" },
+};
+
+/** 아이디 앞에 붙이는 표시: 인스타는 @, 카톡은 없음 */
+function shown(platform: SnsPlatform, handle: string) {
+  return platform === "INSTAGRAM" ? `@${handle}` : handle;
+}
 
 export function normalizeHandle(raw: string): string {
   return raw.trim().replace(/^@+/, "").trim().toLowerCase();
@@ -77,7 +88,7 @@ export function PlusMenu({
   onClose: () => void;
   onPhoto: () => void;
   onInsta: () => void;
-  /** 인스타 요청을 지금 못 하는 이유 (진행 중·이미 교환). 없으면 null */
+  /** SNS 교환 요청을 지금 못 하는 이유 (진행 중·카톡·인스타 둘 다 교환함). 없으면 null */
   instaBlocked: string | null;
 }) {
   return (
@@ -85,8 +96,8 @@ export function PlusMenu({
       <div className="grid grid-cols-2 gap-3">
         <MenuButton title="사진 보내기" desc="1회 보기 또는 대화에 보관" onClick={onPhoto} icon="photo" />
         <MenuButton
-          title="인스타 아이디 교환"
-          desc={instaBlocked ?? "서로 수락하면 동시에 공개"}
+          title="SNS 아이디 교환"
+          desc={instaBlocked ?? "카톡·인스타 · 서로 수락하면 동시에 공개"}
           onClick={onInsta}
           icon="insta"
           disabled={instaBlocked !== null}
@@ -411,16 +422,25 @@ export function PhotoZoom({ url, onClose }: { url: string; onClose: () => void }
   );
 }
 
-// ---------- 인스타 아이디 교환 ----------
+// ---------- SNS(카톡·인스타) 아이디 교환 ----------
 
-/** 아이디 적는 창 (요청할 때·수락할 때 같이 씀). 가짜·오타 아이디는 영구정지에 동의해야 보낼 수 있다 */
+/**
+ * 아이디 적는 창 (요청할 때·수락할 때 같이 씀). 가짜·오타 아이디는 영구정지에 동의해야 보낼 수 있다.
+ * 요청할 때(platform 없음): 카톡·인스타 중에서 고른다. 이미 교환한 SNS는 고를 수 없다(done).
+ * 수락할 때(platform 있음): 요청과 같은 SNS로 정해져 있다.
+ */
 type InstaHandleProps = {
   open: boolean;
   onClose: () => void;
   title: string;
   submitLabel: string;
-  defaultHandle: string | null;
-  onSubmit: (handle: string) => Promise<void>;
+  /** SNS별로 지난번에 적은 아이디 (미리 채움) */
+  defaultHandles: Partial<Record<SnsPlatform, string | null>>;
+  /** 정해진 SNS (수락할 때). 없으면 고르기 */
+  platform?: SnsPlatform;
+  /** 이미 교환해서 고를 수 없는 SNS */
+  done?: SnsPlatform[];
+  onSubmit: (handle: string, platform: SnsPlatform) => Promise<void>;
 };
 
 /** 열 때마다 새로 그려서(지난번 아이디를 미리 채우고, 동의는 다시 받기) 시작한다 */
@@ -428,18 +448,28 @@ export function InstaHandleModal(props: InstaHandleProps) {
   return props.open ? <InstaHandleInner {...props} /> : null;
 }
 
-function InstaHandleInner({ open, onClose, title, submitLabel, defaultHandle, onSubmit }: InstaHandleProps) {
-  const [handle, setHandle] = useState(defaultHandle ?? "");
+function InstaHandleInner({ open, onClose, title, submitLabel, defaultHandles, platform: fixed, done = [], onSubmit }: InstaHandleProps) {
+  const first: SnsPlatform = fixed ?? (["KAKAO", "INSTAGRAM"] as SnsPlatform[]).find((p) => !done.includes(p)) ?? "KAKAO";
+  const [platform, setPlatform] = useState<SnsPlatform>(first);
+  const [handle, setHandle] = useState(defaultHandles[first] ?? "");
   const [agree, setAgree] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
+  const rule = HANDLE_RULE[platform];
+  const label = SNS_LABEL[platform];
   const clean = normalizeHandle(handle);
-  const valid = HANDLE_RE.test(clean);
+  const valid = rule.re.test(clean);
+
+  function pick(p: SnsPlatform) {
+    setPlatform(p);
+    setHandle(defaultHandles[p] ?? "");
+    setError("");
+  }
 
   async function submit() {
     if (!valid) {
-      setError("인스타 아이디는 영문·숫자·마침표(.)·밑줄(_)로 된 30자 이하만 적을 수 있어요.");
+      setError(rule.error);
       return;
     }
     if (!agree) {
@@ -449,7 +479,7 @@ function InstaHandleInner({ open, onClose, title, submitLabel, defaultHandle, on
     setLoading(true);
     setError("");
     try {
-      await onSubmit(clean);
+      await onSubmit(clean, platform);
       onClose();
     } catch (err) {
       setError(err instanceof ApiError && err.code === "SUPER_LIKE_WAIT_REPLY" ? "상대가 답장하면 이어서 보낼 수 있어요." : errorMessage(err));
@@ -465,10 +495,33 @@ function InstaHandleInner({ open, onClose, title, submitLabel, defaultHandle, on
           <br />
           상대가 신고하면 운영진이 확인해요. 보내기 전에 아이디를 꼭 다시 확인해 주세요.
         </div>
+        {!fixed && (
+          <div>
+            <span className="mb-1.5 block text-[13px] font-medium text-ink-soft">어떤 아이디를 교환할까요?</span>
+            <div className="grid grid-cols-2 gap-2">
+              {(["KAKAO", "INSTAGRAM"] as SnsPlatform[]).map((p) => (
+                <button
+                  key={p}
+                  type="button"
+                  disabled={done.includes(p)}
+                  onClick={() => pick(p)}
+                  className={cn(
+                    "flex h-12 items-center justify-center gap-2 rounded-md border text-[14.5px] transition-colors disabled:opacity-40",
+                    platform === p ? "border-ink bg-ink text-paper" : "border-line bg-paper-card text-ink hover:border-line-strong",
+                  )}
+                >
+                  <SnsIcon platform={p} className="h-4 w-4" />
+                  {p === "KAKAO" ? "카카오톡" : "인스타그램"}
+                  {done.includes(p) && <span className="text-[11.5px]">(교환함)</span>}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
         <label className="block">
-          <span className="mb-1.5 block text-[13px] font-medium text-ink-soft">내 인스타 아이디</span>
+          <span className="mb-1.5 block text-[13px] font-medium text-ink-soft">내 {label} 아이디</span>
           <div className="flex items-center gap-1 rounded-md border border-line bg-paper-card pl-3 focus-within:border-ink-soft">
-            <span className="text-[16px] text-ink-faint">@</span>
+            {platform === "INSTAGRAM" && <span className="text-[16px] text-ink-faint">@</span>}
             <Input
               value={handle}
               onChange={(e) => {
@@ -479,14 +532,14 @@ function InstaHandleInner({ open, onClose, title, submitLabel, defaultHandle, on
               autoCapitalize="none"
               autoCorrect="off"
               spellCheck={false}
-              placeholder="instagram_id"
-              aria-label="내 인스타 아이디"
+              placeholder={rule.placeholder}
+              aria-label={`내 ${label} 아이디`}
               className="border-0 bg-transparent pl-0 focus:border-0"
             />
           </div>
           {handle && valid && (
             <span className="mt-1.5 block text-[12.5px] text-ink-faint">
-              상대에게 <b className="font-semibold text-ink">@{clean}</b> 로 보여요.
+              상대에게 <b className="font-semibold text-ink">{shown(platform, clean)}</b> 로 보여요.
             </span>
           )}
         </label>
@@ -497,7 +550,7 @@ function InstaHandleInner({ open, onClose, title, submitLabel, defaultHandle, on
             setError("");
           }}
         >
-          <span className="text-[13.5px]">내 진짜 아이디가 맞아요. 가짜·오타 아이디면 영구정지되는 것에 동의해요.</span>
+          <span className="text-[13.5px]">내 진짜 {label} 아이디가 맞아요. 가짜·오타 아이디면 영구정지되는 것에 동의해요.</span>
         </Checkbox>
         {error && <Notice tone="error">{error}</Notice>}
         <Button className="w-full" size="lg" disabled={!handle.trim()} loading={loading} onClick={submit}>
@@ -508,7 +561,7 @@ function InstaHandleInner({ open, onClose, title, submitLabel, defaultHandle, on
   );
 }
 
-/** 대화창 안의 인스타 교환 카드 */
+/** 대화창 안의 SNS(카톡·인스타) 교환 카드 */
 export function InstaCard({
   share,
   onAccept,
@@ -537,31 +590,30 @@ export function InstaCard({
     }
   }
 
+  const platform: SnsPlatform = share.platform ?? "INSTAGRAM";
+  const label = SNS_LABEL[platform];
   const title =
     share.status === "ACCEPTED"
-      ? "인스타 아이디를 교환했어요"
+      ? `${label} 아이디를 교환했어요`
       : share.status === "DECLINED"
-        ? "거절된 인스타 아이디 교환 요청"
+        ? `거절된 ${label} 아이디 교환 요청`
         : share.status === "CANCELLED"
-          ? "취소된 인스타 아이디 교환 요청"
+          ? `취소된 ${label} 아이디 교환 요청`
           : share.requested_by_me
-            ? "인스타 아이디 교환을 요청했어요"
-            : "상대가 인스타 아이디 교환을 요청했어요";
+            ? `${label} 아이디 교환을 요청했어요`
+            : `상대가 ${label} 아이디 교환을 요청했어요`;
 
   return (
     <div className="w-[80%] max-w-[19rem] rounded-card border border-line bg-paper-card px-4 py-3.5 text-[14px]">
       <p className="flex items-center gap-2 font-semibold text-ink">
-        <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden>
-          <rect x="3.5" y="3.5" width="17" height="17" rx="5" />
-          <circle cx="12" cy="12" r="4" />
-        </svg>
+        <SnsIcon platform={platform} className="h-4 w-4 shrink-0" />
         {title}
       </p>
 
       {share.status === "ACCEPTED" && (
         <div className="mt-3 space-y-1.5">
-          <HandleRow label="상대" handle={share.partner_handle} link />
-          <HandleRow label="나" handle={share.my_handle} />
+          <HandleRow label="상대" handle={share.partner_handle} platform={platform} link />
+          <HandleRow label="나" handle={share.my_handle} platform={platform} />
           <button type="button" onClick={onReport} className="pt-1 text-[12px] text-ink-faint underline underline-offset-4 hover:text-brick">
             상대 아이디가 가짜이거나 없는 계정인가요? 신고하기
           </button>
@@ -571,7 +623,7 @@ export function InstaCard({
       {share.status === "PENDING" && share.requested_by_me && (
         <div className="mt-2 space-y-2">
           <p className="text-[12.5px] leading-relaxed text-ink-soft">
-            상대가 수락하면 서로의 아이디가 동시에 보여요. 그 전에는 내 아이디(@{share.my_handle})가 상대에게 보이지 않아요.
+            상대가 수락하면 서로의 아이디가 동시에 보여요. 그 전에는 내 아이디({shown(platform, share.my_handle ?? "")})가 상대에게 보이지 않아요.
           </p>
           <button type="button" disabled={busy} onClick={() => run(onCancel)} className="text-[12.5px] text-ink-faint underline underline-offset-4 hover:text-ink">
             요청 취소
@@ -598,8 +650,29 @@ export function InstaCard({
   );
 }
 
-function HandleRow({ label, handle, link }: { label: string; handle: string | null; link?: boolean }) {
+function HandleRow({ label, handle, platform, link }: { label: string; handle: string | null; platform: SnsPlatform; link?: boolean }) {
+  const [copied, setCopied] = useState(false);
   if (!handle) return null;
+  // 카톡은 아이디로 여는 주소가 없어서 복사 버튼 (카톡 → 친구 추가 → ID로 추가)
+  if (platform === "KAKAO") {
+    return (
+      <p className="flex items-baseline gap-2">
+        <span className="w-8 shrink-0 text-[12px] text-ink-faint">{label}</span>
+        <span className={link ? "font-semibold text-ink" : "text-ink-soft"}>{handle}</span>
+        {link && (
+          <button
+            type="button"
+            onClick={() => {
+              void navigator.clipboard?.writeText(handle).then(() => setCopied(true));
+            }}
+            className="text-[12px] text-ink-faint underline underline-offset-4 hover:text-ink"
+          >
+            {copied ? "복사됨" : "복사"}
+          </button>
+        )}
+      </p>
+    );
+  }
   return (
     <p className="flex items-baseline gap-2">
       <span className="w-8 shrink-0 text-[12px] text-ink-faint">{label}</span>
@@ -616,5 +689,22 @@ function HandleRow({ label, handle, link }: { label: string; handle: string | nu
         <span className="text-ink-soft">@{handle}</span>
       )}
     </p>
+  );
+}
+
+/** SNS 아이콘: 인스타(둥근 네모 + 동그라미) / 카톡(말풍선) */
+function SnsIcon({ platform, className }: { platform: SnsPlatform; className?: string }) {
+  if (platform === "KAKAO") {
+    return (
+      <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden>
+        <path d="M12 4.5c-4.7 0-8.5 2.9-8.5 6.5 0 2.3 1.6 4.3 4 5.5l-.9 3.3 3.8-2.5c.5.1 1.1.1 1.6.1 4.7 0 8.5-2.9 8.5-6.4S16.7 4.5 12 4.5z" strokeLinejoin="round" />
+      </svg>
+    );
+  }
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden>
+      <rect x="3.5" y="3.5" width="17" height="17" rx="5" />
+      <circle cx="12" cy="12" r="4" />
+    </svg>
   );
 }

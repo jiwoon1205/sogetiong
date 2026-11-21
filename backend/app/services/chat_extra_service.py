@@ -1,4 +1,4 @@
-"""대화방 ＋ 버튼: 사진 보내기 · 인스타 아이디 교환 (2026-11-14).
+"""대화방 ＋ 버튼: 사진 보내기 · SNS 아이디 교환 (2026-11-14 인스타, 2026-11-22 카톡 추가).
 
 사진 보내기
 - 보내는 사람이 방식을 고른다.
@@ -11,12 +11,15 @@
   그 대화방에 처리 중인 신고(OPEN·IN_REVIEW)가 있으면 처리가 끝날 때까지 지우지 않는다.
 - 슈퍼 라이크 "답장 전 메시지 1개" 제한, 대화가 끝난 방(해제·차단·탈퇴)에서는 보낼 수도, 볼 수도 없다.
 
-인스타 아이디 교환
+SNS 아이디 교환 (2026-11-22: "인스타 아이디 교환" → "SNS 아이디 교환", 카카오톡·인스타그램 중에서 고른다)
+- 요청하는 사람이 SNS(KAKAO / INSTAGRAM)를 고른다. 수락하는 사람도 같은 SNS의 아이디를 적는다.
+- 진행 중인 요청은 대화방에 하나만. 이미 교환한 SNS는 다시 요청할 수 없지만, 다른 SNS는 요청할 수 있다
+  (예: 인스타를 교환한 뒤 카톡도 교환).
+- 아래 규칙은 인스타·카톡 모두 같다.
 - 요청하는 사람이 자기 아이디를 적고 요청 → 상대가 자기 아이디를 적고 수락(또는 거절).
   수락하는 순간 두 아이디가 서로에게 동시에 보인다. 수락 전에는 요청한 사람의 아이디도 상대에게 안 보인다.
 - 아이디를 적을 때 "가짜·오타 아이디는 영구정지"에 동의해야 한다 (agree=true).
   아이디가 진짜인지는 서버가 확인할 수 없으므로, 받은 사람이 "가짜 인스타 아이디"로 신고 → 관리자가 확인 → 영구정지.
-- 한 대화방에 진행 중인 요청은 하나만. 이미 교환했으면 다시 요청할 수 없다.
   거절된 뒤에는 24시간이 지나야 다시 요청할 수 있다 (같은 요청을 계속 보내 괴롭히지 못하게).
 - 요청한 사람은 상대가 답하기 전에 요청을 취소할 수 있다.
 - 관리자는 대화 열람 화면에서 두 아이디(수락 전·거절된 것 포함)를 볼 수 있다.
@@ -53,15 +56,31 @@ INSTA_RESULT = "INSTA_RESULT"
 
 # 대화 목록 미리보기·옛 화면에 보이는 문구
 PHOTO_BODY = {"ONCE": "1회용 사진을 보냈어요", "KEEP": "사진을 보냈어요"}
-INSTA_REQUEST_BODY = "인스타 아이디 교환을 요청했어요"
-INSTA_RESULT_BODY = {
-    "ACCEPTED": "인스타 아이디를 교환했어요",
-    "DECLINED": "인스타 아이디 교환을 거절했어요",
-    "CANCELLED": "인스타 아이디 교환 요청을 취소했어요",
-}
+# SNS 종류 (2026-11-22)
+PLATFORMS = ("KAKAO", "INSTAGRAM")
+PLATFORM_LABEL = {"KAKAO": "카톡", "INSTAGRAM": "인스타"}
+
+
+def request_body(platform: str) -> str:
+    return f"{PLATFORM_LABEL[platform]} 아이디 교환을 요청했어요"
+
+
+def result_body(platform: str, status: str) -> str:
+    label = PLATFORM_LABEL[platform]
+    return {
+        "ACCEPTED": f"{label} 아이디를 교환했어요",
+        "DECLINED": f"{label} 아이디 교환을 거절했어요",
+        "CANCELLED": f"{label} 아이디 교환 요청을 취소했어요",
+    }[status]
+
+
+# 예전 이름 (인스타)
+INSTA_REQUEST_BODY = request_body("INSTAGRAM")
 
 # 인스타그램 아이디 규칙: 영문 소문자·숫자·마침표(.)·밑줄(_), 1~30자. 마침표로 끝나거나 마침표 두 개 연속은 안 됨
 _HANDLE_RE = re.compile(r"^(?!.*\.\.)(?!.*\.$)[a-z0-9._]{1,30}$")
+# 카카오톡 아이디 규칙: 영문 소문자·숫자·마침표(.)·밑줄(_)·빼기(-), 4~20자
+_KAKAO_RE = re.compile(r"^[a-z0-9._-]{4,20}$")
 
 
 class ChatExtraError(ValueError):
@@ -73,9 +92,15 @@ class ChatExtraError(ValueError):
         self.status = status
 
 
-def normalize_handle(raw: str) -> str:
+def normalize_handle(raw: str, platform: str = "INSTAGRAM") -> str:
     """앞의 @와 공백을 떼고 소문자로. 형식이 틀리면 ChatExtraError."""
     handle = (raw or "").strip().lstrip("@").strip().lower()
+    if platform == "KAKAO":
+        if not _KAKAO_RE.match(handle):
+            raise ChatExtraError(
+                "카톡 아이디는 영문·숫자·마침표(.)·밑줄(_)·빼기(-)로 된 4~20자만 적을 수 있어요.", code="BAD_HANDLE", status=422
+            )
+        return handle
     if not _HANDLE_RE.match(handle):
         raise ChatExtraError(
             "인스타 아이디는 영문·숫자·마침표(.)·밑줄(_)로 된 30자 이하만 적을 수 있어요.", code="BAD_HANDLE", status=422
@@ -239,17 +264,23 @@ def _shares(db: Session, match_id: uuid.UUID) -> list[InstaShare]:
     return db.query(InstaShare).filter(InstaShare.match_id == match_id).order_by(InstaShare.created_at.asc()).all()
 
 
-def request_insta(db: Session, match: Match, requester_id: uuid.UUID, raw_handle: str) -> tuple[Message, InstaShare]:
-    """commit은 부르는 쪽에서."""
-    handle = normalize_handle(raw_handle)
+def request_insta(
+    db: Session, match: Match, requester_id: uuid.UUID, raw_handle: str, platform: str = "INSTAGRAM"
+) -> tuple[Message, InstaShare]:
+    """SNS 아이디 교환 요청. commit은 부르는 쪽에서."""
+    if platform not in PLATFORMS:
+        raise ChatExtraError("카톡과 인스타 중에서 골라 주세요.", code="BAD_PLATFORM", status=422)
+    handle = normalize_handle(raw_handle, platform)
+    label = PLATFORM_LABEL[platform]
     now = utcnow()
     for share in _shares(db, match.id):
-        if share.status == "ACCEPTED":
-            raise ChatExtraError("이미 인스타 아이디를 교환했어요.", code="ALREADY_SHARED")
+        if share.status == "ACCEPTED" and share.platform == platform:
+            raise ChatExtraError(f"이미 {label} 아이디를 교환했어요.", code="ALREADY_SHARED")
         if share.status == "PENDING":
             raise ChatExtraError("아직 답을 기다리는 요청이 있어요.", code="PENDING_EXISTS")
         if (
             share.status == "DECLINED"
+            and share.platform == platform
             and share.requester_user_id == requester_id
             and share.responded_at is not None
             and as_utc(share.responded_at) > now - timedelta(hours=get_settings().insta_rerequest_hours)
@@ -258,13 +289,14 @@ def request_insta(db: Session, match: Match, requester_id: uuid.UUID, raw_handle
                 f"상대가 거절했어요. 거절된 뒤 {get_settings().insta_rerequest_hours}시간이 지나야 다시 요청할 수 있어요.",
                 code="DECLINED_RECENTLY",
             )
-    message = Message(match_id=match.id, sender_user_id=requester_id, body=INSTA_REQUEST_BODY, message_type=INSTA_REQUEST)
+    message = Message(match_id=match.id, sender_user_id=requester_id, body=request_body(platform), message_type=INSTA_REQUEST)
     db.add(message)
     db.flush()
     share = InstaShare(
         match_id=match.id,
         request_message_id=message.id,
         requester_user_id=requester_id,
+        platform=platform,
         requester_handle=handle,
         responder_user_id=match.partner_of(requester_id),
         status="PENDING",
@@ -293,7 +325,7 @@ def respond_insta(
         raise ChatExtraError("요청한 사람만 취소할 수 있어요.", code="NOT_REQUESTER", status=403)
     values: dict = {"responded_at": utcnow()}
     if action == "ACCEPT":
-        values.update(status="ACCEPTED", responder_handle=normalize_handle(raw_handle or ""))
+        values.update(status="ACCEPTED", responder_handle=normalize_handle(raw_handle or "", share.platform))
     elif action == "DECLINE":
         values.update(status="DECLINED")
     elif action == "CANCEL":
@@ -310,7 +342,7 @@ def respond_insta(
         raise ChatExtraError("이미 답한 요청이에요.", code="ALREADY_ANSWERED")
     db.refresh(share)
     message = Message(
-        match_id=match.id, sender_user_id=user_id, body=INSTA_RESULT_BODY[share.status], message_type=INSTA_RESULT
+        match_id=match.id, sender_user_id=user_id, body=result_body(share.platform, share.status), message_type=INSTA_RESULT
     )
     db.add(message)
     return message
@@ -325,6 +357,7 @@ def share_view(share: InstaShare, viewer_id: uuid.UUID) -> dict:
         partner_handle = share.responder_handle if mine else share.requester_handle
     return {
         "share_id": str(share.id),
+        "platform": share.platform,
         "status": share.status,
         "requested_by_me": mine,
         "my_handle": my_handle,
@@ -332,11 +365,12 @@ def share_view(share: InstaShare, viewer_id: uuid.UUID) -> dict:
     }
 
 
-def last_handle(db: Session, user_id: uuid.UUID) -> str | None:
-    """내가 마지막으로 적은 인스타 아이디 (다음에 적을 때 미리 채워 준다)."""
+def last_handle(db: Session, user_id: uuid.UUID, platform: str = "INSTAGRAM") -> str | None:
+    """내가 마지막으로 적은 그 SNS 아이디 (다음에 적을 때 미리 채워 준다)."""
     rows = (
         db.query(InstaShare)
         .filter((InstaShare.requester_user_id == user_id) | (InstaShare.responder_user_id == user_id))
+        .filter(InstaShare.platform == platform)
         .order_by(InstaShare.created_at.desc())
         .limit(10)
         .all()

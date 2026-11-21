@@ -49,7 +49,7 @@ class ChatPhoto(Base):
 
 
 class InstaShare(Base):
-    """인스타 아이디 교환.
+    """SNS(인스타·카톡) 아이디 교환. 2026-11-22: 인스타만 → 카톡도 (표 이름은 그대로 insta_shares).
 
     - 요청하는 사람이 자기 아이디를 적고 요청 → 상대가 자기 아이디를 적고 수락하면, 그 순간 두 아이디가 서로에게 동시에 보인다.
     - 수락 전에는 요청한 사람의 아이디도 상대에게 보이지 않는다 (거절해도 아이디가 남지 않게).
@@ -63,6 +63,8 @@ class InstaShare(Base):
     # 요청 카드가 붙는 메시지 (message_type="INSTA_REQUEST")
     request_message_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("messages.id"), unique=True, nullable=False)
     requester_user_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("users.id"), nullable=False)
+    # 어떤 SNS 아이디인지 (2026-11-22): INSTAGRAM / KAKAO. 예전 요청은 모두 INSTAGRAM
+    platform: Mapped[str] = mapped_column(String(10), default="INSTAGRAM", server_default="INSTAGRAM", nullable=False)
     requester_handle: Mapped[str] = mapped_column(String(30), nullable=False)
     responder_user_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("users.id"), nullable=False)
     responder_handle: Mapped[str | None] = mapped_column(String(30), nullable=True)  # 수락할 때 적은 아이디

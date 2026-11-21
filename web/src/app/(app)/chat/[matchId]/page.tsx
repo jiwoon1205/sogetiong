@@ -11,7 +11,7 @@ import { Button, Modal, Spinner } from "@/components/ui";
 import { ApiError, api, errorMessage } from "@/lib/api";
 import { clock, cn } from "@/lib/format";
 import { usePolling } from "@/lib/polling";
-import type { Card, ChatExtras, ChatMessage, InstaShare } from "@/lib/types";
+import type { Card, ChatExtras, ChatMessage, InstaShare, SnsPlatform } from "@/lib/types";
 import { useVisualViewport } from "@/lib/viewport";
 
 const POLL_MS = 4000; // MVP: 몇 초마다 새 메시지 확인 (설계도 §51)
@@ -38,7 +38,8 @@ export default function ChatPage() {
   const [panel, setPanel] = useState<"none" | "profile" | "menu" | "report" | "plus" | "photo" | "insta">("none");
   // ＋ 버튼: 사진·인스타 교환의 최신 상태 (2026-11-14). message_id → 상태. 몇 초마다 새로 받아 예전 카드도 바뀐다
   const [extras, setExtras] = useState<ChatExtras>({ photos: {}, insta: {} });
-  const [myHandle, setMyHandle] = useState<string | null>(null);
+  // SNS별로 지난번에 적은 아이디 (2026-11-22: 카톡·인스타)
+  const [myHandles, setMyHandles] = useState<Partial<Record<SnsPlatform, string | null>>>({});
   const [onceSeconds, setOnceSeconds] = useState(5);
   const [onceUrl, setOnceUrl] = useState<string | null>(null); // 지금 보고 있는 1회용 사진
   const [zoomUrl, setZoomUrl] = useState<string | null>(null);
@@ -78,6 +79,7 @@ export default function ChatPage() {
         send_locked?: boolean;
         extras?: ChatExtras;
         my_insta_handle?: string | null;
+        my_sns_handles?: Partial<Record<SnsPlatform, string | null>>;
         once_seconds?: number;
       }>(
         after ? `/matches/${matchId}/messages?after=${encodeURIComponent(after)}` : `/matches/${matchId}/messages`,
@@ -86,7 +88,8 @@ export default function ChatPage() {
       setSuperReason(r.super_like_reason ?? null);
       setSendLocked(Boolean(r.send_locked));
       if (r.extras) setExtras(r.extras);
-      if (r.my_insta_handle !== undefined) setMyHandle(r.my_insta_handle);
+      if (r.my_sns_handles) setMyHandles(r.my_sns_handles);
+      else if (r.my_insta_handle !== undefined) setMyHandles({ INSTAGRAM: r.my_insta_handle });
       if (r.once_seconds) setOnceSeconds(r.once_seconds);
       if (r.messages.length === 0) return; // 새 메시지 없음 → 화면을 다시 그리지 않는다
       setMessages((prev) => mergeMessages(prev, r.messages));
@@ -192,17 +195,20 @@ export default function ChatPage() {
     void loadMessages(); // 예전 카드 상태(수락·거절)도 바로 맞춘다
   }
 
-  // 지금 진행 중이거나 끝난 인스타 교환이 있으면 새 요청을 못 한다
+  // 진행 중인 요청이 있거나, 카톡·인스타를 둘 다 교환했으면 새 요청을 못 한다 (2026-11-22: 교환한 SNS만 막음)
   const instaList = Object.values(extras.insta);
-  const instaBlocked = instaList.some((s) => s.status === "ACCEPTED")
-    ? "이미 아이디를 교환했어요"
-    : instaList.some((s) => s.status === "PENDING")
-      ? "답을 기다리는 요청이 있어요"
+  const snsDone = (["KAKAO", "INSTAGRAM"] as SnsPlatform[]).filter((p) =>
+    instaList.some((s) => s.status === "ACCEPTED" && (s.platform ?? "INSTAGRAM") === p),
+  );
+  const instaBlocked = instaList.some((s) => s.status === "PENDING")
+    ? "답을 기다리는 요청이 있어요"
+    : snsDone.length === 2
+      ? "카톡·인스타 모두 교환했어요"
       : null;
 
-  async function requestInsta(handle: string) {
-    const msg = await api<ChatMessage>(`/matches/${matchId}/insta`, { method: "POST", body: { handle, agree: true } });
-    setMyHandle(handle);
+  async function requestInsta(handle: string, platform: SnsPlatform) {
+    const msg = await api<ChatMessage>(`/matches/${matchId}/insta`, { method: "POST", body: { handle, agree: true, platform } });
+    setMyHandles((h) => ({ ...h, [platform]: handle }));
     addSent(msg);
   }
 
@@ -211,7 +217,7 @@ export default function ChatPage() {
       method: "POST",
       body: action === "accept" ? { handle, agree: true } : undefined,
     });
-    if (handle) setMyHandle(handle);
+    if (handle) setMyHandles((h) => ({ ...h, [share.platform ?? "INSTAGRAM"]: handle }));
     addSent(msg);
   }
 
@@ -300,7 +306,7 @@ export default function ChatPage() {
           if (m.type === "INSTA_RESULT") {
             return (
               <p key={m.message_id} className="py-1 text-center text-[12px] text-ink-faint">
-                {m.is_mine ? m.body : `상대가 ${m.body.replace("인스타 아이디를 교환했어요", "수락해서 인스타 아이디를 교환했어요")}`}
+                {m.is_mine ? m.body : `상대가 ${m.body.replace(/(인스타|카톡) 아이디를 교환했어요/, "수락해서 $1 아이디를 교환했어요")}`}
               </p>
             );
           }
@@ -390,7 +396,7 @@ export default function ChatPage() {
           <div className="flex items-end gap-2">
           <button
             type="button"
-            aria-label="사진 보내기·인스타 아이디 교환"
+            aria-label="사진 보내기·SNS 아이디 교환"
             disabled={sendLocked}
             onClick={() => setPanel("plus")}
             className="mb-1 flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-line bg-paper-card text-ink transition-colors hover:border-ink-soft disabled:opacity-30"
@@ -472,17 +478,19 @@ export default function ChatPage() {
       <InstaHandleModal
         open={panel === "insta"}
         onClose={() => setPanel("none")}
-        title="인스타 아이디 교환 요청"
+        title="SNS 아이디 교환 요청"
         submitLabel="교환 요청 보내기"
-        defaultHandle={myHandle}
+        defaultHandles={myHandles}
+        done={snsDone}
         onSubmit={requestInsta}
       />
       <InstaHandleModal
         open={acceptShare !== null}
         onClose={() => setAcceptShare(null)}
-        title="인스타 아이디 교환 수락"
+        title={`${acceptShare?.platform === "KAKAO" ? "카톡" : "인스타"} 아이디 교환 수락`}
         submitLabel="수락하고 아이디 교환하기"
-        defaultHandle={myHandle}
+        defaultHandles={myHandles}
+        platform={acceptShare?.platform ?? "INSTAGRAM"}
         onSubmit={(handle) => answerInsta(acceptShare!, "accept", handle)}
       />
       {onceUrl && <OnceViewer url={onceUrl} seconds={onceSeconds} onClose={closeOnce} />}

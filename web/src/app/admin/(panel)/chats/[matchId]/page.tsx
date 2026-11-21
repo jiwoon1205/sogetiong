@@ -18,6 +18,7 @@ type Msg = {
   sent_at: string;
   photo?: { photo_id: string; mode: "ONCE" | "KEEP"; viewed_at: string | null; expired: boolean; image_url: string | null };
   insta?: {
+    platform?: "KAKAO" | "INSTAGRAM";
     status: string;
     requester_code: string;
     requester_handle: string;
@@ -140,7 +141,7 @@ export default function ChatViewer() {
                 ) : m.insta ? (
                   <div className="inline-block rounded-lg border border-line bg-paper px-3.5 py-2.5 text-left text-[13.5px] leading-relaxed">
                     <p className="font-semibold">
-                      인스타 아이디 교환 요청 · {INSTA_STATUS_LABEL[m.insta.status] ?? m.insta.status}
+                      {m.insta.platform === "KAKAO" ? "카톡" : "인스타"} 아이디 교환 요청 · {INSTA_STATUS_LABEL[m.insta.status] ?? m.insta.status}
                     </p>
                     <p>
                       요청 <span className="font-mono">{m.insta.requester_code}</span> : <b>@{m.insta.requester_handle}</b>
