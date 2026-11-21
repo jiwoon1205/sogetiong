@@ -84,8 +84,21 @@ def _daily(monkeypatch, s, *, opens_in=timedelta(days=1)):
     monkeypatch.setattr(s, "open_at", utcnow() + opens_in)
 
 
-def test_chat_extras_notice_now(sent_codes, db):
-    """2026-11-14: 경희대 친구 초대 이벤트 공지를 내리고, 대화방 ＋ 버튼(사진·인스타) 공지로 바꿨다. 계정당 한 번."""
+def test_all_notices_off_now(sent_codes, db, monkeypatch):
+    """2026-11-22: 공지 팝업을 모두 끔 (사용자 결정). 새 학교가 열려 있어도 안 뜬다."""
+    from app.core.config import get_settings
+
+    assert announcement_service.CURRENT is None
+    assert announcement_service.SCHOOL_OPEN_NOTICE is None
+    assert announcement_service.NEW_SCHOOLS_NOTICE is None
+    monkeypatch.setattr(get_settings(), "open_schools", "hufs.ac.kr,khu.ac.kr,korea.ac.kr")
+    a = signup(sent_codes, db, "a@hufs.ac.kr")
+    assert a.get("/api/v1/me").json()["announcement"] is None
+
+
+def test_chat_extras_notice_once_per_account(sent_codes, db, monkeypatch):
+    """계정당 한 번 (2026-11-14 방식). 2026-11-22부터 꺼져 있어서 시험용으로 켠다."""
+    monkeypatch.setattr(announcement_service, "CURRENT", "chat-extras-2026-11")
     a = signup(sent_codes, db, "a@hufs.ac.kr")
     assert announcement_service.DAILY is False
     assert a.get("/api/v1/me").json()["announcement"] == "chat-extras-2026-11"
@@ -93,7 +106,8 @@ def test_chat_extras_notice_now(sent_codes, db):
     assert a.get("/api/v1/me").json()["announcement"] is None
 
 
-def test_seen_in_daily_mode_counts_as_seen(sent_codes, db):
+def test_seen_in_daily_mode_counts_as_seen(sent_codes, db, monkeypatch):
+    monkeypatch.setattr(announcement_service, "CURRENT", "chat-extras-2026-11")
     """하루 한 번 방식일 때(이름@날짜) 이미 본 사람에게는 계정당 한 번 방식으로 바꿔도 다시 안 뜬다."""
     a = signup(sent_codes, db, "a@hufs.ac.kr")
     db.query(User).filter(User.email == "a@hufs.ac.kr").update({"announcement_seen": "chat-extras-2026-11@2026-11-14"})
@@ -111,6 +125,7 @@ def test_new_signups_do_not_get_feature_notice(sent_codes, db, monkeypatch):
 
     from app.core.time import utcnow
 
+    monkeypatch.setattr(announcement_service, "CURRENT", "chat-extras-2026-11")
     monkeypatch.setattr(announcement_service, "CURRENT_FOR_JOINED_BEFORE", utcnow() - timedelta(minutes=1))
     new = signup(sent_codes, db, "new@hufs.ac.kr")
     assert new.get("/api/v1/me").json()["announcement"] is None

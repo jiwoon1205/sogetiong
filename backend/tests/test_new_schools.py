@@ -5,6 +5,8 @@
 - 새 학교가 하나라도 열리면 "학교 추가 + 친구 초대" 공지가 자동으로 뜬다 (신규 가입자에게도)
 """
 
+import pytest
+
 from app.core.config import get_settings
 from app.models import Department
 from app.models.profile import PublicProfile
@@ -21,6 +23,12 @@ NEW = {
     "sungshin.ac.kr": ("성신여자대학교", {"돈암수정캠퍼스", "미아운정그린캠퍼스"}),
     "dongduk.ac.kr": ("동덕여자대학교", {"서울캠퍼스"}),
 }
+
+
+@pytest.fixture(autouse=True)
+def _notice_on(monkeypatch):
+    """2026-11-22부터 새 학교 공지는 꺼져 있다. 공지 동작 시험을 위해 켠다."""
+    monkeypatch.setattr(announcement_service, "NEW_SCHOOLS_NOTICE", "schools-2026-11")
 
 
 def _open(monkeypatch, db, domains: str):
