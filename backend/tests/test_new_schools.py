@@ -1,4 +1,4 @@
-"""5개 학교 추가 (2026-11-21): 고려대(서울·세종) · 서울시립대 · 삼육보건대 · 성신여대 · 동덕여대.
+"""5개 학교 추가 (2026-11-21): 고려대(서울·세종) · 서울시립대 · 서일대 · 성신여대 · 동덕여대.
 
 - 처음에는 모두 닫혀 있다 (OPEN_SCHOOLS에 메일 뒷부분을 넣어야 열림)
 - 여대(성신·동덕) 메일로 가입하면 성별은 보낸 값과 상관없이 여성
@@ -17,7 +17,7 @@ from tests.conftest import UserClient, signup
 NEW = {
     "korea.ac.kr": ("고려대학교", {"서울캠퍼스", "세종캠퍼스"}),
     "uos.ac.kr": ("서울시립대학교", {"서울캠퍼스"}),
-    "shu.ac.kr": ("삼육보건대학교", {"서울캠퍼스"}),
+    "seoil.ac.kr": ("서일대학교", {"서울캠퍼스"}),
     "sungshin.ac.kr": ("성신여자대학교", {"돈암수정캠퍼스", "미아운정그린캠퍼스"}),
     "dongduk.ac.kr": ("동덕여자대학교", {"서울캠퍼스"}),
 }
@@ -89,3 +89,14 @@ def test_new_schools_notice_shows_when_any_new_school_opens(monkeypatch, sent_co
     # 새로 가입한 사람에게도 뜬다 (친구 초대 안내라서)
     b = signup(sent_codes, db, "new@uos.ac.kr", school="uos.ac.kr")
     assert b.get("/api/v1/me").json()["announcement"] == key
+
+
+def test_school_removed_from_list_is_closed_even_if_in_open_schools(monkeypatch, db):
+    """SCHOOLS에서 뺀 학교(삼육보건대처럼)는 DB에 남아 있어도 닫힌다."""
+    db.add(University(name="삼육보건대학교", email_domain="shu.ac.kr", active=True))
+    db.commit()
+    _open(monkeypatch, db, "shu.ac.kr,korea.ac.kr")
+    assert db.query(University).filter(University.email_domain == "shu.ac.kr").one().active is False
+    assert db.query(University).filter(University.email_domain == "korea.ac.kr").one().active is True
+    unis = {u["email_domain"] for u in UserClient().get("/api/v1/universities").json()["universities"]}
+    assert "shu.ac.kr" not in unis

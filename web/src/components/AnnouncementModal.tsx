@@ -126,7 +126,7 @@ const NOTICES: Record<string, Notice> = {
         <div className="mb-5 rounded-card border border-line-strong bg-paper-card px-5 py-4 text-center">
           <p className="text-[12px] font-semibold tracking-wide text-brick">새로 함께하는 학교</p>
           <p className="mt-2 font-serif text-[19px] font-semibold leading-snug text-ink">
-            고려대 · 서울시립대 · 삼육보건대
+            고려대 · 서울시립대 · 서일대
             <br />
             성신여대 · 동덕여대
           </p>

@@ -51,7 +51,7 @@ DAILY_SEPARATOR = "@"
 # → 오픈 날 코드를 다시 배포할 필요 없음. 내용: 학교 추가 + 친구 초대(링크로 가입하면 슈퍼 라이크 1개).
 # 기능 소개 공지가 아니라서 신규 가입자에게도 뜬다 (CURRENT_FOR_JOINED_BEFORE를 적용하지 않음). 끄려면 None
 NEW_SCHOOLS_NOTICE: str | None = "schools-2026-11"
-NEW_SCHOOL_DOMAINS = frozenset({"korea.ac.kr", "uos.ac.kr", "shu.ac.kr", "sungshin.ac.kr", "dongduk.ac.kr"})
+NEW_SCHOOL_DOMAINS = frozenset({"korea.ac.kr", "uos.ac.kr", "seoil.ac.kr", "sungshin.ac.kr", "dongduk.ac.kr"})
 
 
 def current_key(multi_school: bool = False, now: datetime | None = None, *, new_schools: bool = False) -> str | None:

@@ -22,10 +22,12 @@
 - 이름이 바뀐 학과는 새 이름 옆에 옛 이름을 괄호로. 예과·본과는 한 칸
 - 재직자 전형 학과·대학원은 뺌 (문의가 오면 추가)
 
-5개 학교 추가 (2026-11-21): 고려대(서울·세종) · 서울시립대 · 삼육보건대 · 성신여대 · 동덕여대.
+5개 학교 추가 (2026-11-21): 고려대(서울·세종) · 서울시립대 · 서일대 · 성신여대 · 동덕여대.
+(처음 초안의 삼육보건대는 빼기로 함 → 목록에 없는 학교는 seed가 닫는다)
 프로젝트 문서 "5개 학교 동시 오픈 계획 (2026-11-21)" 기준 초안 (각 학교 학생에게 빠진 학과 확인받기는 남음).
 - 2026학년도 모집요강의 모집단위 기준. 경희대와 같은 규칙 (학부로 들어와 나중에 전공을 고르는 곳은 한 칸,
   이름이 바뀐 학과는 새 이름 옆 괄호에 옛 이름)
+- 서일대는 2026학년도 전문대학 입학전형 시행계획 기준 (외국인 전담 학과는 뺌)
 - 동덕여대는 전공별로 뽑아서 전공 이름 그대로, 야간 모집단위는 같은 전공이라 뺌
 - 캠퍼스가 하나인 학교는 "서울캠퍼스"
 - 성신여대·동덕여대는 여대라서 가입 성별이 여성으로 고정된다 (auth_service.WOMEN_ONLY_DOMAINS)
@@ -219,10 +221,22 @@ UOS_CAMPUSES: dict[str, list[str]] = {
     ],
 }
 
-SHU_CAMPUSES: dict[str, list[str]] = {
+SEOIL_CAMPUSES: dict[str, list[str]] = {
     "서울캠퍼스": [
-        "간호학부", "치위생과", "뷰티융합과", "사회복지과 (노인복지과)", "아동심리상담과 (아동보육과)",
-        "의료AI융합과 (의료정보과)", "글로벌융합과", "글로벌요양서비스과", "스포츠과학과", "자유전공과",
+        # IT융합학부
+        "IoT전자공학과", "전기공학과", "정보통신공학과", "소프트웨어공학과", "디지털트윈엘리베이터학과", "AI게임융합학과",
+        # 스마트공학부
+        "건축과", "생명화학공학과", "건설시스템공학과", "스마트자동차공학과",
+        # 휴먼케어학부
+        "간호학과", "유아교육학과", "식품영양학과", "사회복지학과", "스포츠헬스케어학과",
+        # 글로벌외국어학부
+        "비즈니스영어과", "비즈니스일본어과", "비즈니스중국어과",
+        # 경영사회학부
+        "스마트경영학과", "부동산법률학과", "미디어출판학과", "세무회계학과",
+        # 디자인학부
+        "커뮤니케이션디자인학과", "패션산업학과", "생활가구디자인학과", "실내디자인학과", "VMD&전시디자인학과",
+        # 미디어예술학부
+        "영화방송공연예술학과", "만화웹툰학과", "자유전공학과",
     ],
 }
 
@@ -302,7 +316,7 @@ SCHOOLS = [
     # 2026-11-21 추가 (메일 주소 뒷부분은 실제 재학생 메일인지 확인 필요)
     {"name": "고려대학교", "email_domain": "korea.ac.kr", "always_open": False, "campuses": KOREA_CAMPUSES},
     {"name": "서울시립대학교", "email_domain": "uos.ac.kr", "always_open": False, "campuses": UOS_CAMPUSES},
-    {"name": "삼육보건대학교", "email_domain": "shu.ac.kr", "always_open": False, "campuses": SHU_CAMPUSES},
+    {"name": "서일대학교", "email_domain": "seoil.ac.kr", "always_open": False, "campuses": SEOIL_CAMPUSES},
     {"name": "성신여자대학교", "email_domain": "sungshin.ac.kr", "always_open": False, "campuses": SUNGSHIN_CAMPUSES},
     {"name": "동덕여자대학교", "email_domain": "dongduk.ac.kr", "always_open": False, "campuses": DONGDUK_CAMPUSES},
 ]
@@ -332,8 +346,12 @@ def sync_departments(db, campus: Campus, names: list[str]) -> None:
 
 
 def sync_schools(db) -> None:
-    """학교·캠퍼스·학과를 맞추고, 학교를 열고 닫는다 (OPEN_SCHOOLS)."""
+    """학교·캠퍼스·학과를 맞추고, 학교를 열고 닫는다 (OPEN_SCHOOLS).
+    SCHOOLS에서 뺀 학교(예: 2026-11-21 삼육보건대)는 지우지 않고 닫는다 (OPEN_SCHOOLS에 남아 있어도)."""
     open_domains = get_settings().open_school_domains
+    listed = {school["email_domain"] for school in SCHOOLS}
+    for uni in db.query(University).filter(University.email_domain.notin_(listed)):
+        uni.active = False
     for school in SCHOOLS:
         uni = db.query(University).filter(University.email_domain == school["email_domain"]).first()
         if uni is None:
