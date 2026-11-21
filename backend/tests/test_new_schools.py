@@ -100,3 +100,33 @@ def test_school_removed_from_list_is_closed_even_if_in_open_schools(monkeypatch,
     assert db.query(University).filter(University.email_domain == "korea.ac.kr").one().active is True
     unis = {u["email_domain"] for u in UserClient().get("/api/v1/universities").json()["universities"]}
     assert "shu.ac.kr" not in unis
+
+
+def test_more_schools_seeded_closed_with_all_campuses(db):
+    """2026-11-21 추가 13개: 모두 닫힌 채로, 지방 캠퍼스까지."""
+    from app.scripts.schools_more import MORE_SCHOOLS
+
+    assert len(MORE_SCHOOLS) == 13
+    for school in MORE_SCHOOLS:
+        uni = db.query(University).filter(University.email_domain == school["email_domain"]).one()
+        assert uni.active is False and uni.name == school["name"]
+        assert {c.name for c in db.query(Campus).filter(Campus.university_id == uni.id)} == set(school["campuses"])
+    yonsei = db.query(University).filter(University.email_domain == "yonsei.ac.kr").one()
+    assert {c.name for c in db.query(Campus).filter(Campus.university_id == yonsei.id)} == {
+        "신촌캠퍼스", "국제캠퍼스", "미래캠퍼스"
+    }
+
+
+def test_subdomain_and_alias_email_find_the_school(monkeypatch, sent_codes, db):
+    """g.skku.edu → 성균관대, sejong.ac.kr → 세종대 (학교가 메일 주소를 여러 개 쓰는 경우)."""
+    _open(monkeypatch, db, "skku.edu,sju.ac.kr")
+    signup(sent_codes, db, "a@g.skku.edu", campus="자연과학캠퍼스", school="skku.edu")
+    signup(sent_codes, db, "b@sejong.ac.kr", school="sju.ac.kr")
+    names = {
+        e: db.query(University).get(db.query(User).filter(User.email == e).one().university_id).name
+        for e in ("a@g.skku.edu", "b@sejong.ac.kr")
+    }
+    assert names == {"a@g.skku.edu": "성균관대학교", "b@sejong.ac.kr": "세종대학교"}
+    # "ac.kr"만 같은 다른 주소는 안 된다
+    r = UserClient().post("/api/v1/auth/email/send-code", json={"email": "x@fake.ac.kr"})
+    assert r.status_code == 400

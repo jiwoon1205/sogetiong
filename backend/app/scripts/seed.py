@@ -38,6 +38,7 @@ from app.db.session import SessionLocal
 from app.models.admin import ROLE_PERMISSIONS, AdminRole
 from app.models.profile import Interest
 from app.models.university import Campus, Department, University
+from app.scripts.schools_more import MORE_SCHOOLS
 
 HUFS_CAMPUSES: dict[str, list[str]] = {
     "서울캠퍼스": [
@@ -319,6 +320,8 @@ SCHOOLS = [
     {"name": "서일대학교", "email_domain": "seoil.ac.kr", "always_open": False, "campuses": SEOIL_CAMPUSES},
     {"name": "성신여자대학교", "email_domain": "sungshin.ac.kr", "always_open": False, "campuses": SUNGSHIN_CAMPUSES},
     {"name": "동덕여자대학교", "email_domain": "dongduk.ac.kr", "always_open": False, "campuses": DONGDUK_CAMPUSES},
+    # 2026-11-21 추가 13개 (서울대·연세대·서강대·성균관대·한양대·중앙대·건국대·동국대·홍익대·국민대·숭실대·세종대·단국대)
+    *MORE_SCHOOLS,
 ]
 
 # 예전 이름 호환 (한국외대 목록)

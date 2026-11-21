@@ -180,7 +180,27 @@ def find_university_for_email(db: Session, email: str) -> University | None:
     if test_domain:
         return db.query(University).filter(University.email_domain == test_domain).first()
     domain = email.rsplit("@", 1)[-1]
-    return db.query(University).filter(University.email_domain == domain, University.active.is_(True)).first()
+    return db.query(University).filter(
+        University.email_domain.in_(school_domain_candidates(domain)), University.active.is_(True)
+    ).first()
+
+
+def school_domain_candidates(domain: str) -> list[str]:
+    """이 메일 주소 뒷부분으로 찾아볼 학교 주소들 (2026-11-21, 학교 13개 추가).
+
+    - 그대로 (korea.ac.kr)
+    - 다른 이름 (sejong.ac.kr → sju.ac.kr): schools_more.EMAIL_DOMAIN_ALIASES
+    - 하위 주소 (g.skku.edu → skku.edu, mail.hongik.ac.kr → hongik.ac.kr): 앞부분을 하나씩 떼어 본다.
+      "ac.kr"처럼 학교 주소가 아닌 값은 DB에 없어서 걸리지 않는다."""
+    from app.scripts.schools_more import EMAIL_DOMAIN_ALIASES
+
+    domain = domain.strip().lower()
+    out = [domain]
+    parts = domain.split(".")
+    for i in range(1, len(parts) - 1):
+        out.append(".".join(parts[i:]))
+    out += [EMAIL_DOMAIN_ALIASES[d] for d in list(out) if d in EMAIL_DOMAIN_ALIASES]
+    return out
 
 
 def issue_verification_code(db: Session, email: str, purpose: str = PURPOSE_SIGNUP) -> str:

@@ -84,6 +84,19 @@ export function PhotoUpload({ onUploaded, submitLabel = "검수 요청하기" }:
 
   return (
     <div className="space-y-5">
+      {/* 2026-11-21: 사진이 외부에 공개되지 않는다는 걸 사진 고르기 전에 크게 보여준다 (사용자 요청) */}
+      <div className="rounded-card border-2 border-brick/40 bg-brick-wash px-5 py-4 text-center">
+        <p className="text-[12px] font-semibold tracking-wide text-brick">🔒 사진 비공개 약속</p>
+        <p className="mt-1.5 font-serif text-[20px] font-semibold leading-snug text-ink">
+          사진은 <span className="text-brick">절대</span> 외부에 공개되지 않아요
+        </p>
+        <p className="mt-2 text-[13.5px] leading-relaxed text-ink-soft">
+          다른 학생에게도, 상대에게도, 어디에도 보이지 않아요.
+          <br />
+          올린 사진은 <b className="font-semibold text-ink">외모 평가 점수를 매길 때만</b> 쓰여요.
+        </p>
+        <p className="mt-2 text-[11.5px] leading-relaxed text-ink-faint">신고 처리처럼 꼭 필요할 때만 운영진이 확인할 수 있어요.</p>
+      </div>
       <div className="grid grid-cols-3 gap-2.5">
         {picked.map((p, i) => (
           <div key={p.id} className="relative aspect-[4/5] overflow-hidden rounded-card border border-line bg-paper-card">

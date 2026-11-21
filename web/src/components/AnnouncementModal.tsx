@@ -125,10 +125,9 @@ const NOTICES: Record<string, Notice> = {
       <>
         <div className="mb-5 rounded-card border border-line-strong bg-paper-card px-5 py-4 text-center">
           <p className="text-[12px] font-semibold tracking-wide text-brick">새로 함께하는 학교</p>
-          <p className="mt-2 font-serif text-[19px] font-semibold leading-snug text-ink">
-            고려대 · 서울시립대 · 서일대
-            <br />
-            성신여대 · 동덕여대
+          <p className="mt-2 font-serif text-[16px] font-semibold leading-relaxed text-ink">
+            서울대 · 연세대 · 고려대 · 서강대 · 성균관대 · 한양대 · 중앙대 · 서울시립대 · 건국대 · 동국대 · 홍익대 · 국민대 ·
+            숭실대 · 세종대 · 단국대 · 성신여대 · 동덕여대 · 서일대
           </p>
           <p className="mt-2 text-[13px] leading-relaxed text-ink-soft">
             매칭 조건이 <b className="font-semibold text-ink">&lsquo;모든 캠퍼스&rsquo;</b>라면 새 학교 학생도 바로 추천에 나와요.
