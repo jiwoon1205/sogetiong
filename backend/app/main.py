@@ -10,6 +10,8 @@ from app.api.v1 import (
     admin_router,
     alerts_router,
     auth_router,
+    board_admin_router,
+    board_router,
     catalog_router,
     matching_router,
     me_router,
@@ -128,6 +130,8 @@ app.include_router(survey_router, prefix=API, tags=["survey"])
 app.include_router(survey_admin_router, prefix=f"{API}/admin", tags=["admin"])
 # 휴대폰 알림 (2026-10-05)
 app.include_router(alerts_router, prefix=API, tags=["alerts"])
+app.include_router(board_router, prefix=API, tags=["board"])
+app.include_router(board_admin_router, prefix=f"{API}/admin", tags=["admin"])
 
 
 @app.get("/health")

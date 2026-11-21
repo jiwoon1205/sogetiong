@@ -123,6 +123,46 @@ class EmailService:
             dev_log="휴면 좋아요 안내 메일",
         )
 
+    @staticmethod
+    def send_new_note_notice(email: str, room_id) -> None:
+        """새 쪽지 (2026-11-22). 누가 보냈는지·내용은 쓰지 않는다. 같은 방 10분에 한 번."""
+        site = get_settings().site_url
+        _send(
+            email,
+            "[훕팅] 새 쪽지가 왔어요",
+            "게시판에서 새 쪽지가 왔어요.\n\n"
+            f"쪽지 보러 가기: {site}/notes/{room_id}\n\n"
+            + _ALERT_MAIL_FOOTER.format(site=site),
+            dev_log="새 쪽지 알림 메일",
+        )
+
+    @staticmethod
+    def send_board_ban_notice(email: str) -> None:
+        """게시판 이용 정지 (2026-11-22). 기간·사유는 앱 알림에서 확인하게 한다."""
+        site = get_settings().site_url
+        _send(
+            email,
+            "[훕팅] 게시판 이용이 정지됐어요",
+            "운영 정책 위반으로 게시판 이용(글·댓글·쪽지 보내기)이 정지됐어요.\n"
+            "소개팅(추천·LIKE·대화)은 그대로 쓸 수 있어요.\n\n"
+            f"정지 기간과 사유 확인하기: {site}/board\n\n"
+            + _ALERT_MAIL_FOOTER.format(site=site),
+            dev_log="게시판 정지 안내 메일",
+        )
+
+    @staticmethod
+    def send_admin_new_board_report(email: str, reason: str) -> None:
+        site = get_settings().site_url
+        label = BOARD_REPORT_REASON_LABELS.get(reason, reason)
+        _send(
+            email,
+            f"[운영] 게시판 새 신고: {label}",
+            f"게시판에 새 신고가 접수됐어요. 사유: {label}\n\n"
+            f"확인하러 가기: {site}/admin/board\n\n"
+            "처리 목표: 24시간 이내",
+            dev_log=f"관리자 게시판 신고 알림 ({reason})",
+        )
+
     # ---------- 운영진 알림 ----------
 
     @staticmethod
@@ -215,3 +255,13 @@ def _send(email: str, subject: str, body: str, *, dev_log: str) -> None:
         # 로그에 인증번호나 이메일 원문을 남기지 않는다
         logger.error("email delivery failed (%s): %s", subject, type(exc).__name__)
         raise EmailDeliveryError("email delivery failed") from exc
+
+
+BOARD_REPORT_REASON_LABELS = {
+    "ABUSE": "욕설·비하",
+    "SEXUAL": "성적인 이야기",
+    "OBSCENE": "음란·부적절한 사진",
+    "SPAM": "광고·도배",
+    "PERSONAL_INFO": "개인정보 노출",
+    "OTHER": "기타",
+}

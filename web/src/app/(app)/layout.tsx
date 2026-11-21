@@ -14,18 +14,21 @@ import { cn } from "@/lib/format";
 import { usePolling } from "@/lib/polling";
 import { SessionGate, useSession } from "@/lib/session";
 
+// 아래 탭 (2026-11-22): 추천 · 게시판 · 받은 LIKE · 대화 · 내 프로필 (VIP가 안 보이면 받은 LIKE 대신 설정)
 // 아래 탭 (2026-10-03): VIP가 열리면 추천 · 받은 LIKE · 대화 · 내 프로필, 설정은 머리말 오른쪽 톱니바퀴로.
 // VIP가 아직 안 보이는 사람(베타 기간)은 예전처럼 설정이 탭에 있다.
 function navItems(showLiked: boolean) {
   return showLiked
     ? [
         { href: "/discover", label: "추천" },
+        { href: "/board", label: "게시판" },
         { href: "/liked", label: "받은 LIKE" },
         { href: "/matches", label: "대화" },
         { href: "/profile", label: "내 프로필" },
       ]
     : [
         { href: "/discover", label: "추천" },
+        { href: "/board", label: "게시판" },
         { href: "/matches", label: "대화" },
         { href: "/profile", label: "내 프로필" },
         { href: "/settings", label: "설정" },
@@ -46,7 +49,8 @@ function Shell({ children }: { children: React.ReactNode }) {
   const showLiked = Boolean(me.vip?.visible);
   const NAV = navItems(showLiked);
   const [unread, setUnread] = useState(0);
-  const inChat = path.startsWith("/chat/");
+  // 쪽지방(2026-11-22)도 대화방처럼 화면 전체를 쓴다
+  const inChat = path.startsWith("/chat/") || path.startsWith("/notes/");
 
   // 안 읽은 알림 수: 20초마다 확인 (탭이 안 보이면 멈춤), 화면을 옮길 때도 확인
   // 알림 내용은 필요 없으니 개수만 받는다 (가벼운 요청)
@@ -108,9 +112,9 @@ function Shell({ children }: { children: React.ReactNode }) {
       <main className="mx-auto max-w-3xl px-5 py-8 sm:py-12">{children}</main>
 
       {/* 모바일 하단 탭. 2026-11-14: 화면 맨 아래에 딱 붙어 보여서 아래를 조금(8px) 띄움 (아이폰 홈 막대 자리도 비움) */}
-      <nav className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-4 border-t border-line bg-paper pb-[calc(0.5rem_+_env(safe-area-inset-bottom))] sm:hidden">
+      <nav className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 border-t border-line bg-paper pb-[calc(0.5rem_+_env(safe-area-inset-bottom))] sm:hidden">
         {NAV.map((n) => (
-          <Link key={n.href} href={n.href} className={cn("flex h-16 items-center justify-center text-[13px]", path.startsWith(n.href) ? "font-semibold text-ink" : "text-ink-faint")}>
+          <Link key={n.href} href={n.href} className={cn("flex h-16 items-center justify-center whitespace-nowrap text-[12.5px]", path.startsWith(n.href) ? "font-semibold text-ink" : "text-ink-faint")}>
             {n.label}
           </Link>
         ))}

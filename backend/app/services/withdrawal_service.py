@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.core.time import as_utc, utcnow
 from app.services.storage_service import get_storage
+from app.models.board import BoardProfile
 from app.models.matching import ExcludedDepartment, MatchingPreference, PreferredCampus, PreferredDepartment
 from app.models.photo import UserPhoto
 from app.models.profile import PublicProfile, UserInterest
@@ -42,6 +43,14 @@ def purge_user_data(db: Session, user_id: uuid.UUID) -> None:
                 pass
         photo.storage_key = ""
         photo.upload_status = "DELETED"
+    # 게시판 프로필·프사 (2026-11-22). 글·댓글은 "탈퇴한 사용자"로 남는다.
+    for board_profile in db.query(BoardProfile).filter(BoardProfile.user_id == user_id):
+        if board_profile.avatar_key:
+            try:
+                storage.delete(board_profile.avatar_key)
+            except FileNotFoundError:
+                pass
+        db.delete(board_profile)
     for model in (UserInterest, PreferredCampus, ExcludedDepartment, PreferredDepartment, MatchingPreference, PublicProfile):
         db.query(model).filter(model.user_id == user_id).delete(synchronize_session=False)
 
@@ -52,12 +61,13 @@ def purge_expired(db: Session, now: datetime | None = None) -> int:
     # 아직 지울 것이 남아 있는 사람만 (프로필이 있거나, 파일이 남은 사진이 있음)
     with_profile = db.query(PublicProfile.user_id)
     with_files = db.query(UserPhoto.user_id).filter(UserPhoto.storage_key != "")
+    with_board = db.query(BoardProfile.user_id)
     ids = [
         uid
         for (uid,) in db.query(User.id).filter(
             User.deleted_at.isnot(None),
             User.deleted_at <= cutoff,
-            User.id.in_(with_profile) | User.id.in_(with_files),
+            User.id.in_(with_profile) | User.id.in_(with_files) | User.id.in_(with_board),
         )
     ]
     for uid in ids:

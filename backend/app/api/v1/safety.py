@@ -14,7 +14,7 @@ from app.models.matching import Block, Match, Notification, Report
 from app.models.profile import PublicProfile
 from app.models.user import User
 from app.schemas.matching import NotificationUpdateRequest, ReportRequest, TargetRequest
-from app.services import admin_alert_service, profile_service
+from app.services import admin_alert_service, board_service, profile_service
 from app.services.email_service import EmailService
 
 router = APIRouter()
@@ -47,6 +47,8 @@ def block(payload: TargetRequest, current: CurrentUser = Depends(get_current_use
     db.query(Match).filter(Match.user_a_id == a, Match.user_b_id == b, Match.status == "ACTIVE").update(
         {"status": "BLOCKED", "ended_at": utcnow()}, synchronize_session=False
     )
+    # 게시판 쪽지방도 닫는다 (2026-11-22)
+    board_service.close_rooms_between(db, current.id, target)
     db.commit()
     return {"blocked": True}
 

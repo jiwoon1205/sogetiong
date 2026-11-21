@@ -1,6 +1,7 @@
 """SQLAlchemy 모델 모음. Alembic이 모든 테이블을 알 수 있도록 여기서 한 번에 import 한다."""
 
 from app.models.chat_extra import ChatPhoto, InstaShare
+from app.models.board import BoardComment, BoardPost, BoardProfile, BoardReport, NoteMessage, NoteRoom
 from app.models.admin import ROLE_PERMISSIONS, AdminRole, AdminSession, AdminUser, AuditLog
 from app.models.matching import (
     REPORT_REASONS,

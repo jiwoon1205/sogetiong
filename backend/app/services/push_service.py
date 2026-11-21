@@ -48,6 +48,12 @@ VIP_ENDING = "VIP_ENDING"  # VIP가 곧 끝나요 (2026-11-12)
 VIP_ENDED = "VIP_ENDED"  # VIP가 끝났어요
 VIP_KINDS = (VIP_ENDING, VIP_ENDED)
 LIKED = "LIKED"  # 휴면 계정이 좋아요를 받음 (2026-11-16). 휴대폰 알림이 안 되면 메일
+# 게시판·쪽지 (2026-11-22). match_id 자리에 글·쪽지방·게시판 프로필 id를 넣는다.
+BOARD_COMMENT = "BOARD_COMMENT"  # 내 글에 댓글. 휴대폰 알림만 (메일 안 보냄)
+NOTE = "NOTE"  # 새 쪽지. 휴대폰 알림이 안 되면 메일
+BOARD_BAN = "BOARD_BAN"  # 게시판 이용 정지. 휴대폰 알림이 안 되면 메일
+BOARD_UNBAN = "BOARD_UNBAN"  # 정지 해제. 휴대폰 알림만
+PUSH_ONLY_KINDS = VIP_KINDS + (BOARD_COMMENT, BOARD_UNBAN)
 
 # 잠금화면에 보이는 글. 상대 닉네임·대화 내용은 절대 넣지 않는다.
 PUSH_TITLE = "훕팅"
@@ -57,6 +63,10 @@ PUSH_BODY = {
     VIP_ENDING: "VIP가 곧 끝나요 · 지금 연장하면 할인돼요",
     VIP_ENDED: "VIP가 끝났어요 · 며칠 안에 다시 사면 할인돼요",
     LIKED: "누군가 회원님에게 좋아요를 보냈어요",
+    BOARD_COMMENT: "내 글에 새 댓글이 달렸어요",
+    NOTE: "새 쪽지가 왔어요",
+    BOARD_BAN: "게시판 이용이 정지됐어요",
+    BOARD_UNBAN: "게시판 이용 정지가 풀렸어요",
 }
 
 # 알림 배달 회사 주소만 받는다. 아무 주소나 받으면 우리 서버가 엉뚱한 곳으로 요청을 보내게 만들 수 있다.
@@ -190,8 +200,8 @@ def deliver(alert: Alert) -> str:
             subs = db.query(PushSubscription).filter(PushSubscription.user_id == user.id).all()
             if subs and send_to_devices(db, subs, payload_for(alert)) > 0:
                 return "push"
-        if alert.kind in VIP_KINDS:
-            return "skipped"  # VIP 안내는 메일로 보내지 않는다
+        if alert.kind in PUSH_ONLY_KINDS:
+            return "skipped"  # VIP 안내·댓글·정지 해제는 메일로 보내지 않는다
         if not user.email_notify or not _email_allowed(alert):
             return "skipped"
         email = user.email
@@ -200,6 +210,10 @@ def deliver(alert: Alert) -> str:
     try:
         if alert.kind == LIKED:
             EmailService.send_liked_notice(email)
+        elif alert.kind == NOTE:
+            EmailService.send_new_note_notice(email, alert.match_id)
+        elif alert.kind == BOARD_BAN:
+            EmailService.send_board_ban_notice(email)
         elif alert.kind == MESSAGE:
             EmailService.send_new_message_notice(email, alert.match_id)
         else:
@@ -214,6 +228,14 @@ def payload_for(alert: Alert) -> dict:
         return {"title": PUSH_TITLE, "body": PUSH_BODY[alert.kind], "url": "/liked", "tag": "vip-renewal"}
     if alert.kind == LIKED:
         return {"title": PUSH_TITLE, "body": PUSH_BODY[LIKED], "url": "/discover", "tag": "liked"}
+    if alert.kind == BOARD_COMMENT:
+        return {"title": PUSH_TITLE, "body": PUSH_BODY[BOARD_COMMENT], "url": f"/board/{alert.match_id}",
+                "tag": f"board-comment-{alert.match_id}"}
+    if alert.kind == NOTE:
+        return {"title": PUSH_TITLE, "body": PUSH_BODY[NOTE], "url": f"/notes/{alert.match_id}",
+                "tag": f"note-{alert.match_id}"}
+    if alert.kind in (BOARD_BAN, BOARD_UNBAN):
+        return {"title": PUSH_TITLE, "body": PUSH_BODY[alert.kind], "url": "/board", "tag": "board-ban"}
     return {
         "title": PUSH_TITLE,
         "body": PUSH_BODY[alert.kind],

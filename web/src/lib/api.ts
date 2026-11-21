@@ -96,7 +96,12 @@ export async function api<T = unknown>(path: string, opts: Options = {}): Promis
     let message = "요청을 처리하지 못했습니다.";
     let code = String(res.status);
     if (Array.isArray(detail)) message = explainValidation(detail);
-    else if (typeof detail === "string") {
+    else if (detail && typeof detail === "object" && "message" in detail) {
+      // 게시판·쪽지 (2026-11-22): {code, message}
+      const d = detail as { code?: string; message?: string };
+      message = d.message ?? message;
+      if (d.code) code = d.code;
+    } else if (typeof detail === "string") {
       message = detail;
       if (/^[A-Z_]+$/.test(detail)) code = detail;
     }

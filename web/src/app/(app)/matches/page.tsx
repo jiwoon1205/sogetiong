@@ -5,7 +5,9 @@ import { useEffect, useState } from "react";
 import { Initial } from "@/components/Initial";
 import { MatchCelebration } from "@/components/MatchCelebration";
 import { ReportModal } from "@/components/ReportModal";
-import { ButtonLink, Notice, PageTitle, Spinner } from "@/components/ui";
+import { AuthorLine } from "@/components/board/AuthorLine";
+import { ButtonLink, Notice, PageTitle, Segmented, Spinner } from "@/components/ui";
+import type { NoteRoom } from "@/lib/board";
 import { api, errorMessage } from "@/lib/api";
 import { timeAgo } from "@/lib/format";
 import { usePolling } from "@/lib/polling";
@@ -14,7 +16,7 @@ import type { MatchItem } from "@/lib/types";
 
 type EndedMatch = { match_id: string; partner_nickname: string; matched_at: string; ended_at: string | null; report_pending: boolean };
 
-export default function MatchesPage() {
+function MatchList() {
   const [items, setItems] = useState<MatchItem[] | null>(null);
   const [error, setError] = useState("");
 
@@ -53,8 +55,7 @@ export default function MatchesPage() {
   if (!items) return <Spinner />;
 
   return (
-    <div className="mx-auto max-w-app">
-      <PageTitle eyebrow="대화" title="마음이 맞은 사람들" />
+    <div>
       {items.length === 0 ? (
         <div className="rounded-card border border-line bg-paper-card px-6 py-12 text-center">
           <p className="text-[15px] text-ink">아직 매칭된 사람이 없어요.</p>
@@ -143,5 +144,99 @@ export default function MatchesPage() {
         />
       )}
     </div>
+  );
+}
+
+/** 대화 탭 (2026-11-22): [매칭 | 쪽지]. 매칭 대화방과 게시판 쪽지방은 따로다. */
+export default function MatchesPage() {
+  const [tab, setTab] = useState<"matches" | "notes">("matches");
+  const [noteUnread, setNoteUnread] = useState(0);
+
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("tab") === "notes") setTab("notes");
+  }, []);
+
+  usePolling(
+    () =>
+      api<{ rooms: NoteRoom[] }>("/notes")
+        .then((r) => setNoteUnread(r.rooms.reduce((n, room) => n + room.unread, 0)))
+        .catch(() => {}),
+    20000,
+    [tab],
+  );
+
+  return (
+    <div className="mx-auto max-w-app">
+      <PageTitle eyebrow="대화" title={tab === "matches" ? "마음이 맞은 사람들" : "게시판 쪽지"} />
+      <Segmented
+        className="mb-6"
+        value={tab}
+        onChange={(v) => {
+          setTab(v);
+          window.history.replaceState(null, "", v === "notes" ? "/matches?tab=notes" : "/matches");
+        }}
+        options={[
+          { value: "matches", label: "매칭" },
+          { value: "notes", label: noteUnread > 0 ? `쪽지 (${noteUnread > 99 ? "99+" : noteUnread})` : "쪽지" },
+        ]}
+      />
+      {tab === "matches" ? <MatchList /> : <NoteList />}
+    </div>
+  );
+}
+
+function NoteList() {
+  const [rooms, setRooms] = useState<NoteRoom[] | null>(null);
+  const [error, setError] = useState("");
+
+  usePolling(
+    () =>
+      api<{ rooms: NoteRoom[] }>("/notes")
+        .then((r) => setRooms(r.rooms))
+        .catch((e) => setError(errorMessage(e))),
+    15000,
+    [],
+  );
+
+  if (error) return <Notice tone="error">{error}</Notice>;
+  if (!rooms) return <Spinner />;
+  if (rooms.length === 0)
+    return (
+      <div className="rounded-card border border-line bg-paper-card px-6 py-12 text-center">
+        <p className="text-[15px] text-ink">아직 쪽지가 없어요.</p>
+        <p className="mt-2 text-[13.5px] text-ink-soft">게시판에서 글쓴이나 댓글 단 사람을 누르면 쪽지를 보낼 수 있어요.</p>
+        <ButtonLink href="/board" variant="secondary" className="mt-6">
+          게시판 가기
+        </ButtonLink>
+      </div>
+    );
+
+  return (
+    <ul className="divide-y divide-line border-y border-line">
+      {rooms.map((r) => (
+        <li key={r.id}>
+          <Link href={`/notes/${r.id}`} className="block py-4 transition-colors hover:bg-paper-deep/60">
+            <AuthorLine
+              author={r.partner}
+              size={44}
+              trailing={
+                <span className="flex shrink-0 flex-col items-end gap-1">
+                  <span className={r.unread ? "text-[12px] font-semibold text-brick" : "text-[12px] text-ink-faint"}>{timeAgo(r.last_message_at)}</span>
+                  {r.unread > 0 && (
+                    <span className="num flex h-5 min-w-5 items-center justify-center rounded-full bg-brick px-1.5 text-[11.5px] font-semibold leading-none text-paper">
+                      {r.unread > 99 ? "99+" : r.unread}
+                    </span>
+                  )}
+                </span>
+              }
+            />
+            <p className={r.unread ? "mt-1 truncate pl-[54px] text-[13.5px] font-semibold text-ink" : "mt-1 truncate pl-[54px] text-[13.5px] text-ink-soft"}>
+              {r.closed ? "끝난 쪽지방 · " : ""}
+              {r.last_message ? `${r.last_message_mine ? "나: " : ""}${r.last_message}` : ""}
+            </p>
+          </Link>
+        </li>
+      ))}
+    </ul>
   );
 }

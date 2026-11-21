@@ -23,7 +23,7 @@
   공지가 뜨지 않는다 (기능 소개 공지라 새로 온 사람에게는 필요 없음). None이면 가입 시각과 상관없이 모두.
 """
 
-from datetime import datetime
+from datetime import date, datetime, timedelta
 
 from app.core.time import KST, as_utc, kst_today, utcnow
 from app.models.user import User
@@ -60,11 +60,33 @@ NEW_SCHOOL_DOMAINS = frozenset(
     }
 )
 
+# 2일에 한 번씩, 2주 동안 모두에게 (2026-11-21 사용자 결정). 이미 본 사람에게도 2일마다 다시 뜬다.
+# 이름 뒤에 그 2일 묶음의 첫날을 붙인다 (예: schools-2026-11@2026-11-23). 기간이 끝나면 예전처럼 "계정당 한 번"
+# (기간 중 한 번이라도 본 사람에게는 안 뜸). 기간을 바꾸려면 아래 날짜(한국 날짜, 둘 다 포함)를 고친다
+NEW_SCHOOLS_REPEAT_DAYS = 2
+NEW_SCHOOLS_REPEAT_FROM = date(2026, 11, 21)
+NEW_SCHOOLS_REPEAT_UNTIL = date(2026, 12, 4)
+
+
+def new_schools_repeat_key(now: datetime | None = None) -> str | None:
+    """반복 기간이면 이번 2일 묶음의 공지 이름, 아니면 None."""
+    if not NEW_SCHOOLS_NOTICE:
+        return None
+    today = kst_today(now or utcnow())
+    if not (NEW_SCHOOLS_REPEAT_FROM <= today <= NEW_SCHOOLS_REPEAT_UNTIL):
+        return None
+    step = (today - NEW_SCHOOLS_REPEAT_FROM).days // NEW_SCHOOLS_REPEAT_DAYS
+    start = NEW_SCHOOLS_REPEAT_FROM + timedelta(days=step * NEW_SCHOOLS_REPEAT_DAYS)
+    return f"{NEW_SCHOOLS_NOTICE}{DAILY_SEPARATOR}{start.isoformat()}"
+
 
 def current_key(multi_school: bool = False, now: datetime | None = None, *, new_schools: bool = False) -> str | None:
     """지금 보여줄 공지 이름. DAILY면 뒤에 오늘(한국 날짜)이 붙는다.
     new_schools = 새 학교(NEW_SCHOOL_DOMAINS)가 하나라도 열려 있음 → 새 학교 공지가 먼저 (2026-11-21)."""
     if new_schools and NEW_SCHOOLS_NOTICE:
+        repeat = new_schools_repeat_key(now)
+        if repeat is not None:
+            return repeat  # 2일마다 이름이 바뀐다 → 이미 본 사람에게도 다시 뜸
         base = NEW_SCHOOLS_NOTICE
     else:
         base = SCHOOL_OPEN_NOTICE if (multi_school and SCHOOL_OPEN_NOTICE) else CURRENT
@@ -128,6 +150,8 @@ def _seen(seen: str | None, current: str) -> bool:
     base = current.split(DAILY_SEPARATOR)[0]
     if seen == current:
         return True
+    if DAILY_SEPARATOR in current:
+        return False  # 날짜가 붙은 공지(하루 한 번·새 학교 2일마다)는 그 이름 그대로 본 기록만
     # 계정당 한 번 방식일 때: 예전에 하루 한 번 방식으로 본 기록("이름@날짜")도 본 것
     return not DAILY and (seen == base or seen.startswith(base + DAILY_SEPARATOR))
 
