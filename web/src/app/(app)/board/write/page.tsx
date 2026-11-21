@@ -49,7 +49,6 @@ function Write() {
   }
 
   if (!me) return error ? <Notice tone="error">{error}</Notice> : <Spinner />;
-  const info = me.boards.find((b) => b.key === board)!;
 
   return (
     <div className="mx-auto max-w-app">
@@ -69,7 +68,6 @@ function Write() {
               </button>
             ))}
         </div>
-        {info.sexual_rule && <Notice tone="error">⚠️ {info.sexual_rule}</Notice>}
         <Field label="제목">
           <Input value={title} maxLength={me.config.title_max} onChange={(e) => setTitle(e.target.value)} />
         </Field>

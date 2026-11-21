@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { AuthorLine } from "@/components/board/AuthorLine";
 import { ProfileEditor } from "@/components/board/ProfileEditor";
-import { Button, ButtonLink, Modal, Notice, PageTitle, Spinner } from "@/components/ui";
+import { Button, Modal, Notice, PageTitle, Spinner } from "@/components/ui";
 import { api, errorMessage } from "@/lib/api";
 import { BOARD_NAMES, banText, type BoardKey, type BoardMe, type BoardPost } from "@/lib/board";
 import { cn, timeAgo } from "@/lib/format";
@@ -178,16 +178,20 @@ function PostList({ me }: { me: BoardMe }) {
           </Notice>
         </div>
       )}
-      {info.sexual_rule && <p className="mb-4 text-[12.5px] text-brick">⚠️ {info.sexual_rule}</p>}
+      <p className="eyebrow mb-4">{info.name}</p>
 
-      <div className="mb-4 flex items-center justify-between">
-        <p className="eyebrow">{info.name}</p>
-        {!me.profile?.banned_until && (
-          <ButtonLink href={`/board/write?board=${board}`} size="sm">
-            글쓰기
-          </ButtonLink>
-        )}
-      </div>
+      {/* 글쓰기 버튼 (2026-11-22): 화면 아래 가운데에 떠 있다. 휴대폰은 아래 탭 바로 위 */}
+      {!me.profile?.banned_until && (
+        <Link
+          href={`/board/write?board=${board}`}
+          className="fixed bottom-[calc(5.75rem_+_env(safe-area-inset-bottom))] left-1/2 z-20 flex h-12 -translate-x-1/2 items-center gap-2 rounded-full bg-ink px-6 text-[15px] font-medium text-paper shadow-lg sm:bottom-8"
+        >
+          <svg viewBox="0 0 20 20" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden>
+            <path d="M13.5 3.5l3 3L7 16H4v-3l9.5-9.5z" strokeLinejoin="round" />
+          </svg>
+          글쓰기
+        </Link>
+      )}
 
       {error ? (
         <Notice tone="error">{error}</Notice>
@@ -218,6 +222,8 @@ function PostList({ me }: { me: BoardMe }) {
           더 보기
         </Button>
       )}
+      {/* 떠 있는 글쓰기 버튼에 마지막 글이 가리지 않게 */}
+      <div className="h-20" aria-hidden />
     </>
   );
 }
