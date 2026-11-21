@@ -136,7 +136,11 @@ def get_me(current: CurrentUser = Depends(get_current_user), db: Session = Depen
         # 내가 찾는 관계를 아직 안 고른 예전 회원 (2026-11-11) → 화면이 이것부터 고르게 한다 (꼭 골라야 넘어감)
         "relationship_goal_required": _needs_relationship_goal(db, current),
         # 한 번만 보여주는 공지 팝업 (2026-10-05). 아직 안 본 공지 이름, 없으면 null
-        "announcement": announcement_service.pending(current.user, multi_school=profile_service.multi_school(db)),
+        "announcement": announcement_service.pending(
+            current.user,
+            multi_school=profile_service.multi_school(db),
+            new_schools=profile_service.new_schools_open(db),
+        ),
         # 매칭 확률 높이기 팝업 (2026-11-16): 남성·접속한 날 3일 이상·매칭 0회 → 한 번만. 아니면 null
         "match_tip": engagement_service.match_tip(db, current.user),
         # 친구 초대 이벤트 (2026-10-24): 화면 맨 윗줄 배너용. 기간 안이면 active, end = 끝나는 시각

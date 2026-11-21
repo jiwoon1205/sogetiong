@@ -9,7 +9,7 @@ from app.core.config import get_settings
 from app.db.session import get_db
 from app.models.profile import Interest
 from app.models.university import Campus, Department, University
-from app.services import profile_service, stats_service
+from app.services import auth_service, profile_service, stats_service
 
 router = APIRouter()
 
@@ -18,7 +18,18 @@ router = APIRouter()
 def list_universities(db: Session = Depends(get_db)):
     # 먼저 생긴 학교부터 (한국외대 → 경희대 순서로 버튼이 나오게, 2026-10-24)
     rows = db.query(University).filter(University.active.is_(True)).order_by(University.created_at, University.name).all()
-    return {"universities": [{"id": str(u.id), "name": u.name, "email_domain": u.email_domain} for u in rows]}
+    # women_only (2026-11-21): 여대 → 가입할 때 성별이 여성으로 정해진다
+    return {
+        "universities": [
+            {
+                "id": str(u.id),
+                "name": u.name,
+                "email_domain": u.email_domain,
+                "women_only": auth_service.fixed_gender(u) == "FEMALE",
+            }
+            for u in rows
+        ]
+    }
 
 
 @router.get("/universities/{university_id}/campuses")

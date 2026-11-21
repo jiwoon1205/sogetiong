@@ -32,6 +32,8 @@ class VerifyCodeResponse(BaseModel):
     # 이 메일의 학교 (2026-10-24 경희대 확장): 가입 화면이 이 학교의 캠퍼스 목록을 보여준다
     university_id: str | None = None
     university_name: str | None = None
+    # 여대 메일이면 "FEMALE" (가입할 때 성별을 고르지 않는다, 2026-11-21)
+    fixed_gender: str | None = None
 
 
 class RegisterRequest(BaseModel):

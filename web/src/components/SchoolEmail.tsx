@@ -1,11 +1,15 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { EmailInput, Field, Segmented } from "@/components/ui";
+import { EmailInput, Field, Segmented, Select } from "@/components/ui";
 import { api } from "@/lib/api";
 import { shortSchoolName } from "@/lib/format";
 
-export type University = { id: string; name: string; email_domain: string };
+/** women_only (2026-11-21): 여대 → 가입할 때 성별이 여성으로 정해진다 */
+export type University = { id: string; name: string; email_domain: string; women_only?: boolean };
+
+/** 학교 버튼은 이 개수까지. 더 많으면 목록(선택 상자)으로 보여준다 (2026-11-21: 학교 7개) */
+const MAX_SCHOOL_BUTTONS = 3;
 
 const LAST_SCHOOL_KEY = "hufting:last-school";
 
@@ -58,13 +62,24 @@ export function SchoolEmailField({
 
   return (
     <>
-      {universities.length > 1 && (
+      {universities.length > 1 && universities.length <= MAX_SCHOOL_BUTTONS && (
         <Field label="학교">
           <Segmented<string>
             value={current}
             onChange={pick}
             options={universities.map((u) => ({ value: u.email_domain, label: shortSchoolName(u.name) }))}
           />
+        </Field>
+      )}
+      {universities.length > MAX_SCHOOL_BUTTONS && (
+        <Field label="학교" htmlFor={`${id}-school`}>
+          <Select id={`${id}-school`} value={current} onChange={(e) => pick(e.target.value)}>
+            {universities.map((u) => (
+              <option key={u.email_domain} value={u.email_domain}>
+                {u.name}
+              </option>
+            ))}
+          </Select>
         </Field>
       )}
       <Field label="학교 이메일" htmlFor={id}>

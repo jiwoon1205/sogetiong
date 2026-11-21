@@ -47,10 +47,20 @@ DAILY: bool = False
 CURRENT_FOR_JOINED_BEFORE: datetime | None = datetime(2026, 11, 14, 21, 0, tzinfo=KST)
 DAILY_SEPARATOR = "@"
 
+# 5개 학교 추가 공지 (2026-11-21): 아래 학교 중 하나라도 열리면(OPEN_SCHOOLS) 자동으로 이 공지가 뜬다
+# → 오픈 날 코드를 다시 배포할 필요 없음. 내용: 학교 추가 + 친구 초대(링크로 가입하면 슈퍼 라이크 1개).
+# 기능 소개 공지가 아니라서 신규 가입자에게도 뜬다 (CURRENT_FOR_JOINED_BEFORE를 적용하지 않음). 끄려면 None
+NEW_SCHOOLS_NOTICE: str | None = "schools-2026-11"
+NEW_SCHOOL_DOMAINS = frozenset({"korea.ac.kr", "uos.ac.kr", "shu.ac.kr", "sungshin.ac.kr", "dongduk.ac.kr"})
 
-def current_key(multi_school: bool = False, now: datetime | None = None) -> str | None:
-    """지금 보여줄 공지 이름. DAILY면 뒤에 오늘(한국 날짜)이 붙는다."""
-    base = SCHOOL_OPEN_NOTICE if (multi_school and SCHOOL_OPEN_NOTICE) else CURRENT
+
+def current_key(multi_school: bool = False, now: datetime | None = None, *, new_schools: bool = False) -> str | None:
+    """지금 보여줄 공지 이름. DAILY면 뒤에 오늘(한국 날짜)이 붙는다.
+    new_schools = 새 학교(NEW_SCHOOL_DOMAINS)가 하나라도 열려 있음 → 새 학교 공지가 먼저 (2026-11-21)."""
+    if new_schools and NEW_SCHOOLS_NOTICE:
+        base = NEW_SCHOOLS_NOTICE
+    else:
+        base = SCHOOL_OPEN_NOTICE if (multi_school and SCHOOL_OPEN_NOTICE) else CURRENT
     if base is None:
         return None
     if DAILY:
@@ -80,14 +90,16 @@ def daily_payment_key(user: User, now: datetime | None = None) -> str | None:
     return key
 
 
-def pending(user: User, now: datetime | None = None, *, multi_school: bool = False) -> str | None:
+def pending(user: User, now: datetime | None = None, *, multi_school: bool = False, new_schools: bool = False) -> str | None:
     """아직 안 본 공지 이름. 없으면 None. 하루 공지가 먼저. multi_school = 학교가 둘 이상 열려 있음."""
     daily = daily_payment_key(user, now)
     if daily is not None and user.announcement_seen != daily:
         return daily
-    current = current_key(multi_school, now)
+    current = current_key(multi_school, now, new_schools=new_schools)
     if current is None or _seen(user.announcement_seen, current):
         return None
+    if new_schools and NEW_SCHOOLS_NOTICE and current.split(DAILY_SEPARATOR)[0] == NEW_SCHOOLS_NOTICE:
+        return current  # 새 학교 공지는 신규 가입자에게도 (2026-11-21)
     # 신규 가입자에게는 기능 소개 공지를 띄우지 않는다 (2026-11-14)
     if (
         CURRENT_FOR_JOINED_BEFORE is not None
@@ -113,6 +125,8 @@ def _seen(seen: str | None, current: str) -> bool:
     return not DAILY and (seen == base or seen.startswith(base + DAILY_SEPARATOR))
 
 
-def is_showable(user: User, key: str, now: datetime | None = None, *, multi_school: bool = False) -> bool:
+def is_showable(
+    user: User, key: str, now: datetime | None = None, *, multi_school: bool = False, new_schools: bool = False
+) -> bool:
     """화면이 "봤음"으로 보낸 이름이 지금 보여줄 수 있는 공지인가."""
-    return key == current_key(multi_school, now) or key == daily_payment_key(user, now)
+    return key == current_key(multi_school, now, new_schools=new_schools) or key == daily_payment_key(user, now)

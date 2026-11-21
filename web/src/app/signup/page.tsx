@@ -17,6 +17,8 @@ export default function SignupPage() {
   const router = useRouter();
   const [step, setStep] = useState<0 | 1 | 2>(0);
   const [schoolName, setSchoolName] = useState("");
+  // 여대 메일이면 성별이 여성으로 정해져서 고르지 않는다 (2026-11-21)
+  const [fixedGender, setFixedGender] = useState<Gender | null>(null);
   // 학교가 둘 이상 열려 있을 때만 캠퍼스 칸에 학교 이름을 붙인다 (하나면 지금과 같게)
   const multiSchool = useUniversities().length > 1;
   const [campuses, setCampuses] = useState<Campus[]>([]);
@@ -64,7 +66,12 @@ export default function SignupPage() {
   const verify = (e: React.FormEvent) => {
     e.preventDefault();
     run(async () => {
-      const res = await api<{ verification_ticket: string; university_id: string | null; university_name: string | null }>(
+      const res = await api<{
+        verification_ticket: string;
+        university_id: string | null;
+        university_name: string | null;
+        fixed_gender: Gender | null;
+      }>(
         "/auth/email/verify",
         { method: "POST", body: { email, code } },
       );
@@ -75,6 +82,8 @@ export default function SignupPage() {
         setInfo((prev) => ({ ...prev, campus: "" }));
       }
       setSchoolName(res.university_name ?? "");
+      setFixedGender(res.fixed_gender ?? null);
+      if (res.fixed_gender) setInfo((prev) => ({ ...prev, gender: res.fixed_gender! }));
       setTicket(res.verification_ticket);
       setNotice("");
       setStep(2);
@@ -83,7 +92,8 @@ export default function SignupPage() {
 
   const register = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!info.gender) return setError("성별을 골라주세요.");
+    const gender = fixedGender ?? info.gender;
+    if (!gender) return setError("성별을 골라주세요.");
     if (info.pw !== info.pw2) return setError("비밀번호가 서로 다릅니다.");
     if (!agree.terms || !agree.privacy || !agree.appearance) return setError("필수 항목에 모두 동의해주세요.");
     run(async () => {
@@ -93,7 +103,7 @@ export default function SignupPage() {
           verification_ticket: ticket,
           password: info.pw,
           nickname: info.nickname,
-          gender: info.gender,
+          gender,
           birth_date: info.birth,
           campus_id: info.campus,
           agree_terms: agree.terms,
@@ -168,16 +178,25 @@ export default function SignupPage() {
           <Field label="닉네임" htmlFor="nickname" hint="2~20자. 실명이나 학번이 드러나지 않게 지어주세요.">
             <Input id="nickname" value={info.nickname} maxLength={20} onChange={(e) => setInfo({ ...info, nickname: e.target.value })} required />
           </Field>
-          <Field label="성별" hint="한 번 고르면 운영진도 바꿀 수 없어요. 훕팅은 이성만 추천해요.">
-            <Segmented<Gender | "">
-              value={info.gender}
-              onChange={(g) => setInfo({ ...info, gender: g })}
-              options={[
-                { value: "FEMALE", label: "여성" },
-                { value: "MALE", label: "남성" },
-              ]}
-            />
-          </Field>
+          {fixedGender ? (
+            <Field label="성별">
+              <p className="rounded-md border border-line bg-paper-card px-4 py-3 text-[14px] leading-relaxed text-ink">
+                <b className="font-semibold">여성</b>
+                <span className="ml-1.5 text-ink-soft">· {schoolName || "여자대학교"} 메일이라 여성으로 가입돼요.</span>
+              </p>
+            </Field>
+          ) : (
+            <Field label="성별" hint="한 번 고르면 운영진도 바꿀 수 없어요. 훕팅은 이성만 추천해요.">
+              <Segmented<Gender | "">
+                value={info.gender}
+                onChange={(g) => setInfo({ ...info, gender: g })}
+                options={[
+                  { value: "FEMALE", label: "여성" },
+                  { value: "MALE", label: "남성" },
+                ]}
+              />
+            </Field>
+          )}
           <div className="grid grid-cols-2 gap-3">
             <Field label="생년월일" htmlFor="birth">
               <Input id="birth" type="date" value={info.birth} onChange={(e) => setInfo({ ...info, birth: e.target.value })} required />

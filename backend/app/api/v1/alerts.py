@@ -131,7 +131,10 @@ def mark_announcement_seen(
 ):
     """공지 팝업에서 "확인"(또는 버튼)을 누름 → 이 계정에는 다시 안 뜬다 (하루 공지는 오늘만 안 뜸)."""
     if not announcement_service.is_showable(
-        current.user, payload.key, multi_school=profile_service.multi_school(db)
+        current.user,
+        payload.key,
+        multi_school=profile_service.multi_school(db),
+        new_schools=profile_service.new_schools_open(db),
     ):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="지금 보여주는 공지가 아니에요.")
     current.user.announcement_seen = payload.key

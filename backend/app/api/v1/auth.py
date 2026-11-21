@@ -98,6 +98,8 @@ def verify_code(payload: VerifyCodeRequest, request: Request, db: Session = Depe
         expires_in_minutes=get_settings().verification_ticket_minutes,
         university_id=str(university.id) if university else None,
         university_name=university.name if university else None,
+        # 여대 메일이면 "FEMALE" → 가입 화면이 성별 칸 대신 안내를 보여준다 (2026-11-21)
+        fixed_gender=auth_service.fixed_gender(university),
     )
 
 
@@ -131,9 +133,11 @@ def register(payload: RegisterRequest, request: Request, response: Response, db:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=reason)
     previous = auth_service.previous_accounts(db, ticket.email)
     previous_ids = [u.id for u in previous]
+    # 여대 메일이면 성별은 보낸 값과 상관없이 여성 (2026-11-21)
+    gender = auth_service.fixed_gender(university) or payload.gender
     # 성별은 가입한 뒤 절대 바꿀 수 없다 (2026-11-07). 탈퇴 → 재가입으로 성별을 바꾸는 것도 막는다
     before = auth_service.previous_gender(previous)
-    if before is not None and before != payload.gender:
+    if before is not None and before != gender:
         label = "여성" if before == "FEMALE" else "남성"
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -158,7 +162,7 @@ def register(payload: RegisterRequest, request: Request, response: Response, db:
         PrivateProfile(
             user_id=user.id,
             birth_date=payload.birth_date,
-            preferred_gender=auth_service.opposite_gender(payload.gender),  # 항상 이성 (2026-11-07)
+            preferred_gender=auth_service.opposite_gender(gender),  # 항상 이성 (2026-11-07)
             real_name=payload.real_name,
             student_id=payload.student_id,
             verification_data_json={
@@ -168,7 +172,7 @@ def register(payload: RegisterRequest, request: Request, response: Response, db:
             },
         )
     )
-    db.add(PublicProfile(user_id=user.id, nickname=payload.nickname, gender=payload.gender, campus_id=campus.id))
+    db.add(PublicProfile(user_id=user.id, nickname=payload.nickname, gender=gender, campus_id=campus.id))
     auth_service.carry_over_blocks(db, previous_ids, user.id)
     # 탈퇴 후 재가입 (2026-10-05): 사진·외모 점수·재검토 대기·이용권·매칭 정지를 이어받는다
     auth_service.carry_over_account(db, previous, user)

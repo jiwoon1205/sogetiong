@@ -154,6 +154,20 @@ def carry_over_account(db: Session, previous: list[User], new_user: User) -> Non
     new_user.rereview_granted_at = latest([new_user.rereview_granted_at] + [u.rereview_granted_at for u in old])
 
 
+# ---------- 여대 (2026-11-21) ----------
+
+# 여대 메일로 가입하면 성별이 여성으로 고정된다 (남자가 여자인 척 가입하는 걸 막는다).
+# 동덕여대는 2029학년도부터 남녀공학으로 바뀔 예정 → 그때 여기서 뺀다.
+WOMEN_ONLY_DOMAINS = frozenset({"sungshin.ac.kr", "dongduk.ac.kr"})
+
+
+def fixed_gender(university: University | None) -> str | None:
+    """이 학교 학생의 성별이 정해져 있으면 그 값 ("FEMALE"), 아니면 None."""
+    if university is not None and university.email_domain.lower() in WOMEN_ONLY_DOMAINS:
+        return "FEMALE"
+    return None
+
+
 # ---------- 학교 이메일 인증 ----------
 
 def find_university_for_email(db: Session, email: str) -> University | None:

@@ -117,6 +117,59 @@ function InviteEventHero() {
  * 새 공지: 서버 services/announcement_service.py 의 CURRENT와 여기 NOTICES에 같은 이름으로 추가.
  */
 const NOTICES: Record<string, Notice> = {
+  // 2026-11-21: 5개 학교 추가 + 친구 초대(에브리타임에 내 링크 → 가입하면 슈퍼 라이크 1개).
+  // 서버는 새 학교가 하나라도 열리면(OPEN_SCHOOLS) 자동으로 이 공지를 보낸다 (announcement_service.NEW_SCHOOLS_NOTICE)
+  "schools-2026-11": {
+    title: "함께하는 대학교가 늘었어요 🎉",
+    body: (
+      <>
+        <div className="mb-5 rounded-card border border-line-strong bg-paper-card px-5 py-4 text-center">
+          <p className="text-[12px] font-semibold tracking-wide text-brick">새로 함께하는 학교</p>
+          <p className="mt-2 font-serif text-[19px] font-semibold leading-snug text-ink">
+            고려대 · 서울시립대 · 삼육보건대
+            <br />
+            성신여대 · 동덕여대
+          </p>
+          <p className="mt-2 text-[13px] leading-relaxed text-ink-soft">
+            매칭 조건이 <b className="font-semibold text-ink">&lsquo;모든 캠퍼스&rsquo;</b>라면 새 학교 학생도 바로 추천에 나와요.
+            <br />
+            원하지 않으면 <b className="font-semibold text-ink">설정 → 매칭 조건</b>에서 학교를 빼면 돼요.
+          </p>
+        </div>
+        <div className="overflow-hidden rounded-card border border-brick/30 bg-brick-wash">
+          <div className="px-5 pb-4 pt-5 text-center">
+            <p className="inline-block rounded-full border border-brick/25 px-3 py-1 text-[12px] font-semibold tracking-wide text-brick">
+              🎁 친구 초대 이벤트 · 인원 제한 없음
+            </p>
+            <p className="mt-3 font-serif text-[22px] font-semibold leading-tight text-ink">
+              내 링크로 1명 가입하면
+              <br />
+              <span className="text-[26px] text-brick">슈퍼 라이크 1개</span>
+            </p>
+            <p className="mt-2 text-[13px] leading-relaxed text-ink-soft">1,000원 가치 · 보내면 상대가 좋아요를 안 눌러도 바로 매칭돼요</p>
+          </div>
+          <ol className="grid grid-cols-3 border-t border-brick/20 text-center">
+            {["설정에서 내 초대 링크 복사", "에브리타임에 링크 올리기", "누가 가입하면 슈퍼 라이크 1개"].map((step, i) => (
+              <li key={step} className={i > 0 ? "border-l border-brick/20 px-2 py-3" : "px-2 py-3"}>
+                <span className="num mx-auto flex h-6 w-6 items-center justify-center rounded-full border border-ink/20 text-[12.5px] font-semibold text-ink">
+                  {i + 1}
+                </span>
+                <span className="mt-1.5 block text-[12px] leading-snug text-ink-soft">{step}</span>
+              </li>
+            ))}
+          </ol>
+          <p className="border-t border-brick/20 px-4 py-2 text-center text-[12px] text-ink-faint">
+            모든 학교 학생 인정 · 가입한 사람의 사진 검수가 끝나면 지급
+          </p>
+        </div>
+        <p className="mt-4 text-[12.5px] leading-relaxed text-ink-faint">
+          가입한 사람에게는 누가 초대했는지 보이지 않아요. 탈퇴하고 7일 안에 다시 가입한 계정은 초대로 치지 않아요.
+        </p>
+      </>
+    ),
+    action: { label: "내 초대 링크 받기", href: "/settings#invite" },
+    close: "확인",
+  },
   // 2026-11-14: 대화방 ＋ 버튼(사진 보내기·인스타 아이디 교환) 출시 + 가짜·오타 아이디 영구정지 안내
   "chat-extras-2026-11": {
     title: "대화방에서 사진·인스타를 보낼 수 있어요",

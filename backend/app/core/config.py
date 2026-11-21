@@ -184,7 +184,8 @@ class Settings(BaseSettings):
     referral_start: datetime | None = datetime(2026, 10, 24, 0, 0, tzinfo=KST)
     referral_end: datetime | None = None
     # 초대로 인정하는 학교 (초대받은 사람의 학교 메일 도메인, 쉼표로 여러 개). 비우면 모든 학교
-    referral_schools: str = "khu.ac.kr"
+    # 2026-11-21: 5개 학교 추가와 함께 "모든 학교"로 (예전: khu.ac.kr = 경희대생 초대만)
+    referral_schools: str = ""
     # 한 사람이 초대로 받을 수 있는 슈퍼 라이크 최대 개수. 0 = 한도 없음 (2026-10-24 결정)
     referral_max_rewards: int = 0
     # 탈퇴 후 이 일수 안에 다시 가입한 계정은 초대로 치지 않는다 (2026-10-24: "재가입 전부 제외" → "7일 안 재가입만 제외")

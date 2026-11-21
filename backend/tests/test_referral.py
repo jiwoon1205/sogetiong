@@ -175,12 +175,18 @@ def test_invitee_never_sees_referrer_and_admin_does(monkeypatch, sent_codes, db)
 # ---------- 2026-11-07: 경희대생 초대만, 무기한 ----------
 
 
-def test_default_is_endless_and_khu_only(monkeypatch, sent_codes, db):
-    """기본 설정: 끝나는 날 없음 + 초대받은 사람이 경희대생일 때만 초대로 기록."""
+def test_default_is_endless_and_all_schools():
+    """기본 설정 (2026-11-21~): 끝나는 날 없음 + 모든 학교 학생의 가입을 초대로 인정 (예전: 경희대생만)."""
+    s = get_settings()
+    assert s.referral_end is None and s.referral_school_set == set()
+
+
+def test_referral_schools_limits_invitees(monkeypatch, sent_codes, db):
+    """REFERRAL_SCHOOLS를 적으면 그 학교 학생이 가입했을 때만 초대로 기록 (2026-11-07~11-21의 경희대 한정)."""
     from tests.test_schools import KHU, _open_khu
 
     s = get_settings()
-    assert s.referral_end is None and s.referral_school_set == {"khu.ac.kr"}
+    monkeypatch.setattr(s, "referral_schools", "khu.ac.kr")
     monkeypatch.setattr(s, "referral_start", utcnow() - timedelta(days=1))
     _open_khu(monkeypatch, db)
     admin = admin_login(db)

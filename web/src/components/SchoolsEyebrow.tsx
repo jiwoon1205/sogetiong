@@ -1,11 +1,17 @@
 "use client";
 
 import { useUniversities } from "@/components/SchoolEmail";
+import { shortSchoolName } from "@/lib/format";
 
 /** 첫 화면 맨 위 "○○ 재학생 전용" (2026-10-24 경희대 확장).
- *  열린 학교 이름을 서버에서 받아 보여준다. 받기 전·못 받으면 지금처럼 한국외대만. */
+ *  열린 학교 이름을 서버에서 받아 보여준다. 받기 전·못 받으면 지금처럼 한국외대만.
+ *  2026-11-21: 학교가 3개를 넘으면 전체 이름은 너무 길어서 짧은 이름으로 ("한국외대 · 경희대 · 고려대 …") */
 export function SchoolsEyebrow() {
   const universities = useUniversities();
-  const names = universities.length ? universities.map((u) => u.name).join(" · ") : "한국외국어대학교";
-  return <p className="eyebrow mb-6">{names} 재학생 전용</p>;
+  const names = !universities.length
+    ? "한국외국어대학교"
+    : universities.length <= 3
+      ? universities.map((u) => u.name).join(" · ")
+      : universities.map((u) => shortSchoolName(u.name)).join(" · ");
+  return <p className="eyebrow mb-6 leading-relaxed">{names} 재학생 전용</p>;
 }

@@ -41,6 +41,18 @@ def multi_school(db: Session) -> bool:
     return len(open_university_ids(db)) > 1
 
 
+def new_schools_open(db: Session) -> bool:
+    """2026-11-21에 추가한 학교 중 하나라도 열려 있나? → 새 학교 공지 팝업 (announcement_service.NEW_SCHOOLS_NOTICE)."""
+    from app.services.announcement_service import NEW_SCHOOL_DOMAINS
+
+    return (
+        db.query(University.id)
+        .filter(University.active.is_(True), University.email_domain.in_(NEW_SCHOOL_DOMAINS))
+        .first()
+        is not None
+    )
+
+
 def visible_university_ids(db: Session, viewer: User) -> set[uuid.UUID]:
     """이 사람이 추천에서 볼 수 있는 학교 (매칭 조건 캠퍼스로 고를 수 있는 학교도 같다)."""
     open_ids = open_university_ids(db)
