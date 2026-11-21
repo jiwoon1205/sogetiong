@@ -33,10 +33,11 @@ from app.services import membership_service, vip_service
 # 2026-11-07: 경희대 오픈·친구 초대(11/6까지) 공지를 내리고 → 여성 회원 무료 + 경희대 친구 초대 이벤트(무기한) 공지
 # 2026-11-14: 경희대 친구 초대 이벤트 공지 팝업을 내림 (사용자 결정) → 공지 없음
 # 2026-11-14: 대화방 ＋ 버튼(사진·인스타 아이디 교환) 출시 + 가짜·오타 아이디 영구정지 안내
-CURRENT: str | None = "chat-extras-2026-11"
+# 2026-11-22: 공지 팝업 모두 끔 (사용자 결정)
+CURRENT: str | None = None
 # 학교가 둘 이상 열려 있을 때 CURRENT 대신 보여주는 공지. 2026-11-07: 학교 수와 상관없이 같은 공지 → CURRENT와 같게
 # (예전: 경희대 오픈 공지 "khu-event-2026-10", 2026-11-07~11-14: "female-free-2026-11")
-SCHOOL_OPEN_NOTICE: str | None = "chat-extras-2026-11"
+SCHOOL_OPEN_NOTICE: str | None = None
 
 
 # 공지를 하루 한 번씩 다시 보여준다 (2026-10-25 사용자 결정). False면 예전처럼 계정당 한 번
@@ -50,7 +51,8 @@ DAILY_SEPARATOR = "@"
 # 5개 학교 추가 공지 (2026-11-21): 아래 학교 중 하나라도 열리면(OPEN_SCHOOLS) 자동으로 이 공지가 뜬다
 # → 오픈 날 코드를 다시 배포할 필요 없음. 내용: 학교 추가 + 친구 초대(링크로 가입하면 슈퍼 라이크 1개).
 # 기능 소개 공지가 아니라서 신규 가입자에게도 뜬다 (CURRENT_FOR_JOINED_BEFORE를 적용하지 않음). 끄려면 None
-NEW_SCHOOLS_NOTICE: str | None = "schools-2026-11"
+# 2026-11-22: 끔 (사용자 결정, 원래 "schools-2026-11"). 다시 켜려면 이름을 되돌린다 (화면 내용은 그대로 남아 있음)
+NEW_SCHOOLS_NOTICE: str | None = None
 NEW_SCHOOL_DOMAINS = frozenset(
     {
         "korea.ac.kr", "uos.ac.kr", "seoil.ac.kr", "sungshin.ac.kr", "dongduk.ac.kr",

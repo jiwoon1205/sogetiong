@@ -129,14 +129,18 @@ export default function NoteRoomPage() {
                 rows={1}
                 placeholder="쪽지 보내기"
                 aria-label="쪽지"
-                className="max-h-32 min-h-[40px] flex-1 resize-none bg-transparent py-2 text-[15px] outline-none"
+                className="max-h-32 min-h-[40px] flex-1 resize-none bg-transparent py-2 text-[16px] leading-snug text-ink placeholder:text-ink-faint focus:outline-none sm:text-[15px]"
               />
               <button
                 type="submit"
+                aria-label="보내기"
                 disabled={sending || !text.trim()}
-                className="mb-0.5 h-9 shrink-0 rounded-full bg-ink px-4 text-[14px] font-medium text-paper disabled:opacity-30"
+                onPointerDown={(e) => e.preventDefault()}
+                className="mb-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-ink text-paper transition-opacity disabled:opacity-20"
               >
-                보내기
+                <svg viewBox="0 0 16 16" className="h-4 w-4" aria-hidden>
+                  <path d="M8 13V3M3.5 7.5L8 3l4.5 4.5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
               </button>
             </div>
           </form>

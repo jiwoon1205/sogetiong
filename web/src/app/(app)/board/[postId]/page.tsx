@@ -6,7 +6,7 @@ import { useCallback, useEffect, useState } from "react";
 import { AuthorLine } from "@/components/board/AuthorLine";
 import { BoardReportModal, type BoardReportTarget } from "@/components/board/BoardReportModal";
 import { ProfileSheet } from "@/components/board/ProfileSheet";
-import { Button, Notice, Spinner, Textarea } from "@/components/ui";
+import { Notice, Spinner } from "@/components/ui";
 import { api, errorMessage } from "@/lib/api";
 import { BOARD_NAMES, type BoardComment, type BoardMe, type BoardPost } from "@/lib/board";
 import { timeAgo } from "@/lib/format";
@@ -47,6 +47,7 @@ export default function PostPage() {
       const c = await api<BoardComment>(`/board/posts/${postId}/comments`, { method: "POST", body: { body: text } });
       setComments((list) => [...list, c]);
       setText("");
+      requestAnimationFrame(() => window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" }));
     } catch (e) {
       setSendError(errorMessage(e));
     } finally {
@@ -132,18 +133,54 @@ export default function PostPage() {
           ))}
         </ul>
 
-        {banned ? (
-          <p className="mt-6 text-[13px] text-brick">게시판 이용 정지 중에는 댓글을 쓸 수 없어요.</p>
-        ) : (
-          <div className="mt-6 space-y-2">
-            <Textarea value={text} rows={2} maxLength={me?.config.comment_max ?? 500} placeholder="댓글 쓰기" onChange={(e) => setText(e.target.value)} />
-            {sendError && <p className="text-[13px] text-brick">{sendError}</p>}
-            <Button size="sm" className="w-full" loading={sending} disabled={!text.trim()} onClick={addComment}>
-              댓글 달기
-            </Button>
-          </div>
-        )}
+        {banned && <p className="mt-6 text-[13px] text-brick">게시판 이용 정지 중에는 댓글을 쓸 수 없어요.</p>}
+        {/* 아래에 떠 있는 댓글 칸에 마지막 댓글이 가리지 않게 */}
+        {!banned && <div className="h-20" aria-hidden />}
       </section>
+
+      {/* 댓글 쓰기 (2026-11-22): 채팅 입력창처럼 화면 아래에 한 줄로 붙어 있다. 휴대폰은 아래 탭 바로 위 */}
+      {!banned && (
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (text.trim() && !sending) void addComment();
+          }}
+          className="fixed inset-x-0 bottom-[calc(4.5rem_+_env(safe-area-inset-bottom))] z-20 border-t border-line bg-paper px-4 py-2 sm:bottom-0 sm:pb-[calc(0.5rem_+_env(safe-area-inset-bottom))]"
+        >
+          <div className="mx-auto max-w-app">
+            {sendError && <p className="mb-1.5 px-1 text-[12.5px] text-brick">{sendError}</p>}
+            {/* 대화방 입력창과 같은 모양 (2026-11-22) */}
+            <div className="flex items-end gap-1.5 rounded-[24px] border border-line bg-paper-card py-1 pl-4 pr-1 transition-colors focus-within:border-ink-soft">
+              <textarea
+                value={text}
+                rows={1}
+                maxLength={me?.config.comment_max ?? 500}
+                placeholder="댓글 달기"
+                aria-label="댓글"
+                onChange={(e) => {
+                  setText(e.target.value);
+                  // 줄이 늘면 칸도 조금 늘어난다 (최대 약 4줄)
+                  e.target.style.height = "auto";
+                  e.target.style.height = `${Math.min(e.target.scrollHeight, 96)}px`;
+                }}
+                // 글자 16px: 아이폰은 이보다 작으면 누를 때 화면을 확대한다
+                className="max-h-24 min-h-[40px] flex-1 resize-none bg-transparent py-2 text-[16px] leading-snug text-ink placeholder:text-ink-faint focus:outline-none sm:text-[15px]"
+              />
+              <button
+                type="submit"
+                aria-label="댓글 등록"
+                disabled={sending || !text.trim()}
+                onPointerDown={(e) => e.preventDefault()}
+                className="mb-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-ink text-paper transition-opacity disabled:opacity-20"
+              >
+                <svg viewBox="0 0 16 16" className="h-4 w-4" aria-hidden>
+                  <path d="M8 13V3M3.5 7.5L8 3l4.5 4.5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </button>
+            </div>
+          </div>
+        </form>
+      )}
 
       {me && (
         <ProfileSheet
