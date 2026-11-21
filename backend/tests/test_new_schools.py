@@ -78,10 +78,11 @@ def test_womens_university_signup_is_always_female(monkeypatch, sent_codes, db):
 def test_new_schools_notice_shows_when_any_new_school_opens(monkeypatch, sent_codes, db):
     a = signup(sent_codes, db, "old@hufs.ac.kr")
     before = a.get("/api/v1/me").json()["announcement"]
-    assert before != announcement_service.NEW_SCHOOLS_NOTICE  # 닫혀 있으면 안 뜸
+    assert not (before or "").startswith(announcement_service.NEW_SCHOOLS_NOTICE)  # 닫혀 있으면 안 뜸
 
     _open(monkeypatch, db, "khu.ac.kr,uos.ac.kr")
-    key = announcement_service.NEW_SCHOOLS_NOTICE
+    key = announcement_service.current_key(True, new_schools=True)
+    assert key.startswith(announcement_service.NEW_SCHOOLS_NOTICE)
     assert a.get("/api/v1/me").json()["announcement"] == key
     assert a.post("/api/v1/me/announcement/seen", json={"key": key}).status_code == 200
     assert a.get("/api/v1/me").json()["announcement"] is None
@@ -130,3 +131,28 @@ def test_subdomain_and_alias_email_find_the_school(monkeypatch, sent_codes, db):
     # "ac.kr"만 같은 다른 주소는 안 된다
     r = UserClient().post("/api/v1/auth/email/send-code", json={"email": "x@fake.ac.kr"})
     assert r.status_code == 400
+
+
+def test_new_schools_notice_repeats_every_two_days_for_two_weeks(sent_codes, db):
+    """2일에 한 번씩 모두에게 (본 사람에게도), 2주가 지나면 계정당 한 번으로 (2026-11-21)."""
+    from datetime import datetime, timedelta
+
+    from app.core.time import KST
+
+    svc = announcement_service
+    a = signup(sent_codes, db, "rep@hufs.ac.kr")
+    user = db.query(User).filter(User.email == "rep@hufs.ac.kr").one()
+    day = lambda d: datetime.combine(svc.NEW_SCHOOLS_REPEAT_FROM + timedelta(days=d), datetime.min.time(), KST).replace(hour=12)
+
+    k0 = svc.pending(user, day(0), multi_school=True, new_schools=True)
+    assert k0 == f"{svc.NEW_SCHOOLS_NOTICE}@{svc.NEW_SCHOOLS_REPEAT_FROM.isoformat()}"
+    user.announcement_seen = k0
+    assert svc.pending(user, day(1), multi_school=True, new_schools=True) is None  # 같은 2일 안에는 다시 안 뜸
+    k2 = svc.pending(user, day(2), multi_school=True, new_schools=True)
+    assert k2 is not None and k2 != k0  # 2일 뒤 다시 뜸
+    user.announcement_seen = k2
+    last = (svc.NEW_SCHOOLS_REPEAT_UNTIL - svc.NEW_SCHOOLS_REPEAT_FROM).days
+    assert svc.pending(user, day(last), multi_school=True, new_schools=True) is not None  # 마지막 날까지
+    # 기간이 끝나면: 한 번이라도 본 사람에게는 안 뜸
+    assert svc.pending(user, day(last + 1), multi_school=True, new_schools=True) is None
+    assert a is not None
