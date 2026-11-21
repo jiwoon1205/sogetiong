@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { AuthorLine } from "@/components/board/AuthorLine";
 import { BoardReportModal, type BoardReportTarget } from "@/components/board/BoardReportModal";
 import { ProfileSheet } from "@/components/board/ProfileSheet";
@@ -23,6 +23,9 @@ export default function PostPage() {
   const [sendError, setSendError] = useState("");
   const [sheet, setSheet] = useState<string | null>(null);
   const [report, setReport] = useState<BoardReportTarget | null>(null);
+  // 답글 쓰는 중인 댓글 (2026-11-22)
+  const [replyTo, setReplyTo] = useState<BoardComment | null>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
 
   const load = useCallback(() => {
     api<{ post: BoardPost; comments: BoardComment[] }>(`/board/posts/${postId}`)
@@ -44,15 +47,31 @@ export default function PostPage() {
     setSending(true);
     setSendError("");
     try {
-      const c = await api<BoardComment>(`/board/posts/${postId}/comments`, { method: "POST", body: { body: text } });
+      const c = await api<BoardComment>(`/board/posts/${postId}/comments`, {
+        method: "POST",
+        body: { body: text, reply_to_id: replyTo?.id ?? null },
+      });
       setComments((list) => [...list, c]);
       setText("");
-      requestAnimationFrame(() => window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" }));
+      if (inputRef.current) inputRef.current.style.height = "auto";
+      if (replyTo) {
+        setReplyTo(null);
+        // 방금 단 답글이 보이게
+        requestAnimationFrame(() => document.getElementById(`c-${c.id}`)?.scrollIntoView({ behavior: "smooth", block: "center" }));
+      } else {
+        requestAnimationFrame(() => window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" }));
+      }
     } catch (e) {
       setSendError(errorMessage(e));
     } finally {
       setSending(false);
     }
+  }
+
+  function startReply(c: BoardComment) {
+    setReplyTo(c);
+    setSendError("");
+    inputRef.current?.focus();
   }
 
   async function removePost() {
@@ -107,28 +126,35 @@ export default function PostPage() {
       <section className="py-5">
         <p className="eyebrow mb-3">댓글 {comments.length}</p>
         <ul className="space-y-4">
-          {comments.map((c) => (
-            <li key={c.id} className="space-y-1.5">
-              <AuthorLine
-                author={c.author}
-                size={28}
-                onClick={!c.mine && c.author.id ? () => setSheet(c.author.id) : undefined}
-                badge={c.by_post_author ? <span className="shrink-0 rounded bg-ink px-1.5 py-0.5 text-[10.5px] text-paper">글쓴이</span> : undefined}
-              />
-              <p className="whitespace-pre-wrap break-words pl-[38px] text-[14.5px] leading-relaxed">{c.body}</p>
-              <div className="flex items-center gap-3 pl-[38px] text-[12px] text-ink-faint">
-                <span>{timeAgo(c.created_at)}</span>
-                {c.mine ? (
-                  <button onClick={() => removeComment(c.id)} className="underline underline-offset-4">
-                    삭제
-                  </button>
-                ) : (
-                  <button onClick={() => setReport({ type: "COMMENT", id: c.id })} className="underline underline-offset-4">
-                    신고
-                  </button>
-                )}
-                {c.hidden && <span className="text-brick">신고로 숨겨짐</span>}
-              </div>
+          {threads(comments).map(({ root, rootId, replies }) => (
+            <li key={rootId} className="space-y-3">
+              {root ? (
+                <CommentItem
+                  c={root}
+                  onAuthor={setSheet}
+                  onReply={banned ? undefined : startReply}
+                  onDelete={removeComment}
+                  onReport={(id) => setReport({ type: "COMMENT", id })}
+                />
+              ) : (
+                <p className="text-[13.5px] text-ink-faint">삭제된 댓글이에요.</p>
+              )}
+              {replies.length > 0 && (
+                <ul className="space-y-3 border-l-2 border-line pl-4">
+                  {replies.map((r) => (
+                    <li key={r.id}>
+                      <CommentItem
+                        c={r}
+                        small
+                        onAuthor={setSheet}
+                        onReply={banned ? undefined : startReply}
+                        onDelete={removeComment}
+                        onReport={(id) => setReport({ type: "COMMENT", id })}
+                      />
+                    </li>
+                  ))}
+                </ul>
+              )}
             </li>
           ))}
         </ul>
@@ -149,13 +175,24 @@ export default function PostPage() {
         >
           <div className="mx-auto max-w-app">
             {sendError && <p className="mb-1.5 px-1 text-[12.5px] text-brick">{sendError}</p>}
+            {replyTo && (
+              <div className="mb-1.5 flex items-center justify-between px-1 text-[12.5px] text-ink-soft">
+                <span className="truncate">
+                  <b className="font-semibold text-ink">{replyTo.author.nickname}</b>님에게 답글 쓰는 중
+                </span>
+                <button type="button" onClick={() => setReplyTo(null)} className="shrink-0 text-ink-faint underline underline-offset-4">
+                  취소
+                </button>
+              </div>
+            )}
             {/* 대화방 입력창과 같은 모양 (2026-11-22) */}
             <div className="flex items-end gap-1.5 rounded-[24px] border border-line bg-paper-card py-1 pl-4 pr-1 transition-colors focus-within:border-ink-soft">
               <textarea
+                ref={inputRef}
                 value={text}
                 rows={1}
                 maxLength={me?.config.comment_max ?? 500}
-                placeholder="댓글 달기"
+                placeholder={replyTo ? "답글 달기" : "댓글 달기"}
                 aria-label="댓글"
                 onChange={(e) => {
                   setText(e.target.value);
@@ -193,6 +230,76 @@ export default function PostPage() {
         />
       )}
       <BoardReportModal target={report} onClose={() => setReport(null)} />
+    </div>
+  );
+}
+
+/** 댓글을 "맨 위 댓글 + 그 밑 답글들"로 묶는다. 맨 위 댓글이 지워졌으면 root = null ("삭제된 댓글이에요") */
+function threads(comments: BoardComment[]) {
+  const roots = comments.filter((c) => !c.parent_id);
+  const byRoot = new Map<string, BoardComment[]>();
+  for (const c of comments) {
+    if (!c.parent_id) continue;
+    byRoot.set(c.parent_id, [...(byRoot.get(c.parent_id) ?? []), c]);
+  }
+  const out: { root: BoardComment | null; rootId: string; replies: BoardComment[] }[] = roots.map((r) => ({
+    root: r,
+    rootId: r.id,
+    replies: byRoot.get(r.id) ?? [],
+  }));
+  // 맨 위 댓글이 지워진(또는 숨겨진) 답글 묶음
+  for (const [rootId, replies] of byRoot) {
+    if (!roots.some((r) => r.id === rootId)) out.push({ root: null, rootId, replies });
+  }
+  return out.sort((a, b) => Date.parse((a.root ?? a.replies[0]).created_at) - Date.parse((b.root ?? b.replies[0]).created_at));
+}
+
+function CommentItem({
+  c,
+  small,
+  onAuthor,
+  onReply,
+  onDelete,
+  onReport,
+}: {
+  c: BoardComment;
+  small?: boolean;
+  onAuthor: (profileId: string) => void;
+  onReply?: (c: BoardComment) => void;
+  onDelete: (id: string) => void;
+  onReport: (id: string) => void;
+}) {
+  const pad = small ? "pl-[34px]" : "pl-[38px]";
+  return (
+    <div id={`c-${c.id}`} className="space-y-1.5">
+      <AuthorLine
+        author={c.author}
+        size={small ? 24 : 28}
+        onClick={!c.mine && c.author.id ? () => onAuthor(c.author.id!) : undefined}
+        badge={c.by_post_author ? <span className="shrink-0 rounded bg-ink px-1.5 py-0.5 text-[10.5px] text-paper">글쓴이</span> : undefined}
+      />
+      <p className={`whitespace-pre-wrap break-words ${pad} text-[14.5px] leading-relaxed`}>
+        {c.reply_to && <span className="mr-1 font-semibold text-ink-soft">@{c.reply_to}</span>}
+        {c.body}
+      </p>
+      <div className={`flex items-center gap-3 ${pad} text-[12px] text-ink-faint`}>
+        <span>{timeAgo(c.created_at)}</span>
+        {onReply && (
+          <button onClick={() => onReply(c)} className="underline underline-offset-4">
+            답글
+          </button>
+        )}
+        {c.mine ? (
+          <button onClick={() => onDelete(c.id)} className="underline underline-offset-4">
+            삭제
+          </button>
+        ) : (
+          <button onClick={() => onReport(c.id)} className="underline underline-offset-4">
+            신고
+          </button>
+        )}
+        {c.hidden && <span className="text-brick">신고로 숨겨짐</span>}
+      </div>
     </div>
   );
 }

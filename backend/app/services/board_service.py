@@ -394,18 +394,40 @@ def comments_of(db: Session, viewer_id: uuid.UUID, post_id: uuid.UUID) -> list[B
     return [c for c in rows if c.hidden_at is None or c.author_user_id == viewer_id]
 
 
-def create_comment(db: Session, user: User, profile: BoardProfile, post: BoardPost, body: str) -> BoardComment:
+def create_comment(
+    db: Session, user: User, profile: BoardProfile, post: BoardPost, body: str, reply_to_id: uuid.UUID | None = None
+) -> BoardComment:
+    """reply_to_id가 있으면 그 댓글에 다는 답글 (2026-11-22). 답글에 단 답글도 맨 위 댓글 밑에 붙는다."""
     require_not_banned(profile)
     body = _clean(body, COMMENT_MAX, "댓글")
+    target: BoardComment | None = None
+    if reply_to_id is not None:
+        target = db.get(BoardComment, reply_to_id)
+        if target is None or target.post_id != post.id or target.deleted_at is not None:
+            raise BoardError("답글을 달 댓글을 찾을 수 없어요.", "NOT_FOUND", 404)
+        if target.author_user_id in blocked_ids(db, user.id):
+            raise BoardError("답글을 달 수 없는 댓글이에요.", "BLOCKED", 403)
     today = db.query(func.count(BoardComment.id)).filter(
         BoardComment.author_user_id == user.id, BoardComment.created_at >= kst_day_start()
     ).scalar()
     if today >= DAILY_COMMENTS:
         raise BoardError(f"댓글은 하루 {DAILY_COMMENTS}개까지 쓸 수 있어요.", "DAILY_LIMIT", 429)
-    comment = BoardComment(post_id=post.id, author_user_id=user.id, body=body)
+    comment = BoardComment(
+        post_id=post.id,
+        author_user_id=user.id,
+        body=body,
+        parent_id=(target.parent_id or target.id) if target else None,
+        reply_to_user_id=target.author_user_id if target else None,
+    )
     db.add(comment)
     post.comment_count = (post.comment_count or 0) + 1
     db.flush()
+    # 답글을 받은 사람에게 알림 (글쓴이와 같은 사람이면 아래 글쓴이 알림 하나만)
+    if target is not None and target.author_user_id not in (user.id, post.author_user_id):
+        notification_service.notify(
+            db, target.author_user_id, "BOARD_COMMENT", "내 댓글에 답글이 달렸어요", post.title[:60], post.id
+        )
+        push_service.queue(db, target.author_user_id, push_service.BOARD_COMMENT, post.id)
     if post.author_user_id != user.id:
         notification_service.notify(
             db, post.author_user_id, "BOARD_COMMENT", "내 글에 댓글이 달렸어요", post.title[:60], post.id
@@ -449,6 +471,8 @@ def comment_view(comment: BoardComment, authors: dict, viewer_id: uuid.UUID, pos
         "author": authors.get(comment.author_user_id),
         "mine": comment.author_user_id == viewer_id,
         "by_post_author": comment.author_user_id == post_author_id,
+        "parent_id": str(comment.parent_id) if comment.parent_id else None,
+        "reply_to": (authors.get(comment.reply_to_user_id) or {}).get("nickname") if comment.reply_to_user_id else None,
         "hidden": comment.hidden_at is not None,
         "created_at": as_utc(comment.created_at).isoformat(),
     }

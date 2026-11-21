@@ -66,6 +66,10 @@ export type BoardComment = {
   author: BoardAuthor;
   mine: boolean;
   by_post_author: boolean;
+  /** 답글이면 맨 위 댓글 id (2026-11-22) */
+  parent_id: string | null;
+  /** 누구에게 단 답글인지 (닉네임) */
+  reply_to: string | null;
   hidden: boolean;
   created_at: string;
 };

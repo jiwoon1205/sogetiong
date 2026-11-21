@@ -63,6 +63,7 @@ def _comment_admin_view(c: BoardComment, authors: dict) -> dict:
     return {
         "id": str(c.id),
         "post_id": str(c.post_id),
+        "parent_id": str(c.parent_id) if c.parent_id else None,
         "body": c.body,
         "author": authors.get(c.author_user_id),
         "author_user_id": str(c.author_user_id),

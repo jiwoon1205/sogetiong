@@ -185,7 +185,8 @@ def get_post(post_id: uuid.UUID, current: CurrentUser = Depends(get_current_user
     except BoardError as exc:
         raise _err(exc) from exc
     comments = board_service.comments_of(db, current.id, post.id)
-    authors = board_service.public_views(db, {post.author_user_id} | {c.author_user_id for c in comments})
+    people = {post.author_user_id} | {c.author_user_id for c in comments} | {c.reply_to_user_id for c in comments if c.reply_to_user_id}
+    authors = board_service.public_views(db, people)
     return {
         "post": board_service.post_view(post, authors, current.id),
         "comments": [board_service.comment_view(c, authors, current.id, post.author_user_id) for c in comments],
@@ -208,11 +209,11 @@ def create_comment(post_id: uuid.UUID, payload: CommentCreate, current: CurrentU
     profile = _profile(db, current)
     try:
         post = board_service.get_post(db, current.id, post_id)
-        comment = board_service.create_comment(db, current.user, profile, post, payload.body)
+        comment = board_service.create_comment(db, current.user, profile, post, payload.body, payload.reply_to_id)
     except BoardError as exc:
         raise _err(exc) from exc
     db.commit()
-    authors = board_service.public_views(db, {current.id})
+    authors = board_service.public_views(db, {current.id} | ({comment.reply_to_user_id} if comment.reply_to_user_id else set()))
     return board_service.comment_view(comment, authors, current.id, post.author_user_id)
 
 

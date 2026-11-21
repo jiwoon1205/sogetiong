@@ -254,3 +254,30 @@ def test_men_without_membership_can_use_board(sent_codes, db, monkeypatch):
     _make(w, "봄바람")
     assert w.post(f"/api/v1/board/posts/{post['id']}/comments", json={"body": "hi"}).status_code == 201
     assert m.post(f"/api/v1/board/posts/{post['id']}/comments", json={"body": "고마워요"}).status_code == 201
+
+
+def test_reply_to_reply_stays_under_top_comment(sent_codes, db):
+    """답글에 답글 (2026-11-22): 모두 맨 위 댓글 밑에 붙고, 누구에게 단 답글인지 보인다. 답글 받은 사람에게 알림."""
+    admin, w, m = _people(sent_codes, db)
+    _make(w, "글쓴이")
+    _make(m, "가을")
+    third = ready_user(sent_codes, db, admin, "t@hufs.ac.kr")
+    _make(third, "나무")
+    post = _post(w)
+    url = f"/api/v1/board/posts/{post['id']}/comments"
+    top = m.post(url, json={"body": "첫 댓글"}).json()
+    r1 = third.post(url, json={"body": "답글", "reply_to_id": top["id"]})
+    assert r1.status_code == 201 and r1.json()["parent_id"] == top["id"] and r1.json()["reply_to"] == "가을"
+    r2 = m.post(url, json={"body": "답글의 답글", "reply_to_id": r1.json()["id"]})
+    assert r2.status_code == 201 and r2.json()["parent_id"] == top["id"] and r2.json()["reply_to"] == "나무"
+    # 다른 글의 댓글에는 답글 못 닮
+    other = _post(w, title="다른 글")
+    bad = m.post(f"/api/v1/board/posts/{other['id']}/comments", json={"body": "x", "reply_to_id": top["id"]})
+    assert bad.status_code == 404
+    comments = w.get(f"/api/v1/board/posts/{post['id']}").json()["comments"]
+    assert [c["parent_id"] for c in comments] == [None, top["id"], top["id"]]
+    assert w.get(f"/api/v1/board/posts/{post['id']}").json()["post"]["comment_count"] == 3
+    # 알림: 가을(첫 댓글 → 나무가 답글), 나무(가을이 답글)
+    for email in ("m@hufs.ac.kr", "t@hufs.ac.kr"):
+        uid = _user(db, email).id
+        assert db.query(Notification).filter(Notification.user_id == uid, Notification.title == "내 댓글에 답글이 달렸어요").count() == 1

@@ -25,6 +25,8 @@ class PostCreate(BaseModel):
 
 class CommentCreate(BaseModel):
     body: str = Field(max_length=2000)
+    # 답글이면 답할 댓글 id (2026-11-22)
+    reply_to_id: uuid.UUID | None = None
 
 
 class BoardReportCreate(BaseModel):
