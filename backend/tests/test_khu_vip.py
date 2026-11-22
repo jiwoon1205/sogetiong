@@ -38,11 +38,30 @@ def _user(db, email):
     return db.query(User).filter(User.email == email).one()
 
 
+def _joined_yesterday(db, email):
+    u = _user(db, email)
+    u.created_at = utcnow() - timedelta(days=1)
+    db.commit()
+
+
+def test_new_signup_sees_popup_from_next_visit_day(monkeypatch, sent_codes, db):
+    """가입한 날에는 안 뜨고, 다음 날 접속부터 뜬다 (2026-11-22)."""
+    _setup(monkeypatch, db)
+    admin_login(db)
+    k = signup(sent_codes, db, "k@khu.ac.kr", school=KHU)
+    me = k.get("/api/v1/me").json()
+    assert me["khu_vip"]["count"] == 0 and me["announcement"] is None
+    _joined_yesterday(db, "k@khu.ac.kr")
+    assert k.get("/api/v1/me").json()["announcement"].startswith("khu-vip10@")
+
+
 def test_popup_only_for_khu_students(monkeypatch, sent_codes, db):
     _setup(monkeypatch, db)
     admin_login(db)
     k = signup(sent_codes, db, "k@khu.ac.kr", school=KHU)
     h = signup(sent_codes, db, "h@hufs.ac.kr")
+    _joined_yesterday(db, "k@khu.ac.kr")
+    _joined_yesterday(db, "h@hufs.ac.kr")
     me = k.get("/api/v1/me").json()
     assert me["khu_vip"] == {"count": 0, "goal": 2, "done": False}
     key = me["announcement"]

@@ -123,7 +123,15 @@ def daily_payment_key(user: User, now: datetime | None = None) -> str | None:
 
 # 경희대생 전용 공지 (2026-11-22): 경희대 친구 10명 초대 → 평생 VIP. 하루 한 번 ("khu-vip10@날짜").
 # 경희대 학생이고 아직 평생 VIP가 아닌 사람에게만 (khu_vip=True로 알려 준다). 설문(투표)보다 뒤 — 설문은 화면 전체를 먼저 차지한다
+# 신규 가입자: 가입한 날에는 안 뜨고, 다음 날 이후 다시 접속했을 때부터 뜬다 (2026-11-22 사용자 결정)
 KHU_VIP_NOTICE: str | None = "khu-vip10"
+
+
+def joined_today(user: User, now: datetime | None = None) -> bool:
+    """오늘(한국 날짜) 가입했나. 경희대 평생 VIP 공지는 가입한 날에는 안 띄우고, 다음 날 접속부터 띄운다 (2026-11-22)."""
+    if user.created_at is None:
+        return False
+    return kst_today(as_utc(user.created_at)) == kst_today(now or utcnow())
 
 
 def khu_vip_key(now: datetime | None = None) -> str | None:
@@ -145,7 +153,7 @@ def pending(
     daily = daily_payment_key(user, now)
     if daily is not None and user.announcement_seen != daily:
         return daily
-    khu = khu_vip_key(now) if khu_vip else None
+    khu = khu_vip_key(now) if khu_vip and not joined_today(user, now) else None
     if khu is not None and user.announcement_seen != khu:
         return khu
     current = current_key(multi_school, now, new_schools=new_schools)
