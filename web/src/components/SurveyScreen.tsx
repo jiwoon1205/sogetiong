@@ -5,39 +5,41 @@ import { useState } from "react";
 import { AuthFrame } from "@/components/AuthFrame";
 import { Button, Notice, PageTitle, Textarea } from "@/components/ui";
 import { api, errorMessage } from "@/lib/api";
+import { cn } from "@/lib/format";
 
 /**
- * 개선점·바라는 기능 설문 (2026-11-14, 옛 "정식 오픈 전 설문"을 바꿈)
- * - 관리자가 설문을 켜면, 아직 답하지 않은 사람은 로그인·가입 직후 이 화면을 먼저 본다 (SessionGate에서 띄움)
- * - 질문 2개, 둘 다 글로 답한다. 하나 이상 적어야 제출된다
- * - 쓸 말이 없으면 "건너뛰기" → 다시 안 뜬다. 계정당 한 번만
+ * 개선사항 찬반 투표 (2026-11-22): 찾는 관계 '대학교 친구'를 없앨까요?
+ * - 모든 사용자에게, 아직 답하지 않았으면 로그인·가입 직후 이 화면이 먼저 뜬다 (SessionGate에서 띄움)
+ * - 찬성/반대를 꼭 골라야 제출된다. 하고 싶은 말은 선택. 계정당 한 번만
  * - 규칙은 백엔드 app/services/survey_service.py 맨 위 설명
  */
+type Vote = "AGREE" | "DISAGREE";
+
+const CHOICES: { value: Vote; title: string; desc: string }[] = [
+  { value: "AGREE", title: "찬성", desc: "'대학교 친구'를 없애 주세요" },
+  { value: "DISAGREE", title: "반대", desc: "'대학교 친구'를 남겨 주세요" },
+];
+
 export function SurveyScreen({ onDone }: { onDone: () => Promise<void> }) {
   const router = useRouter();
-  const [improvement, setImprovement] = useState("");
-  const [featureRequest, setFeatureRequest] = useState("");
+  const [vote, setVote] = useState<Vote | null>(null);
+  const [comment, setComment] = useState("");
   const [error, setError] = useState("");
-  const [loading, setLoading] = useState<"submit" | "skip" | null>(null);
+  const [loading, setLoading] = useState(false);
 
-  const ready = improvement.trim() !== "" || featureRequest.trim() !== "";
-
-  async function send(skip: boolean) {
-    if (!skip && !ready) {
-      setError("둘 중 하나는 적어주세요. 쓸 말이 없으면 '건너뛰기'를 눌러주세요.");
+  async function send() {
+    if (!vote) {
+      setError("찬성 또는 반대를 골라 주세요.");
       return;
     }
     setError("");
-    setLoading(skip ? "skip" : "submit");
+    setLoading(true);
     try {
-      await api("/me/survey", {
-        method: "POST",
-        body: skip ? { skip: true } : { improvement, feature_request: featureRequest },
-      });
+      await api("/me/survey", { method: "POST", body: { vote, comment } });
       await onDone(); // /me 를 다시 읽으면 설문이 사라지고 원래 화면이 나온다
     } catch (err) {
       setError(errorMessage(err));
-      setLoading(null);
+      setLoading(false);
       // 이미 답했거나 설문이 끝난 경우에도 원래 화면으로 보내준다
       await onDone().catch(() => {});
     }
@@ -56,73 +58,58 @@ export function SurveyScreen({ onDone }: { onDone: () => Promise<void> }) {
         </button>
       }
     >
-      <PageTitle
-        eyebrow="훕팅 의견 설문"
-        title="훕팅을 같이 만들어 주세요"
-        desc="1분이면 끝나요. 적어 주신 의견은 운영자만 보고, 서비스를 고치는 데만 써요. 다른 학생에게는 보이지 않아요."
-      />
+      <PageTitle eyebrow="훕팅 개선사항 투표" title="찾는 관계에서 '대학교 친구'를 없앨까요?" />
 
       <p className="mb-8 rounded-md border border-line bg-paper-deep px-4 py-3 text-[13.5px] leading-relaxed text-ink-soft">
-        훕팅은 <b className="font-semibold text-ink">1인 개발자 혼자</b> 개발/운영하고 있어요. 남겨 주신 의견 하나하나 직접 읽고 반영할게요.
+        많은 분이 찾는 관계의 <b className="font-semibold text-ink">&apos;대학교 친구&apos;를 없애 달라고</b> 요청해 주셨어요. 바꾸기 전에 여러분의 생각을 듣고
+        싶어요. 투표 결과는 운영자만 보고, 다른 학생에게는 보이지 않아요.
       </p>
 
       <form
         onSubmit={(e) => {
           e.preventDefault();
-          void send(false);
+          void send();
         }}
-        className="space-y-8"
+        className="space-y-7"
       >
-        <section className="space-y-3">
-          <Question no={1} title="훕팅에서 불편했거나 개선했으면 하는 점이 있나요?" />
+        <div className="grid grid-cols-2 gap-3" role="radiogroup" aria-label="찬반">
+          {CHOICES.map((c) => (
+            <button
+              key={c.value}
+              type="button"
+              role="radio"
+              aria-checked={vote === c.value}
+              onClick={() => {
+                setVote(c.value);
+                setError("");
+              }}
+              className={cn(
+                "rounded-card border px-4 py-5 text-center transition-colors",
+                vote === c.value ? "border-ink bg-ink text-paper" : "border-line bg-paper-card text-ink hover:border-line-strong",
+              )}
+            >
+              <span className="block text-[18px] font-semibold">{c.title}</span>
+              <span className={cn("mt-1 block text-[13px]", vote === c.value ? "text-paper/80" : "text-ink-soft")}>{c.desc}</span>
+            </button>
+          ))}
+        </div>
+
+        <section className="space-y-2">
+          <p className="text-[14px] font-medium text-ink">하고 싶은 말 (선택)</p>
           <Textarea
-            value={improvement}
-            onChange={(e) => setImprovement(e.target.value)}
+            value={comment}
+            onChange={(e) => setComment(e.target.value)}
             maxLength={1000}
-            placeholder="예) 추천이 너무 빨리 끝나요, 채팅 화면이 불편해요"
-            aria-label="개선했으면 하는 점"
+            placeholder="예) 친구 찾는 사람이 섞여 있어서 헷갈려요"
+            aria-label="하고 싶은 말"
           />
         </section>
-
-        <section className="space-y-3">
-          <Question no={2} title="새로 생겼으면 하는 기능이 있나요?" />
-          <Textarea
-            value={featureRequest}
-            onChange={(e) => setFeatureRequest(e.target.value)}
-            maxLength={1000}
-            placeholder="예) 관심사로 추천받기, 채팅에서 사진 보내기"
-            aria-label="새로 생겼으면 하는 기능"
-          />
-        </section>
-
-        <p className="text-[13px] text-ink-faint">둘 중 하나만 적어도 괜찮아요.</p>
 
         {error && <Notice tone="error">{error}</Notice>}
-        <div className="space-y-2">
-          <Button type="submit" size="lg" className="w-full" loading={loading === "submit"} disabled={loading !== null}>
-            제출하기
-          </Button>
-          <Button
-            type="button"
-            variant="ghost"
-            className="w-full"
-            loading={loading === "skip"}
-            disabled={loading !== null}
-            onClick={() => void send(true)}
-          >
-            건너뛰기
-          </Button>
-        </div>
+        <Button type="submit" size="lg" className="w-full" loading={loading}>
+          투표하기
+        </Button>
       </form>
     </AuthFrame>
-  );
-}
-
-function Question({ no, title }: { no: number; title: string }) {
-  return (
-    <h2 className="flex gap-2 text-[15.5px] font-semibold leading-snug text-ink">
-      <span className="num text-ink-faint">{no}.</span>
-      <span>{title}</span>
-    </h2>
   );
 }

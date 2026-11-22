@@ -1,4 +1,4 @@
-"""사용자 설문 (2026-10-05, 2026-11-14 새 설문). 규칙은 app/services/survey_service.py 맨 위 설명.
+"""사용자 설문 (2026-10-05, 2026-11-14, 2026-11-22 찬반 투표). 규칙은 app/services/survey_service.py 맨 위 설명.
 
 - router       → /api/v1/me/survey        (사용자)
 - admin_router → /api/v1/admin/survey     (관리자: 켜기/끄기, 결과 보기)
@@ -44,8 +44,8 @@ def answer_survey(
         SurveyResponse(
             user_id=current.id,
             survey_key=survey_service.SURVEY_KEY,
-            improvement=payload.improvement,
-            feature_request=payload.feature_request,
+            vote=payload.vote,
+            suggestion=payload.comment,
         )
     )
     try:
@@ -74,34 +74,40 @@ def survey_results(
     admin: CurrentAdmin = Depends(require_permission("surveys:manage")),
     db: Session = Depends(get_db),
 ):
-    """설문 결과 (2026-11-14 새 설문). 닉네임·이메일은 보여주지 않는다 (성별만)."""
+    """찬반 투표 결과 (2026-11-22). 닉네임·이메일은 보여주지 않는다 (성별·지금 찾는 관계만)."""
     rows = (
         db.query(SurveyResponse)
         .filter(SurveyResponse.survey_key == survey_service.SURVEY_KEY)
         .order_by(SurveyResponse.created_at.desc())
         .all()
     )
-    genders = _genders(db, [r.user_id for r in rows])
-    written = [r for r in rows if r.improvement or r.feature_request]
+    ids = [r.user_id for r in rows]
+    genders = _genders(db, ids)
+    goals = dict(db.query(PublicProfile.user_id, PublicProfile.relationship_goal).filter(PublicProfile.user_id.in_(ids))) if ids else {}
+
+    def count(filter_fn) -> dict:
+        picked = [r for r in rows if filter_fn(r)]
+        return {v: sum(1 for r in picked if r.vote == v) for v in survey_service.VOTES}
+
     return {
         "open": survey_service.is_open(db),
         "total": len(rows),
-        "by_gender": {
-            "MALE": sum(1 for r in rows if genders.get(r.user_id) == "MALE"),
-            "FEMALE": sum(1 for r in rows if genders.get(r.user_id) == "FEMALE"),
-        },
-        "written": len(written),
-        "skipped": len(rows) - len(written),
-        # 글을 적은 응답만 (건너뛴 사람은 숫자로만)
-        "responses": [
+        "votes": count(lambda r: True),
+        "by_gender": {g: count(lambda r, g=g: genders.get(r.user_id) == g) for g in ("MALE", "FEMALE")},
+        # 지금 찾는 관계별 (FRIEND = 지금 '대학교 친구'를 고른 사람, NONE = 안 고름)
+        "by_goal": {k: count(lambda r, k=k: (goals.get(r.user_id) or "NONE") == k) for k in ("SERIOUS", "FRIEND", "CASUAL", "NONE")},
+        # 하고 싶은 말을 적은 응답만
+        "comments": [
             {
                 "id": str(r.id),
+                "vote": r.vote,
                 "gender": genders.get(r.user_id),
-                "improvement": r.improvement,
-                "feature_request": r.feature_request,
+                "goal": goals.get(r.user_id),
+                "comment": r.suggestion,
                 "created_at": r.created_at.isoformat(),
             }
-            for r in written
+            for r in rows
+            if r.suggestion
         ],
     }
 

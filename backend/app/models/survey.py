@@ -13,7 +13,7 @@ class AppSetting(Base):
     """관리자 화면에서 켜고 끄는 서비스 설정 (2026-10-05).
 
     서버 .env와 달리 서버를 다시 켜지 않아도 바로 바뀐다.
-    지금은 "survey_open"(설문 받는 중인지) 하나만 쓴다.
+    설문 켜기/끄기: "survey_open:<설문 이름>" (2026-11-22부터 설문마다 따로. 값이 없으면 켜진 것)
     """
 
     __tablename__ = "app_settings"
@@ -29,6 +29,7 @@ class SurveyResponse(Base):
     - 2026-10-05 정식 오픈 전 설문(survey_key "2026-10-launch"): appearance_*, payment_*, suggestion
     - 2026-11-14 개선점·바라는 기능 설문(survey_key "2026-11-feedback"): improvement, feature_request
       둘 다 비어 있으면 "건너뛰기"를 누른 사람
+    - 2026-11-22 "대학교 친구 없애기" 찬반 투표(survey_key "2026-11-friend-goal"): vote(AGREE/DISAGREE), suggestion(하고 싶은 말)
     """
 
     __tablename__ = "survey_responses"
@@ -50,4 +51,6 @@ class SurveyResponse(Base):
     improvement: Mapped[str | None] = mapped_column(Text, nullable=True)
     # (새 설문 2026-11-14) 새로 추가됐으면 하는 기능
     feature_request: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # (찬반 투표 2026-11-22) AGREE = 찬성(없애자) / DISAGREE = 반대(남기자)
+    vote: Mapped[str | None] = mapped_column(String(20), nullable=True)
     created_at: Mapped[datetime] = created_at()
