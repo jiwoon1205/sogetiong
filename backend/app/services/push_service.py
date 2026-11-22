@@ -53,7 +53,8 @@ BOARD_COMMENT = "BOARD_COMMENT"  # 내 글에 댓글. 휴대폰 알림만 (메�
 NOTE = "NOTE"  # 새 쪽지. 휴대폰 알림이 안 되면 메일
 BOARD_BAN = "BOARD_BAN"  # 게시판 이용 정지. 휴대폰 알림이 안 되면 메일
 BOARD_UNBAN = "BOARD_UNBAN"  # 정지 해제. 휴대폰 알림만
-PUSH_ONLY_KINDS = VIP_KINDS + (BOARD_COMMENT, BOARD_UNBAN)
+VIP_LIFETIME = "VIP_LIFETIME"  # 경희대 친구 10명 초대 → 평생 VIP (2026-11-22). 휴대폰 알림만
+PUSH_ONLY_KINDS = VIP_KINDS + (BOARD_COMMENT, BOARD_UNBAN, VIP_LIFETIME)
 
 # 잠금화면에 보이는 글. 상대 닉네임·대화 내용은 절대 넣지 않는다.
 PUSH_TITLE = "훕팅"
@@ -67,6 +68,7 @@ PUSH_BODY = {
     NOTE: "새 쪽지가 왔어요",
     BOARD_BAN: "게시판 이용이 정지됐어요",
     BOARD_UNBAN: "게시판 이용 정지가 풀렸어요",
+    VIP_LIFETIME: "평생 VIP가 됐어요",
 }
 
 # 알림 배달 회사 주소만 받는다. 아무 주소나 받으면 우리 서버가 엉뚱한 곳으로 요청을 보내게 만들 수 있다.
@@ -228,6 +230,8 @@ def payload_for(alert: Alert) -> dict:
         return {"title": PUSH_TITLE, "body": PUSH_BODY[alert.kind], "url": "/liked", "tag": "vip-renewal"}
     if alert.kind == LIKED:
         return {"title": PUSH_TITLE, "body": PUSH_BODY[LIKED], "url": "/discover", "tag": "liked"}
+    if alert.kind == VIP_LIFETIME:
+        return {"title": PUSH_TITLE, "body": PUSH_BODY[VIP_LIFETIME], "url": "/liked", "tag": "vip-lifetime"}
     if alert.kind == BOARD_COMMENT:
         return {"title": PUSH_TITLE, "body": PUSH_BODY[BOARD_COMMENT], "url": f"/board/{alert.match_id}",
                 "tag": f"board-comment-{alert.match_id}"}

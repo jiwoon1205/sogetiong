@@ -147,6 +147,11 @@ def reward_if_due(db: Session, invitee: User, *, admin_id=None, request=None) ->
         request=request,
         metadata={"invitee_id": str(invitee.id), "super_likes_after": referrer.super_likes},
     )
+    # 경희대생 전용: 경희대 친구 10명 → 평생 VIP (2026-11-22)
+    from app.services import khu_vip_service
+
+    db.flush()
+    khu_vip_service.grant_if_due(db, referrer, admin_id=admin_id, request=request)
     return True
 
 

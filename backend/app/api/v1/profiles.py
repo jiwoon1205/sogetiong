@@ -27,6 +27,7 @@ from app.services import (
     engagement_service,
     audit_service,
     auth_service,
+    khu_vip_service,
     membership_service,
     payment_service,
     profile_service,
@@ -94,6 +95,7 @@ def gender_locked_message() -> str:
 def get_me(request: Request, current: CurrentUser = Depends(get_current_user), db: Session = Depends(get_db)):
     """본인에게는 본인 이메일을 보여줘도 된다. 다른 사람의 정보는 없다."""
     latest_photo = _latest_photo(db, current)
+    khu_vip = khu_vip_service.view(db, current.user)
     has_prefs = db.query(MatchingPreference.id).filter(MatchingPreference.user_id == current.id).first() is not None
     return {
         "email": current.user.email,
@@ -145,7 +147,10 @@ def get_me(request: Request, current: CurrentUser = Depends(get_current_user), d
             current.user,
             multi_school=profile_service.multi_school(db),
             new_schools=profile_service.new_schools_open(db),
+            khu_vip=bool(khu_vip) and not khu_vip["done"],
         ),
+        # 경희대생 전용 이벤트 (2026-11-22): 경희대 친구 10명 초대 → 평생 VIP. 경희대 학생이 아니면 null
+        "khu_vip": khu_vip,
         # 매칭 확률 높이기 팝업 (2026-11-16): 남성·접속한 날 3일 이상·매칭 0회 → 한 번만. 아니면 null
         "match_tip": engagement_service.match_tip(db, current.user),
         # 친구 초대 이벤트 (2026-10-24): 화면 맨 윗줄 배너용. 기간 안이면 active, end = 끝나는 시각

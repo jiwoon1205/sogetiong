@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui";
 import { api } from "@/lib/api";
 import { untilDay } from "@/lib/format";
+import { useSession } from "@/lib/session";
 
 type Referral = {
   active: boolean;
@@ -59,6 +60,7 @@ export function InviteFriends() {
   return (
     <section id="invite" className="mt-14 scroll-mt-20">
       <p className="eyebrow mb-4">친구 초대 이벤트</p>
+      <KhuVipProgress />
       <div className="rounded-card border border-brick/30 bg-brick-wash px-5 py-5">
         <p className="text-[16px] font-semibold leading-snug text-ink">
           {schoolLabel ? `${schoolLabel} 친구가` : "친구가"} 내 링크로 가입하면 <span className="text-brick">슈퍼 라이크 1개</span>
@@ -90,5 +92,32 @@ export function InviteFriends() {
         </p>
       </div>
     </section>
+  );
+}
+
+/** 경희대생 전용: 경희대 친구 10명 초대 → 평생 VIP 진행 상황 (2026-11-22). 경희대 학생에게만 보인다 */
+function KhuVipProgress() {
+  const { me } = useSession();
+  const v = me.khu_vip;
+  if (!v) return null;
+  return (
+    <div className="mb-3 rounded-card border border-line-strong bg-paper-card px-5 py-4">
+      {v.done ? (
+        <p className="text-[15px] font-semibold text-ink">👑 평생 VIP를 받았어요. 고마워요!</p>
+      ) : (
+        <>
+          <div className="flex items-baseline justify-between">
+            <p className="text-[15px] font-semibold text-ink">👑 경희대 친구 {v.goal}명 초대하면 평생 VIP</p>
+            <p className="num text-[13px] font-semibold text-ink">
+              {v.count} / {v.goal}명
+            </p>
+          </div>
+          <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-paper-deep">
+            <div className="h-full bg-ink" style={{ width: `${Math.min(100, (v.count / v.goal) * 100)}%` }} />
+          </div>
+          <p className="mt-1.5 text-[12px] text-ink-faint">경희대 학생이 내 링크로 가입하고 사진 검수가 끝나면 1명으로 세요 (11월 22일부터 가입한 친구만).</p>
+        </>
+      )}
+    </div>
   );
 }

@@ -121,11 +121,33 @@ def daily_payment_key(user: User, now: datetime | None = None) -> str | None:
     return key
 
 
-def pending(user: User, now: datetime | None = None, *, multi_school: bool = False, new_schools: bool = False) -> str | None:
-    """아직 안 본 공지 이름. 없으면 None. 하루 공지가 먼저. multi_school = 학교가 둘 이상 열려 있음."""
+# 경희대생 전용 공지 (2026-11-22): 경희대 친구 10명 초대 → 평생 VIP. 하루 한 번 ("khu-vip10@날짜").
+# 경희대 학생이고 아직 평생 VIP가 아닌 사람에게만 (khu_vip=True로 알려 준다). 설문(투표)보다 뒤 — 설문은 화면 전체를 먼저 차지한다
+KHU_VIP_NOTICE: str | None = "khu-vip10"
+
+
+def khu_vip_key(now: datetime | None = None) -> str | None:
+    if KHU_VIP_NOTICE is None:
+        return None
+    return f"{KHU_VIP_NOTICE}{DAILY_SEPARATOR}{kst_today(now or utcnow()).isoformat()}"
+
+
+def pending(
+    user: User,
+    now: datetime | None = None,
+    *,
+    multi_school: bool = False,
+    new_schools: bool = False,
+    khu_vip: bool = False,
+) -> str | None:
+    """아직 안 본 공지 이름. 없으면 None. 하루 공지가 먼저. multi_school = 학교가 둘 이상 열려 있음.
+    khu_vip = 경희대 평생 VIP 이벤트 대상(경희대 학생, 아직 평생 VIP 아님)."""
     daily = daily_payment_key(user, now)
     if daily is not None and user.announcement_seen != daily:
         return daily
+    khu = khu_vip_key(now) if khu_vip else None
+    if khu is not None and user.announcement_seen != khu:
+        return khu
     current = current_key(multi_school, now, new_schools=new_schools)
     if current is None or _seen(user.announcement_seen, current):
         return None
@@ -159,7 +181,15 @@ def _seen(seen: str | None, current: str) -> bool:
 
 
 def is_showable(
-    user: User, key: str, now: datetime | None = None, *, multi_school: bool = False, new_schools: bool = False
+    user: User,
+    key: str,
+    now: datetime | None = None,
+    *,
+    multi_school: bool = False,
+    new_schools: bool = False,
+    khu_vip: bool = False,
 ) -> bool:
     """화면이 "봤음"으로 보낸 이름이 지금 보여줄 수 있는 공지인가."""
+    if khu_vip and key == khu_vip_key(now):
+        return True
     return key == current_key(multi_school, now, new_schools=new_schools) or key == daily_payment_key(user, now)

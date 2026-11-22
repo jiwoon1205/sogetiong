@@ -6,11 +6,11 @@ import { Button, Modal } from "@/components/ui";
 import { api } from "@/lib/api";
 import { dday, ddayEnd, discountPercent } from "@/lib/format";
 import { useSession } from "@/lib/session";
-import type { Membership } from "@/lib/types";
+import type { Me, Membership } from "@/lib/types";
 
 type Notice = {
   title: string;
-  body: React.ReactNode | ((m: Membership | undefined) => React.ReactNode);
+  body: React.ReactNode | ((m: Membership | undefined, me: Me) => React.ReactNode);
   action?: { label: string; href: string };
   /** 두 번째 버튼 (선택) */
   second?: { label: string; href: string };
@@ -72,6 +72,7 @@ const PAYMENT_OPEN: Notice = {
 
 function findNotice(key: string): Notice | undefined {
   if (key.startsWith("payment-open:")) return PAYMENT_OPEN;
+  if (key.split("@")[0] === "khu-vip10") return KHU_VIP;
   // 하루 한 번 공지 (2026-10-25): 서버가 "khu-event-2026-10@2026-10-25"처럼 날짜를 붙여 보낸다 → "@" 앞부분으로 찾는다
   return NOTICES[key.split("@")[0]];
 }
@@ -116,6 +117,52 @@ function InviteEventHero() {
  * 닫기·확인·"알림 켜러 가기" 어느 것을 눌러도 "봤음"으로 기록 → 이 계정에는 다시 안 뜬다.
  * 새 공지: 서버 services/announcement_service.py 의 CURRENT와 여기 NOTICES에 같은 이름으로 추가.
  */
+/** 경희대생 전용 공지 (2026-11-22): 경희대 친구 10명 초대 → 평생 VIP. 하루 한 번, 경희대 학생에게만 */
+const KHU_VIP: Notice = {
+  title: "경희대생 전용 이벤트",
+  body: (_m, me) => {
+    const v = me.khu_vip ?? { count: 0, goal: 10, done: false };
+    const left = Math.max(0, v.goal - v.count);
+    return (
+      <>
+        <div className="rounded-card border border-line-strong bg-paper-card px-4 py-5 text-center">
+          <p className="text-[13px] text-ink-soft">경희대 친구 {v.goal}명을 초대하면</p>
+          <p className="mt-1 font-serif text-[27px] font-semibold leading-tight text-brick">👑 평생 VIP</p>
+          <p className="mt-1.5 text-[12.5px] leading-relaxed text-ink-soft">받은 LIKE 보기 · 하루 좋아요 더 · 기본 이용권 포함, 기간 없이 계속</p>
+        </div>
+        <div className="mt-3 rounded-md bg-paper-deep px-4 py-3">
+          <div className="flex justify-between text-[13px]">
+            <span className="text-ink-soft">내 초대 현황</span>
+            <span className="num font-semibold text-ink">
+              {v.count} / {v.goal}명
+            </span>
+          </div>
+          <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-paper-card">
+            <div className="h-full bg-ink" style={{ width: `${Math.min(100, (v.count / v.goal) * 100)}%` }} />
+          </div>
+          <p className="mt-1.5 text-[12px] text-ink-faint">{left > 0 ? `${left}명만 더 초대하면 평생 VIP예요` : "곧 평생 VIP가 켜져요"}</p>
+        </div>
+        <ol className="mt-4 space-y-2 text-[14px] leading-relaxed text-ink-soft">
+          <li>
+            <b className="num font-semibold text-ink">1</b>&nbsp; 설정 → 친구 초대에서 <b className="font-semibold text-ink">내 초대 링크</b>를 복사해요
+          </li>
+          <li>
+            <b className="num font-semibold text-ink">2</b>&nbsp; 경희대 친구가 그 링크로 가입해요
+          </li>
+          <li>
+            <b className="num font-semibold text-ink">3</b>&nbsp; 친구 사진 검수가 끝나면 <b className="font-semibold text-ink">1명 인정</b> + 슈퍼 라이크 1개도 바로 받아요
+          </li>
+        </ol>
+        <p className="mt-3 text-[12px] leading-relaxed text-ink-faint">
+          경희대 학생 초대만, 이벤트를 시작한 뒤(11월 22일) 가입한 친구만 세요. 탈퇴 후 다시 가입한 사람은 인정되지 않아요. {v.goal}명이 되면 자동으로 평생 VIP가 켜지고 알림을 보내드려요.
+        </p>
+      </>
+    );
+  },
+  action: { label: "내 초대 링크 받으러 가기", href: "/settings#invite" },
+  close: "오늘은 그만 보기",
+};
+
 const NOTICES: Record<string, Notice> = {
   // 2026-11-21: 5개 학교 추가 + 친구 초대(에브리타임에 내 링크 → 가입하면 슈퍼 라이크 1개).
   // 서버는 새 학교가 하나라도 열리면(OPEN_SCHOOLS) 자동으로 이 공지를 보낸다 (announcement_service.NEW_SCHOOLS_NOTICE)
@@ -296,7 +343,7 @@ export function AnnouncementModal({ announcement }: { announcement?: string | nu
 
   return (
     <Modal open onClose={markSeen} title={notice.title}>
-      {typeof notice.body === "function" ? notice.body(me.membership) : notice.body}
+      {typeof notice.body === "function" ? notice.body(me.membership, me) : notice.body}
       <div className="mt-6 space-y-2">
         {notice.action && (
           <Button
