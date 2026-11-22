@@ -61,7 +61,7 @@ export function SurveyScreen({ onDone }: { onDone: () => Promise<void> }) {
       <PageTitle eyebrow="훕팅 개선사항 투표" title="찾는 관계에서 '대학교 친구'를 없앨까요?" />
 
       <p className="mb-8 rounded-md border border-line bg-paper-deep px-4 py-3 text-[13.5px] leading-relaxed text-ink-soft">
-        많은 분이 찾는 관계의 <b className="font-semibold text-ink">&apos;대학교 친구&apos;를 없애 달라고</b> 요청해 주셨어요. 바꾸기 전에 여러분의 생각을 듣고
+        많은 분들이 훕팅 설문에서 찾는 관계의 <b className="font-semibold text-ink">&apos;대학교 친구&apos;를 없애 달라고</b> 요청해 주셨어요. 바꾸기 전에 여러분의 생각을 듣고
         싶어요. 투표 결과는 운영자만 보고, 다른 학생에게는 보이지 않아요.
       </p>
 
