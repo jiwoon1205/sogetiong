@@ -8,6 +8,7 @@ import { BoardReportModal, type BoardReportTarget } from "@/components/board/Boa
 import { ProfileSheet } from "@/components/board/ProfileSheet";
 import { Notice, Spinner } from "@/components/ui";
 import { api, errorMessage } from "@/lib/api";
+import { useEnterToSend } from "@/lib/enterToSend";
 import { BOARD_NAMES, type BoardComment, type BoardMe, type BoardPost } from "@/lib/board";
 import { timeAgo } from "@/lib/format";
 
@@ -26,6 +27,10 @@ export default function PostPage() {
   // 답글 쓰는 중인 댓글 (2026-11-22)
   const [replyTo, setReplyTo] = useState<BoardComment | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  // Enter = 댓글 등록, Shift+Enter = 줄바꿈 (2026-11-22)
+  const enterToSend = useEnterToSend(() => {
+    if (text.trim() && !sending) void addComment();
+  });
 
   const load = useCallback(() => {
     api<{ post: BoardPost; comments: BoardComment[] }>(`/board/posts/${postId}`)
@@ -189,6 +194,7 @@ export default function PostPage() {
             <div className="flex items-end gap-1.5 rounded-[24px] border border-line bg-paper-card py-1 pl-4 pr-1 transition-colors focus-within:border-ink-soft">
               <textarea
                 ref={inputRef}
+                {...enterToSend}
                 value={text}
                 rows={1}
                 maxLength={me?.config.comment_max ?? 500}

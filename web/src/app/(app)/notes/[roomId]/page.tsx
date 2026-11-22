@@ -10,6 +10,7 @@ import { api, errorMessage } from "@/lib/api";
 import type { NoteMessage, NoteRoom } from "@/lib/board";
 import { clock, cn } from "@/lib/format";
 import { usePolling } from "@/lib/polling";
+import { useEnterToSend } from "@/lib/enterToSend";
 import { useVisualViewport } from "@/lib/viewport";
 
 /**
@@ -26,6 +27,7 @@ export default function NoteRoomPage() {
   const [panel, setPanel] = useState<"none" | "menu" | "report">("none");
   const listRef = useRef<HTMLDivElement>(null);
   const vp = useVisualViewport();
+  const enterToSend = useEnterToSend(() => void send());
 
   const load = useCallback(
     () =>
@@ -125,6 +127,8 @@ export default function NoteRoomPage() {
               <textarea
                 value={text}
                 onChange={(e) => setText(e.target.value)}
+                // Enter = 보내기, Shift+Enter = 줄바꿈 (2026-11-22)
+                {...enterToSend}
                 maxLength={1000}
                 rows={1}
                 placeholder="쪽지 보내기"

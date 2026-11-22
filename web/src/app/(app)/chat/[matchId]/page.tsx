@@ -12,6 +12,7 @@ import { ApiError, api, errorMessage } from "@/lib/api";
 import { clock, cn } from "@/lib/format";
 import { usePolling } from "@/lib/polling";
 import type { Card, ChatExtras, ChatMessage, InstaShare, SnsPlatform } from "@/lib/types";
+import { useEnterToSend } from "@/lib/enterToSend";
 import { useVisualViewport } from "@/lib/viewport";
 
 const POLL_MS = 4000; // MVP: 몇 초마다 새 메시지 확인 (설계도 §51)
@@ -55,12 +56,8 @@ export default function ChatPage() {
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const nearBottom = useRef(true); // 지금 맨 아래 근처를 보고 있는지
-  const isTouch = useRef(false); // 휴대폰·태블릿(손가락 입력)인지
+  const enterToSend = useEnterToSend(() => void send());
   const vp = useVisualViewport(); // 키보드를 뺀, 실제로 보이는 화면 크기
-
-  useEffect(() => {
-    isTouch.current = window.matchMedia("(pointer: coarse)").matches;
-  }, []);
 
   // 화면에 있는 마지막 메시지 ID. 몇 초마다 확인할 때 "이 뒤에 온 것만 주세요"(after)로 요청한다.
   // → 새 메시지가 없으면 서버는 빈 목록만 돌려주므로 서버·데이터 사용량이 크게 줄어든다.
@@ -165,8 +162,8 @@ export default function ChatPage() {
     el.style.height = `${Math.min(el.scrollHeight, INPUT_MAX_PX)}px`;
   }, [text]);
 
-  async function send(e: React.FormEvent) {
-    e.preventDefault();
+  async function send(e?: React.FormEvent) {
+    e?.preventDefault();
     const body = text.trim();
     if (!body || sending) return;
     setSending(true);
@@ -410,15 +407,8 @@ export default function ChatPage() {
               ref={inputRef}
               value={text}
               onChange={(e) => setText(e.target.value)}
-              onKeyDown={(e) => {
-                // 컴퓨터: Enter = 보내기, Shift+Enter = 줄바꿈
-                // 휴대폰: Enter = 줄바꿈 (보내기는 버튼으로). 휴대폰 한글 자판에서 Enter가 엉뚱하게 보내지는 문제 방지
-                if (isTouch.current) return;
-                if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
-                  e.preventDefault();
-                  send(e);
-                }
-              }}
+              // Enter = 보내기, Shift+Enter = 줄바꿈 (2026-11-22: 휴대폰도. 한글 조합 중이면 조합이 끝난 뒤 보냄)
+              {...enterToSend}
               maxLength={1000}
               rows={1}
               disabled={sendLocked}

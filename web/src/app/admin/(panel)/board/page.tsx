@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-import { type AdminBoardPerson, type AdminPost, BanBox, BoardBadge, ContentActions, PersonLine } from "@/components/board/AdminBoard";
+import { type AdminBoardPerson, type AdminPost, BanBox, BoardBadge, ContentActions, NoteRoomList, type AdminNoteRoom, PersonLine } from "@/components/board/AdminBoard";
 import { Button, PageTitle, Spinner } from "@/components/ui";
 import { adminApi, useAdmin } from "@/lib/admin";
 import { BOARD_NAMES, type BoardKey } from "@/lib/board";
@@ -26,18 +26,18 @@ const TARGET_LABEL = { POST: "글", COMMENT: "댓글", PROFILE: "프로필", NOT
 
 /** 게시판 관리 (2026-11-22): 신고 처리 · 최근 글 즉시 삭제 · 이용 정지 */
 export default function AdminBoardPage() {
-  const [tab, setTab] = useState<"reports" | "posts">("reports");
+  const [tab, setTab] = useState<"reports" | "posts" | "notes">("reports");
   return (
     <>
       <PageTitle eyebrow="게시판" title="게시판 관리" desc="신고 3번이면 자동으로 숨겨져요. 신고가 없어도 최근 글에서 바로 지울 수 있어요. 자유·연애 게시판의 성적인 이야기는 정지 사유예요." />
       <div className="mb-6 flex gap-6 border-b border-line text-[14px]">
-        {(["reports", "posts"] as const).map((t) => (
+        {(["reports", "posts", "notes"] as const).map((t) => (
           <button key={t} onClick={() => setTab(t)} className={tab === t ? "-mb-px border-b-2 border-ink pb-3 font-semibold" : "pb-3 text-ink-faint hover:text-ink"}>
-            {t === "reports" ? "신고" : "최근 글"}
+            {t === "reports" ? "신고" : t === "posts" ? "최근 글" : "쪽지"}
           </button>
         ))}
       </div>
-      {tab === "reports" ? <Reports /> : <RecentPosts />}
+      {tab === "reports" ? <Reports /> : tab === "posts" ? <RecentPosts /> : <NoteRooms />}
     </>
   );
 }
@@ -197,4 +197,17 @@ function RecentPosts() {
       )}
     </>
   );
+}
+
+/** 최근 쪽지방 (2026-11-22). 신고가 없어도 관리자가 열어 볼 수 있다 (열면 기록이 남음) */
+function NoteRooms() {
+  const { can } = useAdmin();
+  const [rooms, setRooms] = useState<AdminNoteRoom[] | null>(null);
+  useEffect(() => {
+    if (!can("chats:read")) return;
+    adminApi<{ rooms: AdminNoteRoom[] }>("/board/notes").then((r) => setRooms(r.rooms));
+  }, [can]);
+  if (!can("chats:read")) return <p className="py-12 text-center text-[14px] text-ink-faint">쪽지를 볼 권한이 없어요.</p>;
+  if (!rooms) return <Spinner />;
+  return <NoteRoomList rooms={rooms} />;
 }

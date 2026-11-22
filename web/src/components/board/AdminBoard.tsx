@@ -174,3 +174,51 @@ export function ContentActions({ kind, id, hidden, deleted, onChanged }: { kind:
     </div>
   );
 }
+
+export type AdminNoteRoom = {
+  id: string;
+  starter: BoardAuthor;
+  receiver: BoardAuthor;
+  messages: number;
+  paid_with: "SUPER_LIKE" | "FREE";
+  closed: boolean;
+  reported: boolean;
+  last_message_at: string;
+  created_at: string;
+};
+
+/** 쪽지방 목록 (내용은 안 보임). 누르면 내용 화면 — 열 때마다 열람 기록이 남는다 */
+export function NoteRoomList({ rooms }: { rooms: AdminNoteRoom[] }) {
+  const { can } = useAdmin();
+  if (rooms.length === 0) return <p className="py-8 text-center text-[14px] text-ink-faint">쪽지방이 없어요.</p>;
+  return (
+    <ul className="divide-y divide-line rounded-card border border-line bg-paper-card">
+      {rooms.map((r) => {
+        const row = (
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 px-4 py-3 text-[13.5px]">
+            <span className="font-semibold">{r.starter.nickname}</span>
+            <span className="text-ink-faint">→</span>
+            <span className="font-semibold">{r.receiver.nickname}</span>
+            <span className="text-[12px] text-ink-faint">
+              쪽지 {r.messages}개 · {r.paid_with === "FREE" ? "무료" : "슈퍼 라이크"} · {dateTime(r.last_message_at)}
+            </span>
+            {r.closed && <span className="rounded bg-paper-deep px-1.5 py-0.5 text-[11.5px] text-ink-soft">끝남</span>}
+            {r.reported && <span className="rounded bg-brick-wash px-1.5 py-0.5 text-[11.5px] font-semibold text-brick">신고됨</span>}
+            {can("chats:read") && <span className="ml-auto text-[12px] text-ink-faint underline underline-offset-4">내용 보기</span>}
+          </div>
+        );
+        return (
+          <li key={r.id}>
+            {can("chats:read") ? (
+              <Link href={`/admin/board/notes/${r.id}`} className="block hover:bg-paper-deep/60">
+                {row}
+              </Link>
+            ) : (
+              row
+            )}
+          </li>
+        );
+      })}
+    </ul>
+  );
+}

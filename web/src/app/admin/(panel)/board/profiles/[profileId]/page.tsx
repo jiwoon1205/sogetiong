@@ -4,7 +4,17 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
-import { type AdminBoardPerson, type AdminComment, type AdminPost, BanBox, BoardBadge, ContentActions, PersonLine } from "@/components/board/AdminBoard";
+import {
+  type AdminBoardPerson,
+  type AdminComment,
+  type AdminNoteRoom,
+  type AdminPost,
+  BanBox,
+  BoardBadge,
+  ContentActions,
+  NoteRoomList,
+  PersonLine,
+} from "@/components/board/AdminBoard";
 import { Button, PageTitle, Spinner } from "@/components/ui";
 import { adminApi, useAdmin } from "@/lib/admin";
 import { dateTime } from "@/lib/format";
@@ -14,6 +24,7 @@ type Activity = {
   posts: AdminPost[];
   comments: AdminComment[];
   reports: { id: string; target_type: string; reason_label: string; status: string; created_at: string }[];
+  notes: AdminNoteRoom[];
 };
 
 /** 관리자: 한 사람의 게시판 활동 (프로필, 글, 댓글, 받은 신고) + 정지 */
@@ -65,6 +76,9 @@ export default function AdminBoardProfilePage() {
           </li>
         ))}
       </ul>
+
+      <p className="eyebrow mb-3 mt-8">쪽지방 {data.notes.length}</p>
+      <NoteRoomList rooms={data.notes} />
 
       <p className="eyebrow mb-3 mt-8">글 {data.posts.length}</p>
       <div className="space-y-2">

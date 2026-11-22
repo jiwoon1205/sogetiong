@@ -281,3 +281,26 @@ def test_reply_to_reply_stays_under_top_comment(sent_codes, db):
     for email in ("m@hufs.ac.kr", "t@hufs.ac.kr"):
         uid = _user(db, email).id
         assert db.query(Notification).filter(Notification.user_id == uid, Notification.title == "내 댓글에 답글이 달렸어요").count() == 1
+
+
+def test_admin_can_list_and_read_note_rooms(sent_codes, db):
+    """관리자는 신고 없이도 쪽지방 목록을 보고 내용을 열 수 있다 (열면 감사 로그)."""
+    from app.models.admin import AuditLog
+    admin, w, m = _people(sent_codes, db)
+    _make(w, "봄바람")
+    mp = _make(m, "가을")
+    room = w.post("/api/v1/notes", json={"board_profile_id": mp["id"], "body": "안녕하세요"})
+    if room.status_code == 402:
+        user = _user(db, "w@hufs.ac.kr")
+        user.super_likes = 1
+        db.commit()
+        room = w.post("/api/v1/notes", json={"board_profile_id": mp["id"], "body": "안녕하세요"})
+    room_id = room.json()["room"]["id"]
+    rooms = admin.get("/api/v1/admin/board/notes").json()["rooms"]
+    assert rooms[0]["id"] == room_id and rooms[0]["messages"] == 1 and "안녕하세요" not in str(rooms)
+    assert rooms[0]["starter"]["nickname"] == "봄바람" and rooms[0]["receiver"]["nickname"] == "가을"
+    detail = admin.get(f"/api/v1/admin/board/notes/{room_id}").json()
+    assert detail["messages"][0]["body"] == "안녕하세요"
+    assert db.query(AuditLog).filter(AuditLog.action == "NOTE_VIEW").count() == 1
+    activity = admin.get(f"/api/v1/admin/board/profiles/{mp['id']}").json()
+    assert activity["notes"][0]["id"] == room_id

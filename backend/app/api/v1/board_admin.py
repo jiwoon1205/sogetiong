@@ -238,8 +238,17 @@ def profile_activity(board_profile_id: uuid.UUID, admin: CurrentAdmin = Depends(
     comments = db.query(BoardComment).filter(BoardComment.author_user_id == uid).order_by(BoardComment.created_at.desc()).limit(50).all()
     reports = db.query(BoardReport).filter(BoardReport.reported_user_id == uid).order_by(BoardReport.created_at.desc()).limit(50).all()
     authors = board_service.public_views(db, {uid})
+    rooms = (
+        db.query(NoteRoom)
+        .filter((NoteRoom.starter_user_id == uid) | (NoteRoom.receiver_user_id == uid))
+        .order_by(NoteRoom.last_message_at.desc())
+        .limit(50)
+        .all()
+    )
     return {
         "profile": _admin_profile_view(db, uid),
+        # 이 사람의 쪽지방 (2026-11-22). chats:read 권한이 없어도 목록은 보이지만 내용은 못 연다
+        "notes": _room_summaries(db, rooms),
         "posts": [_post_admin_view(p, authors) for p in posts],
         "comments": [_comment_admin_view(c, authors) for c in comments],
         "reports": [
@@ -293,7 +302,41 @@ def unban(board_profile_id: uuid.UUID, request: Request, admin: CurrentAdmin = D
     return _admin_profile_view(db, profile.user_id)
 
 
-# ---------- 쪽지 신고 확인 ----------
+# ---------- 쪽지 (2026-11-22: 신고 없이도 모든 쪽지방을 볼 수 있게) ----------
+
+def _room_summaries(db: Session, rooms: list[NoteRoom]) -> list[dict]:
+    if not rooms:
+        return []
+    ids = [r.id for r in rooms]
+    counts = dict(
+        db.query(NoteMessage.room_id, func.count(NoteMessage.id)).filter(NoteMessage.room_id.in_(ids)).group_by(NoteMessage.room_id).all()
+    )
+    people = board_service.public_views(db, {r.starter_user_id for r in rooms} | {r.receiver_user_id for r in rooms})
+    reported = {
+        t for (t,) in db.query(BoardReport.target_id).filter(BoardReport.target_type == "NOTE", BoardReport.target_id.in_(ids))
+    }
+    return [
+        {
+            "id": str(r.id),
+            "starter": people.get(r.starter_user_id),
+            "receiver": people.get(r.receiver_user_id),
+            "messages": counts.get(r.id, 0),
+            "paid_with": r.paid_with,
+            "closed": r.closed_at is not None,
+            "reported": r.id in reported,
+            "last_message_at": _iso(r.last_message_at),
+            "created_at": _iso(r.created_at),
+        }
+        for r in rooms
+    ]
+
+
+@router.get("/board/notes")
+def list_note_rooms(admin: CurrentAdmin = Depends(require_permission("chats:read")), db: Session = Depends(get_db)):
+    """최근 쪽지방 목록 (내용은 안 보임. 들어가서 열 때 감사 로그 NOTE_VIEW)."""
+    rooms = db.query(NoteRoom).order_by(NoteRoom.last_message_at.desc()).limit(200).all()
+    return {"rooms": _room_summaries(db, rooms)}
+
 
 @router.get("/board/notes/{room_id}")
 def note_room(room_id: uuid.UUID, request: Request, admin: CurrentAdmin = Depends(require_permission("chats:read")),
