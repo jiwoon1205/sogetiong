@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { AgeRangeSlider } from "@/components/AgeRangeSlider";
+import { type SchoolCampuses, SchoolPicker } from "@/components/SchoolPicker";
 import { Button, Checkbox, Notice } from "@/components/ui";
 import { api, errorMessage } from "@/lib/api";
 import type { CampusWithDepts } from "@/lib/catalog";
@@ -27,8 +28,6 @@ const EMPTY: Preferences = {
   exclude_same_department: false,
 };
 
-/** 매칭 조건에서 고를 수 있는 캠퍼스 (학교별, 2026-10-24 경희대 확장) */
-type SchoolCampuses = { id: string; name: string; mine: boolean; campuses: { id: string; name: string }[] };
 
 /** 매칭 조건. 이 내용은 본인만 볼 수 있다.
  *  만나고 싶은 상대는 항상 이성 (2026-11-07) — 여기서는 보여주기만 한다. */
@@ -228,23 +227,15 @@ export function PreferencesForm({
       <div className="space-y-1.5">
         <p className="text-[13px] font-medium text-ink-soft">{multiSchool ? "만날 학교·캠퍼스" : "만날 캠퍼스"}</p>
         {multiSchool && schools ? (
-          <div className="divide-y divide-line rounded-md border border-line bg-paper-card px-4">
-            {schools.map((sc) => (
-              <div key={sc.id} className="py-2">
-                <p className="pt-1 text-[12.5px] font-medium text-ink-soft">
-                  {sc.name}
-                  {sc.mine && <span className="font-normal text-ink-faint"> · 우리 학교</span>}
-                </p>
-                <div className="flex flex-wrap gap-x-6">
-                  {sc.campuses.map((c) => (
-                    <Checkbox key={c.id} checked={campusIds.includes(c.id)} onChange={() => toggleCampus(c.id)}>
-                      {c.name.replace(/캠퍼스$/, "")}
-                    </Checkbox>
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
+          // 2026-11-22: [모든 학교 추천] + 펼쳐서 스크롤하며 여러 개 고르는 칸
+          <SchoolPicker
+            schools={schools}
+            value={campusIds}
+            onChange={(ids) => {
+              setSaved(false);
+              setCampusIds(ids);
+            }}
+          />
         ) : (
           <div className="flex flex-wrap gap-x-6 rounded-md border border-line bg-paper-card px-4 py-2">
             {allCampuses.map((c) => (
@@ -256,7 +247,7 @@ export function PreferencesForm({
         )}
         {multiSchool && (
           <p className="text-[12.5px] leading-relaxed text-ink-faint">
-            모두 체크하면 앞으로 새로 열리는 학교·캠퍼스도 자동으로 포함돼요. 학교·캠퍼스는 프로필에 항상 보여요.
+            &lsquo;모든 학교 추천&rsquo;이면 앞으로 새로 열리는 학교·캠퍼스도 자동으로 포함돼요. 학교·캠퍼스는 프로필에 항상 보여요.
           </p>
         )}
         {!multiSchool && schools !== null && (
