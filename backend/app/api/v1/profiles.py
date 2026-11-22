@@ -4,7 +4,7 @@ import re
 import uuid
 from datetime import timedelta
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, Response, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, Request, Response, UploadFile, status
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -91,7 +91,7 @@ def gender_locked_message() -> str:
 # ---------- 계정 ----------
 
 @router.get("/me")
-def get_me(current: CurrentUser = Depends(get_current_user), db: Session = Depends(get_db)):
+def get_me(request: Request, current: CurrentUser = Depends(get_current_user), db: Session = Depends(get_db)):
     """본인에게는 본인 이메일을 보여줘도 된다. 다른 사람의 정보는 없다."""
     latest_photo = _latest_photo(db, current)
     has_prefs = db.query(MatchingPreference.id).filter(MatchingPreference.user_id == current.id).first() is not None
@@ -132,7 +132,12 @@ def get_me(current: CurrentUser = Depends(get_current_user), db: Session = Depen
             "until": current.user.vip_until.isoformat() if vip_service.has_paid_vip(current.user) else None,
         },
         # 설문 (2026-10-05). pending = 설문을 받는 중이고 아직 안 답함 → 화면이 설문만 보여준다
-        "survey": {"pending": survey_service.pending(db, current.id)},
+        # 2026-11-22: 지금 설문을 아는 화면(X-Survey-Version 머리말을 보내는 새 화면)에만 띄운다.
+        #   예전 화면(휴대폰에 남은 옛 앱·배포 중 옛 web)이 옛 설문 화면을 띄우는 버그를 막기 위해서.
+        "survey": {
+            "pending": survey_service.pending(db, current.id) and survey_service.client_knows(request.headers.get("x-survey-version")),
+            "key": survey_service.SURVEY_KEY,
+        },
         # 내가 찾는 관계를 아직 안 고른 예전 회원 (2026-11-11) → 화면이 이것부터 고르게 한다 (꼭 골라야 넘어감)
         "relationship_goal_required": _needs_relationship_goal(db, current),
         # 한 번만 보여주는 공지 팝업 (2026-10-05). 아직 안 본 공지 이름, 없으면 null

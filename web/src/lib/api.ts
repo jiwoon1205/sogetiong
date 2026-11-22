@@ -67,9 +67,13 @@ function explainValidation(detail: Array<{ msg?: string; loc?: string[]; type?: 
   }
 }
 
+/** 지금 설문 이름. 백엔드 app/services/survey_service.py 의 SURVEY_KEY 와 같아야 한다 */
+export const SURVEY_VERSION = "2026-11-friend-goal";
+
 export async function api<T = unknown>(path: string, opts: Options = {}): Promise<T> {
   const method = opts.method ?? "GET";
-  const headers: Record<string, string> = {};
+  // 지금 설문을 아는 화면이라고 서버에 알린다 (2026-11-22). 예전 화면에는 옛 설문이 뜨지 않게
+  const headers: Record<string, string> = { "X-Survey-Version": SURVEY_VERSION };
   if (method !== "GET") {
     const csrf = readCookie(opts.admin ? "admin_csrf_token" : "csrf_token");
     if (csrf) headers["X-CSRF-Token"] = csrf;

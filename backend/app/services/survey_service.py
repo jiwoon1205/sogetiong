@@ -51,6 +51,13 @@ def has_answered(db: Session, user_id: uuid.UUID) -> bool:
     )
 
 
+def client_knows(header: str | None) -> bool:
+    """화면이 지금 설문을 아는지 (2026-11-22). 화면은 X-Survey-Version: <SURVEY_KEY> 를 보낸다.
+    예전 화면은 이 머리말이 없어서 설문을 띄우지 않는다 → 옛 설문 화면이 뜨는 버그 방지.
+    새로고침하면 새 화면이 되어 지금 설문이 뜬다."""
+    return header == SURVEY_KEY
+
+
 def pending(db: Session, user_id: uuid.UUID) -> bool:
     """이 사람에게 지금 설문을 띄워야 하는지."""
     return is_open(db) and not has_answered(db, user_id)

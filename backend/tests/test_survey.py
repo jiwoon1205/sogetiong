@@ -18,8 +18,20 @@ def open_survey(admin, on=True):
     assert r.status_code == 200, r.text
 
 
+SURVEY_HEADER = {"X-Survey-Version": "2026-11-friend-goal"}
+
+
 def pending(client) -> bool:
-    return client.get("/api/v1/me").json()["survey"]["pending"]
+    return client.get("/api/v1/me", headers=SURVEY_HEADER).json()["survey"]["pending"]
+
+
+def test_old_screen_does_not_get_survey(sent_codes, db):
+    """2026-11-22 버그: 예전 화면이 옛 설문을 띄움 → 지금 설문을 아는 화면(머리말)에만 pending."""
+    admin_login(db)
+    a = signup(sent_codes, db, "a@hufs.ac.kr")
+    assert a.get("/api/v1/me").json()["survey"] == {"pending": False, "key": "2026-11-friend-goal"}
+    assert a.get("/api/v1/me", headers={"X-Survey-Version": "2026-11-feedback"}).json()["survey"]["pending"] is False
+    assert pending(a) is True
 
 
 def test_survey_shows_to_everyone_by_default(sent_codes, db):
