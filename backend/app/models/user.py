@@ -80,6 +80,10 @@ class User(Base):
     # 이탈 막기 (2026-11-16, 마이그레이션 0041): 매칭 확률 높이기 팝업을 닫은 시각, 휴면 좋아요 알림을 마지막으로 보낸 시각
     match_tip_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     winback_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # 앱(홈 화면 아이콘)으로 연 기록 (2026-11-24, 마이그레이션 0048). 관리자 현황 "앱으로 쓰는 사람"용
+    # app_opened_at: 앱으로 마지막에 연 시각, app_platform: IOS / ANDROID / DESKTOP (마지막에 연 기기)
+    app_opened_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    app_platform: Mapped[str | None] = mapped_column(String(10), nullable=True)
     # 친구 초대 이벤트 (2026-10-24, 마이그레이션 0027). 계산은 services/referral_service.py
     # referral_code: 내 초대 링크 코드 (처음 볼 때 만든다). referred_by_id: 나를 초대한 사람.
     # referral_rewarded_at: 내 첫 사진이 승인돼 초대한 사람에게 슈퍼 라이크 1개를 준 시각 (한 번만)

@@ -3,8 +3,10 @@
 import re
 import uuid
 from datetime import timedelta
+from typing import Literal
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, Request, Response, UploadFile, status
+from pydantic import BaseModel
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -159,6 +161,19 @@ def get_me(request: Request, current: CurrentUser = Depends(get_current_user), d
             "end": get_settings().referral_end_utc.isoformat() if get_settings().referral_end_utc else None,
         },
     }
+
+
+class AppOpenRequest(BaseModel):
+    platform: Literal["IOS", "ANDROID", "DESKTOP"]
+
+
+@router.post("/me/app-open")
+def app_open(payload: AppOpenRequest, current: CurrentUser = Depends(get_current_user), db: Session = Depends(get_db)):
+    """앱(홈 화면 아이콘)으로 열었음 (2026-11-24). 화면이 앱으로 열릴 때마다 한 번 보낸다 → 관리자 현황용."""
+    current.user.app_opened_at = utcnow()
+    current.user.app_platform = payload.platform
+    db.commit()
+    return {"ok": True}
 
 
 @router.post("/me/match-tip/seen")

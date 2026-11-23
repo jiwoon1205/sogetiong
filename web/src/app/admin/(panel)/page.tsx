@@ -12,6 +12,9 @@ type Stats = {
   users_total: number;
   users_active: number;
   users_active_today: number;
+  /** 앱(홈 화면 아이콘)으로 쓰는 사람 (2026-11-24): 활성 사용자 중 */
+  app_users_total?: number;
+  app_users?: { total: number; ios: number; android: number; desktop: number };
   users_normal: number;
   users_male: number;
   users_female: number;
@@ -64,6 +67,16 @@ const TILES: Tile[] = [
     perm: "payments:confirm",
   },
   { key: "users_active", label: "활성 사용자", hint: "사진 검수 완료 + 최근 7일 접속" },
+  // 앱으로 쓰는 사람 (2026-11-24): 활성 사용자 중 홈 화면 아이콘으로 한 번이라도 연 사람 (배포 뒤부터 쌓임)
+  {
+    key: "app_users_total",
+    label: "앱으로 쓰는 사람",
+    hint: (s) => {
+      const a = s.app_users ?? { total: 0, ios: 0, android: 0, desktop: 0 };
+      const pct = s.users_active ? Math.round((a.total / s.users_active) * 100) : 0;
+      return `활성 사용자의 ${pct}% · 아이폰 ${a.ios} · 안드로이드 ${a.android} · 컴퓨터 ${a.desktop}`;
+    },
+  },
   {
     key: "users_active_today",
     label: "오늘 접속",

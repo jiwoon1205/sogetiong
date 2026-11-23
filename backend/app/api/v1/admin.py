@@ -138,6 +138,21 @@ def recent_withdrawals(
     }
 
 
+def _app_users(db: Session, active_q) -> dict:
+    rows = dict(
+        db.query(User.app_platform, func.count(User.id))
+        .filter(User.id.in_(active_q.with_entities(User.id)), User.app_opened_at.isnot(None))
+        .group_by(User.app_platform)
+        .all()
+    )
+    return {
+        "total": sum(rows.values()),
+        "ios": rows.get("IOS", 0),
+        "android": rows.get("ANDROID", 0),
+        "desktop": rows.get("DESKTOP", 0),
+    }
+
+
 @router.get("/dashboard")
 def dashboard(admin: CurrentAdmin = Depends(require_permission("dashboard:read")), db: Session = Depends(get_db)):
     def c(q):
@@ -180,6 +195,9 @@ def dashboard(admin: CurrentAdmin = Depends(require_permission("dashboard:read")
         # 활성 = 사진 검수까지 끝났고, 최근 7일(오늘 포함) 안에 접속한 정상 계정 (2026-10-01 변경).
         # 예전에는 "탈퇴·정지 안 한 계정"이라 전체 가입자와 거의 같았다 → 그 숫자는 users_normal로 옮김
         "users_active": visited_since(week_start, photo_approved=True),
+        # 앱으로 쓰는 사람 (2026-11-24): 활성 사용자 중 홈 화면 아이콘으로 한 번이라도 연 사람. 기기는 마지막에 연 기기
+        "app_users": (app_users := _app_users(db, active_users.filter(User.id.in_(visitors_since(week_start))).filter(User.id.in_(approved)))),
+        "app_users_total": app_users["total"],
         "users_active_today": visited_since(today),
         "users_normal": c(active_users),
         # 성비 (정상 계정 중 프로필을 만든 사람 기준)

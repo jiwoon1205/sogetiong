@@ -5,6 +5,7 @@ import { createContext, useCallback, useContext, useEffect, useState } from "rea
 import { RelationshipGoalScreen } from "@/components/RelationshipGoalScreen";
 import { SurveyScreen } from "@/components/SurveyScreen";
 import { ApiError, api } from "@/lib/api";
+import { markOtherPopup } from "@/lib/popupGate";
 import type { Me } from "@/lib/types";
 
 type SessionValue = { me: Me; refresh: () => Promise<void> };
@@ -56,9 +57,15 @@ export function SessionGate({ children, fallback }: { children: React.ReactNode;
 
   if (!me) return <>{fallback}</>;
   // 설문 (2026-10-05): 관리자가 설문을 켰고 아직 안 답했으면, 로그인·가입 직후 어떤 화면이든 설문부터 (꼭 답해야 넘어감)
-  if (me.survey?.pending) return <SurveyScreen onDone={refresh} />;
+  if (me.survey?.pending) {
+    markOtherPopup();
+    return <SurveyScreen onDone={refresh} />;
+  }
   // 내가 찾는 관계 (2026-11-11): 이 항목이 생기기 전에 프로필을 쓴 회원은 꼭 골라야 넘어감
-  if (me.relationship_goal_required) return <RelationshipGoalScreen onDone={refresh} />;
+  if (me.relationship_goal_required) {
+    markOtherPopup();
+    return <RelationshipGoalScreen onDone={refresh} />;
+  }
   return <SessionContext.Provider value={{ me, refresh }}>{children}</SessionContext.Provider>;
 }
 

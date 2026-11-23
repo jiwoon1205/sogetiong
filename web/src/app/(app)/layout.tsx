@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 import { AnnouncementModal } from "@/components/AnnouncementModal";
+import { InstallPopup } from "@/components/InstallPopup";
 import { MatchTipModal } from "@/components/MatchTipModal";
 import { Brand } from "@/components/Brand";
 import { MemberStat } from "@/components/MemberStat";
@@ -12,6 +13,7 @@ import { Spinner } from "@/components/ui";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/format";
 import { usePolling } from "@/lib/polling";
+import { markOtherPopup } from "@/lib/popupGate";
 import { SessionGate, useSession } from "@/lib/session";
 
 // 아래 탭 (2026-11-22): 추천 · 게시판 · 받은 LIKE · 대화 · 내 프로필 (VIP가 안 보이면 받은 LIKE 대신 설정)
@@ -66,13 +68,15 @@ function Shell({ children }: { children: React.ReactNode }) {
   // 채팅방은 화면 전체를 쓰는 별도 창이라 위쪽 머리말·아래 탭·여백을 그리지 않는다.
   // (예전에는 아래 탭을 숨겨도 그 자리 여백 pb-20(80px)이 남아서, 모바일에서 화면 전체가 한 번 더 스크롤되는 문제가 있었다)
   // 휴대폰 알림을 눌러 대화방으로 바로 들어온 사람도 공지를 보게 공지 팝업은 여기서도 그린다 (2026-10-06)
-  if (inChat)
+  if (inChat) {
+    if (me.announcement) markOtherPopup(); // 대화방에서 공지를 봤으면 이번 접속엔 앱 설치 안내를 띄우지 않는다
     return (
       <>
         {children}
         <AnnouncementModal announcement={me.announcement} />
       </>
     );
+  }
 
   return (
     <div className="min-h-dvh pb-[calc(5.5rem_+_env(safe-area-inset-bottom))] sm:pb-0">
@@ -108,6 +112,8 @@ function Shell({ children }: { children: React.ReactNode }) {
       <AnnouncementModal announcement={me.announcement} />
       {/* 매칭 확률 높이기 안내 (2026-11-16): 공지 팝업과 겹치지 않게 공지가 없을 때만 */}
       {!me.announcement && <MatchTipModal tip={me.match_tip} />}
+      {/* 앱 설치 안내 (2026-11-24): 이번 접속에 다른 팝업이 하나도 없을 때만, 3일에 한 번 */}
+      <InstallPopup me={me} />
 
       <main className="mx-auto max-w-3xl px-5 py-8 sm:py-12">{children}</main>
 
