@@ -81,8 +81,8 @@ export type Me = {
   university_name?: string;
   /** 친구 초대 이벤트 (2026-10-24): 맨 윗줄 배너용 */
   referral_event?: { active: boolean; end: string | null };
-  /** 경희대생 전용: 경희대 친구 10명 초대 → 평생 VIP (2026-11-22). 경희대 학생이 아니면 null */
-  khu_vip?: { count: number; goal: number; done: boolean } | null;
+  /** 친구 10명 초대 → 평생 VIP (2026-11-22 경희대생 → 2026-11-24 모든 사용자). since = 세기 시작한 때 */
+  khu_vip?: { count: number; goal: number; done: boolean; since?: string } | null;
   multi_school?: boolean;
   onboarding: {
     profile_done: boolean;

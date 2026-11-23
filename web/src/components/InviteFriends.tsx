@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui";
 import { api } from "@/lib/api";
 import { untilDay } from "@/lib/format";
+import { sinceText } from "@/components/AnnouncementModal";
 import { useSession } from "@/lib/session";
 
 type Referral = {
@@ -95,7 +96,7 @@ export function InviteFriends() {
   );
 }
 
-/** 경희대생 전용: 경희대 친구 10명 초대 → 평생 VIP 진행 상황 (2026-11-22). 경희대 학생에게만 보인다 */
+/** 친구 10명 초대 → 평생 VIP 진행 상황 (2026-11-22 경희대생 → 2026-11-24 모든 사용자) */
 function KhuVipProgress() {
   const { me } = useSession();
   const v = me.khu_vip;
@@ -107,7 +108,7 @@ function KhuVipProgress() {
       ) : (
         <>
           <div className="flex items-baseline justify-between">
-            <p className="text-[15px] font-semibold text-ink">👑 경희대 친구 {v.goal}명 초대하면 평생 VIP</p>
+            <p className="text-[15px] font-semibold text-ink">👑 친구 {v.goal}명 초대하면 평생 VIP</p>
             <p className="num text-[13px] font-semibold text-ink">
               {v.count} / {v.goal}명
             </p>
@@ -115,7 +116,7 @@ function KhuVipProgress() {
           <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-paper-deep">
             <div className="h-full bg-ink" style={{ width: `${Math.min(100, (v.count / v.goal) * 100)}%` }} />
           </div>
-          <p className="mt-1.5 text-[12px] text-ink-faint">경희대 학생이 내 링크로 가입하고 사진 검수가 끝나면 1명으로 세요 (11월 22일부터 가입한 친구만).</p>
+          <p className="mt-1.5 text-[12px] text-ink-faint">친구가 내 링크로 가입하고 사진 검수가 끝나면 1명으로 세요 ({sinceText(v.since)} 이후 가입한 친구만, 학교 상관없음).</p>
         </>
       )}
     </div>

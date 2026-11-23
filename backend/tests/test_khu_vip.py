@@ -1,7 +1,8 @@
-"""경희대생 전용: 경희대 친구 10명 초대 → 평생 VIP (2026-11-22).
+"""친구 10명 초대 → 평생 VIP (2026-11-22 경희대생 전용 → 2026-11-24 모든 사용자).
 
-- 경희대 학생에게만 공지 팝업(하루 한 번)과 진행 상황이 보인다
-- 내 링크로 가입한 경희대 학생이 사진 검수를 통과해야 1명 인정. 외대생 초대·이벤트 전 초대는 안 셈
+- 모든 사용자에게 공지 팝업(하루 한 번, 가입한 날은 빼고)과 진행 상황이 보인다
+- 내 링크로 가입한 친구(학교 상관없음)가 사진 검수를 통과해야 1명 인정
+- 평생 VIP가 걸린 직후부터 센다: 경희대생은 11-22, 나머지는 11-24. 그 전 초대는 안 셈
 - 10명이 되면 자동 평생 VIP (기본 이용권 포함) + 알림 + 감사 로그. 그 뒤 공지는 안 뜸
 """
 
@@ -22,6 +23,7 @@ def _setup(monkeypatch, db, goal=2):
     s = get_settings()
     monkeypatch.setattr(s, "referral_schools", "")
     monkeypatch.setattr(s, "referral_start", utcnow() - timedelta(days=1))
+    monkeypatch.setattr(khu_vip_service, "KHU_START", utcnow() - timedelta(hours=2))
     monkeypatch.setattr(khu_vip_service, "START", utcnow() - timedelta(hours=1))
     monkeypatch.setattr(khu_vip_service, "GOAL", goal)
     _open_khu(monkeypatch, db)
@@ -29,6 +31,12 @@ def _setup(monkeypatch, db, goal=2):
 
 def _approve_khu(client, db, admin):
     choose_department(client, db, "정치외교학과", school=KHU)
+    set_preferences(client)
+    approve(admin, upload_photo(client))
+
+
+def _approve_hufs(client, db, admin):
+    choose_department(client, db, "경영학부")
     set_preferences(client)
     approve(admin, upload_photo(client))
 
@@ -44,76 +52,71 @@ def _joined_yesterday(db, email):
     db.commit()
 
 
-def test_new_signup_sees_popup_from_next_visit_day(monkeypatch, sent_codes, db):
-    """가입한 날에는 안 뜨고, 다음 날 접속부터 뜬다 (2026-11-22)."""
-    _setup(monkeypatch, db)
-    admin_login(db)
-    k = signup(sent_codes, db, "k@khu.ac.kr", school=KHU)
-    me = k.get("/api/v1/me").json()
-    assert me["khu_vip"]["count"] == 0 and me["announcement"] is None
-    _joined_yesterday(db, "k@khu.ac.kr")
-    assert k.get("/api/v1/me").json()["announcement"].startswith("khu-vip10@")
+def _set_created(db, email, when):
+    u = _user(db, email)
+    u.created_at = when
+    db.commit()
 
 
-def test_popup_only_for_khu_students(monkeypatch, sent_codes, db):
+def test_popup_for_everyone_from_next_visit_day(monkeypatch, sent_codes, db):
     _setup(monkeypatch, db)
     admin_login(db)
     k = signup(sent_codes, db, "k@khu.ac.kr", school=KHU)
     h = signup(sent_codes, db, "h@hufs.ac.kr")
+    # 가입한 날에는 안 뜬다
+    assert h.get("/api/v1/me").json()["announcement"] is None
+    assert h.get("/api/v1/me").json()["khu_vip"]["count"] == 0
     _joined_yesterday(db, "k@khu.ac.kr")
     _joined_yesterday(db, "h@hufs.ac.kr")
-    me = k.get("/api/v1/me").json()
-    assert me["khu_vip"] == {"count": 0, "goal": 2, "done": False}
-    key = me["announcement"]
-    assert key.startswith("khu-vip10@")
-    assert h.get("/api/v1/me").json()["khu_vip"] is None
-    assert h.get("/api/v1/me").json()["announcement"] is None
-    # 오늘은 그만 보기 → 오늘은 안 뜸
-    assert k.post("/api/v1/me/announcement/seen", json={"key": key}).status_code == 200
-    assert k.get("/api/v1/me").json()["announcement"] is None
-    assert h.post("/api/v1/me/announcement/seen", json={"key": key}).status_code == 404
+    for c in (k, h):
+        key = c.get("/api/v1/me").json()["announcement"]
+        assert key.startswith("khu-vip10@")
+        # 오늘은 그만 보기 → 오늘은 안 뜸
+        assert c.post("/api/v1/me/announcement/seen", json={"key": key}).status_code == 200
+        assert c.get("/api/v1/me").json()["announcement"] is None
 
 
-def test_ten_khu_invites_give_lifetime_vip(monkeypatch, sent_codes, db):
+def test_any_school_invites_count_after_start(monkeypatch, sent_codes, db):
     _setup(monkeypatch, db, goal=2)
     admin = admin_login(db)
-    k = signup(sent_codes, db, "k@khu.ac.kr", school=KHU)
-    code = _code(k)
+    h = signup(sent_codes, db, "h@hufs.ac.kr")
+    code = _code(h)
 
-    # 외대생 초대는 안 셈
-    h = _signup_with(sent_codes, db, "h@hufs.ac.kr", code)
-    choose_department(h, db, "경영학부")
-    set_preferences(h)
-    approve(admin, upload_photo(h))
-    # 이벤트 전에 가입한 경희대생 초대도 안 셈
-    old = _signup_with(sent_codes, db, "old@khu.ac.kr", code, school=KHU)
-    u = _user(db, "old@khu.ac.kr")
-    u.created_at = khu_vip_service.START - timedelta(minutes=5)
-    db.commit()
-    _approve_khu(old, db, admin)
-    assert k.get("/api/v1/me").json()["khu_vip"]["count"] == 0
+    # 이벤트가 걸리기 전에 가입한 초대는 안 셈
+    old = _signup_with(sent_codes, db, "old@hufs.ac.kr", code)
+    _set_created(db, "old@hufs.ac.kr", khu_vip_service.START - timedelta(minutes=5))
+    _approve_hufs(old, db, admin)
+    assert h.get("/api/v1/me").json()["khu_vip"]["count"] == 0
 
-    # 가입만 하고 사진 검수 전이면 안 셈
-    k1 = _signup_with(sent_codes, db, "k1@khu.ac.kr", code, school=KHU)
-    assert k.get("/api/v1/me").json()["khu_vip"]["count"] == 0
-    _approve_khu(k1, db, admin)
-    assert k.get("/api/v1/me").json()["khu_vip"] == {"count": 1, "goal": 2, "done": False}
-    assert not vip_service.has_paid_vip(_user(db, "k@khu.ac.kr"))
+    # 가입만 하고 사진 검수 전이면 안 셈 → 검수 끝나면 1명 (외대생)
+    a = _signup_with(sent_codes, db, "a@hufs.ac.kr", code)
+    assert h.get("/api/v1/me").json()["khu_vip"]["count"] == 0
+    _approve_hufs(a, db, admin)
+    assert h.get("/api/v1/me").json()["khu_vip"]["count"] == 1
+    assert not vip_service.has_paid_vip(_user(db, "h@hufs.ac.kr"))
 
-    k2 = _signup_with(sent_codes, db, "k2@khu.ac.kr", code, school=KHU)
-    _approve_khu(k2, db, admin)
-    me = _user(db, "k@khu.ac.kr")
+    # 다른 학교(경희대) 친구도 셈 → 2명 = 평생 VIP
+    k = _signup_with(sent_codes, db, "k@khu.ac.kr", code, school=KHU)
+    _approve_khu(k, db, admin)
+    me = _user(db, "h@hufs.ac.kr")
     assert khu_vip_service.has_lifetime(me) and vip_service.is_vip(me) and membership_service.has_membership(me)
     assert db.query(Notification).filter(Notification.user_id == me.id, Notification.type == "VIP_LIFETIME").count() == 1
     assert db.query(AuditLog).filter(AuditLog.action == "KHU_VIP_LIFETIME").count() == 1
-    body = k.get("/api/v1/me").json()
+    _joined_yesterday(db, "h@hufs.ac.kr")
+    body = h.get("/api/v1/me").json()
     assert body["khu_vip"]["done"] is True and body["announcement"] is None
 
 
-def test_non_khu_referrer_gets_nothing(monkeypatch, sent_codes, db):
-    _setup(monkeypatch, db, goal=1)
+def test_khu_students_keep_count_from_nov_22(monkeypatch, sent_codes, db):
+    """경희대생은 11-22(경희대 전용으로 걸린 때)부터 센 숫자가 그대로 이어진다. 다른 학교 학생은 11-24부터."""
+    _setup(monkeypatch, db, goal=5)
     admin = admin_login(db)
+    k = signup(sent_codes, db, "k@khu.ac.kr", school=KHU)
     h = signup(sent_codes, db, "h@hufs.ac.kr")
-    k1 = _signup_with(sent_codes, db, "k1@khu.ac.kr", _code(h), school=KHU)
-    _approve_khu(k1, db, admin)
-    assert not khu_vip_service.has_lifetime(_user(db, "h@hufs.ac.kr"))
+    between = khu_vip_service.START - timedelta(minutes=30)  # 11-22 와 11-24 사이에 가입한 초대
+    for inviter, email in ((k, "k1@khu.ac.kr"), (h, "h1@khu.ac.kr")):
+        c = _signup_with(sent_codes, db, email, _code(inviter), school=KHU)
+        _set_created(db, email, between)
+        _approve_khu(c, db, admin)
+    assert k.get("/api/v1/me").json()["khu_vip"]["count"] == 1
+    assert h.get("/api/v1/me").json()["khu_vip"]["count"] == 0

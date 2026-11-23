@@ -127,6 +127,7 @@ def test_new_signups_do_not_get_feature_notice(sent_codes, db, monkeypatch):
 
     monkeypatch.setattr(announcement_service, "CURRENT", "chat-extras-2026-11")
     monkeypatch.setattr(announcement_service, "CURRENT_FOR_JOINED_BEFORE", utcnow() - timedelta(minutes=1))
+    monkeypatch.setattr(announcement_service, "KHU_VIP_NOTICE", None)  # 하루 한 번 뜨는 초대 이벤트 공지는 빼고 확인
     new = signup(sent_codes, db, "new@hufs.ac.kr")
     assert new.get("/api/v1/me").json()["announcement"] is None
 

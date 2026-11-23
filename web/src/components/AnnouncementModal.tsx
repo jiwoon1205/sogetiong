@@ -117,16 +117,16 @@ function InviteEventHero() {
  * 닫기·확인·"알림 켜러 가기" 어느 것을 눌러도 "봤음"으로 기록 → 이 계정에는 다시 안 뜬다.
  * 새 공지: 서버 services/announcement_service.py 의 CURRENT와 여기 NOTICES에 같은 이름으로 추가.
  */
-/** 경희대생 전용 공지 (2026-11-22): 경희대 친구 10명 초대 → 평생 VIP. 하루 한 번, 경희대 학생에게만 */
+/** 평생 VIP 초대 이벤트 공지 (2026-11-22 경희대생 전용 → 2026-11-24 모든 사용자): 친구 10명 초대 → 평생 VIP. 하루 한 번 */
 const KHU_VIP: Notice = {
-  title: "경희대생 전용 이벤트",
+  title: "친구 초대 이벤트",
   body: (_m, me) => {
     const v = me.khu_vip ?? { count: 0, goal: 10, done: false };
     const left = Math.max(0, v.goal - v.count);
     return (
       <>
         <div className="rounded-card border border-line-strong bg-paper-card px-4 py-5 text-center">
-          <p className="text-[13px] text-ink-soft">경희대 친구 {v.goal}명을 초대하면</p>
+          <p className="text-[13px] text-ink-soft">친구 {v.goal}명을 초대하면</p>
           <p className="mt-1 font-serif text-[27px] font-semibold leading-tight text-brick">👑 평생 VIP</p>
           <p className="mt-1.5 text-[12.5px] leading-relaxed text-ink-soft">받은 LIKE 보기 · 하루 좋아요 더 · 기본 이용권 포함, 기간 없이 계속</p>
         </div>
@@ -147,14 +147,14 @@ const KHU_VIP: Notice = {
             <b className="num font-semibold text-ink">1</b>&nbsp; 설정 → 친구 초대에서 <b className="font-semibold text-ink">내 초대 링크</b>를 복사해요
           </li>
           <li>
-            <b className="num font-semibold text-ink">2</b>&nbsp; 경희대 친구가 그 링크로 가입해요
+            <b className="num font-semibold text-ink">2</b>&nbsp; 친구가 그 링크로 가입해요 (어느 학교든 괜찮아요)
           </li>
           <li>
             <b className="num font-semibold text-ink">3</b>&nbsp; 친구 사진 검수가 끝나면 <b className="font-semibold text-ink">1명 인정</b> + 슈퍼 라이크 1개도 바로 받아요
           </li>
         </ol>
         <p className="mt-3 text-[12px] leading-relaxed text-ink-faint">
-          경희대 학생 초대만, 이벤트를 시작한 뒤(11월 22일) 가입한 친구만 세요. 탈퇴 후 다시 가입한 사람은 인정되지 않아요. {v.goal}명이 되면 자동으로 평생 VIP가 켜지고 알림을 보내드려요.
+          {sinceText(v.since)} 이후 가입한 친구만 세요. 탈퇴 후 다시 가입한 사람은 인정되지 않아요. {v.goal}명이 되면 자동으로 평생 VIP가 켜지고 알림을 보내드려요.
         </p>
       </>
     );
@@ -162,6 +162,13 @@ const KHU_VIP: Notice = {
   action: { label: "내 초대 링크 받으러 가기", href: "/settings#invite" },
   close: "오늘은 그만 보기",
 };
+
+/** "11월 24일" — 초대를 세기 시작한 날 */
+export function sinceText(since?: string) {
+  if (!since) return "이벤트 시작";
+  const d = new Date(since);
+  return `${d.toLocaleDateString("ko-KR", { month: "long", day: "numeric", timeZone: "Asia/Seoul" })}`;
+}
 
 const NOTICES: Record<string, Notice> = {
   // 2026-11-21: 5개 학교 추가 + 친구 초대(에브리타임에 내 링크 → 가입하면 슈퍼 라이크 1개).

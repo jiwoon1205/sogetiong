@@ -149,7 +149,7 @@ def get_me(request: Request, current: CurrentUser = Depends(get_current_user), d
             new_schools=profile_service.new_schools_open(db),
             khu_vip=bool(khu_vip) and not khu_vip["done"],
         ),
-        # 경희대생 전용 이벤트 (2026-11-22): 경희대 친구 10명 초대 → 평생 VIP. 경희대 학생이 아니면 null
+        # 친구 10명 초대 → 평생 VIP 이벤트 (2026-11-22 경희대생 → 2026-11-24 모든 사용자). 정지·탈퇴 계정은 null
         "khu_vip": khu_vip,
         # 매칭 확률 높이기 팝업 (2026-11-16): 남성·접속한 날 3일 이상·매칭 0회 → 한 번만. 아니면 null
         "match_tip": engagement_service.match_tip(db, current.user),
