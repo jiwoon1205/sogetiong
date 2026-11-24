@@ -83,6 +83,8 @@ export type Me = {
   referral_event?: { active: boolean; end: string | null };
   /** 친구 10명 초대 → 평생 VIP (2026-11-22 경희대생 → 2026-11-24 모든 사용자). since = 세기 시작한 때 */
   khu_vip?: { count: number; goal: number; done: boolean; since?: string } | null;
+  /** 앱 설치 안내 팝업을 띄워도 되는지 (관리자 → 공지 팝업에서 끄고 켬, 2026-11-24) */
+  install_popup?: boolean;
   multi_school?: boolean;
   onboarding: {
     profile_done: boolean;

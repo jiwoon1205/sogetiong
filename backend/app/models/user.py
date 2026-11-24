@@ -84,6 +84,8 @@ class User(Base):
     # app_opened_at: 앱으로 마지막에 연 시각, app_platform: IOS / ANDROID / DESKTOP (마지막에 연 기기)
     app_opened_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     app_platform: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    # 앱 설치 안내 팝업을 마지막으로 본(닫은) 시각 (2026-11-24, 마이그레이션 0049). 관리자 → 공지 팝업 진행 상황용
+    install_popup_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # 친구 초대 이벤트 (2026-10-24, 마이그레이션 0027). 계산은 services/referral_service.py
     # referral_code: 내 초대 링크 코드 (처음 볼 때 만든다). referred_by_id: 나를 초대한 사람.
     # referral_rewarded_at: 내 첫 사진이 승인돼 초대한 사람에게 슈퍼 라이크 1개를 준 시각 (한 번만)

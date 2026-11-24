@@ -12,7 +12,7 @@ from app.db.session import get_db
 from app.deps import CurrentUser, get_current_user
 from app.models.push import PushSubscription
 from app.schemas.alerts import AlertSettingsRequest, AnnouncementSeenRequest, PushSubscribeRequest, PushUnsubscribeRequest
-from app.services import announcement_service, khu_vip_service, profile_service, push_service
+from app.services import announcement_service, khu_vip_service, popup_service, profile_service, push_service
 
 router = APIRouter()
 
@@ -135,7 +135,9 @@ def mark_announcement_seen(
         payload.key,
         multi_school=profile_service.multi_school(db),
         new_schools=profile_service.new_schools_open(db),
-        khu_vip=khu_vip_service.eligible(db, current.user) and not khu_vip_service.has_lifetime(current.user),
+        khu_vip=khu_vip_service.eligible(db, current.user)
+        and not khu_vip_service.has_lifetime(current.user)
+        and popup_service.enabled(db, "invite"),
     ):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="지금 보여주는 공지가 아니에요.")
     current.user.announcement_seen = payload.key

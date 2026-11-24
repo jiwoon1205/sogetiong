@@ -42,7 +42,7 @@ function restedEnough(): boolean {
 export function InstallPopup({ me }: { me: Me }) {
   // 이번에 열었을 때 한 번만 판단한다 (공지를 닫아도 같은 접속에서는 이어서 뜨지 않게)
   const [open, setOpen] = useState(() => {
-    if (typeof window === "undefined" || isStandalone()) return false;
+    if (typeof window === "undefined" || isStandalone() || me.install_popup === false) return false;
     if (hadOtherPopup() || me.announcement || me.match_tip) {
       markOtherPopup();
       return false;
@@ -74,6 +74,8 @@ export function InstallPopup({ me }: { me: Me }) {
       localStorage.setItem(DISMISSED_KEY, String(Date.now()));
     } catch {}
     setOpen(false);
+    // 관리자 → 공지 팝업 진행 상황용 기록
+    void api("/me/install-popup/seen", { method: "POST" }).catch(() => {});
   }
 
   async function installNow() {

@@ -17,6 +17,7 @@ const NAV = [
   { href: "/admin/users", label: "사용자", perm: "users:read" },
   { href: "/admin/watchlist", label: "감시 대상", perm: "users:read" }, // 2026-11-17, 관리자 전용
   { href: "/admin/survey", label: "설문", perm: "surveys:manage" },
+  { href: "/admin/popups", label: "공지 팝업", perm: "dashboard:read" }, // 2026-11-24
   { href: "/admin/audit-logs", label: "감사 로그", perm: "audit:read" },
 ];
 

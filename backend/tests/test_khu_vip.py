@@ -105,6 +105,10 @@ def test_any_school_invites_count_after_start(monkeypatch, sent_codes, db):
     _joined_yesterday(db, "h@hufs.ac.kr")
     body = h.get("/api/v1/me").json()
     assert body["khu_vip"]["done"] is True and body["announcement"] is None
+    # 관리자 → 공지 팝업 진행 상황 (2026-11-24)
+    inv = admin.get("/api/v1/admin/popups").json()["invite"]
+    assert inv["lifetime_vip"] == 1 and inv["inviters"] == 1
+    assert inv["top"][0]["count"] == 2 and inv["top"][0]["done"] is True
 
 
 def test_khu_students_keep_count_from_nov_22(monkeypatch, sent_codes, db):

@@ -16,6 +16,7 @@ from app.api.v1 import (
     matching_router,
     me_router,
     safety_router,
+    popups_admin_router,
     survey_admin_router,
     survey_router,
 )
@@ -127,6 +128,7 @@ app.include_router(safety_router, prefix=API, tags=["safety"])
 app.include_router(admin_router, prefix=f"{API}/admin", tags=["admin"])
 # 설문 (2026-10-05)
 app.include_router(survey_router, prefix=API, tags=["survey"])
+app.include_router(popups_admin_router, prefix=f"{API}/admin", tags=["admin"])
 app.include_router(survey_admin_router, prefix=f"{API}/admin", tags=["admin"])
 # 휴대폰 알림 (2026-10-05)
 app.include_router(alerts_router, prefix=API, tags=["alerts"])

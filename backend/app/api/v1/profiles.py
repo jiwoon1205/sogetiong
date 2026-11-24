@@ -31,6 +31,7 @@ from app.services import (
     auth_service,
     khu_vip_service,
     membership_service,
+    popup_service,
     payment_service,
     profile_service,
     referral_service,
@@ -149,8 +150,10 @@ def get_me(request: Request, current: CurrentUser = Depends(get_current_user), d
             current.user,
             multi_school=profile_service.multi_school(db),
             new_schools=profile_service.new_schools_open(db),
-            khu_vip=bool(khu_vip) and not khu_vip["done"],
+            khu_vip=bool(khu_vip) and not khu_vip["done"] and popup_service.enabled(db, "invite"),
         ),
+        # 앱 설치 안내 팝업을 띄워도 되는지 (2026-11-24, 관리자 → 공지 팝업에서 끄고 켬)
+        "install_popup": popup_service.enabled(db, "install"),
         # 친구 10명 초대 → 평생 VIP 이벤트 (2026-11-22 경희대생 → 2026-11-24 모든 사용자). 정지·탈퇴 계정은 null
         "khu_vip": khu_vip,
         # 매칭 확률 높이기 팝업 (2026-11-16): 남성·접속한 날 3일 이상·매칭 0회 → 한 번만. 아니면 null
@@ -172,6 +175,14 @@ def app_open(payload: AppOpenRequest, current: CurrentUser = Depends(get_current
     """앱(홈 화면 아이콘)으로 열었음 (2026-11-24). 화면이 앱으로 열릴 때마다 한 번 보낸다 → 관리자 현황용."""
     current.user.app_opened_at = utcnow()
     current.user.app_platform = payload.platform
+    db.commit()
+    return {"ok": True}
+
+
+@router.post("/me/install-popup/seen")
+def install_popup_seen(current: CurrentUser = Depends(get_current_user), db: Session = Depends(get_db)):
+    """앱 설치 안내 팝업을 닫았음 (2026-11-24). 3일 쉬기는 화면이 하고, 서버는 관리자 진행 상황용으로만 기록."""
+    current.user.install_popup_seen_at = utcnow()
     db.commit()
     return {"ok": True}
 
