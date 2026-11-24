@@ -13,6 +13,14 @@
 - 이용권이 끝나 좋아요를 못 하는 사람(like_access == "none"): 4번 보낸 사람은 REC_QUOTA_TEASER명(1)만 추천 맨 앞에 보여 준다 (맛보기).
   좋아요를 누르면 지금처럼 결제 안내가 뜬다. 3번 보낸 사람은 위와 같은 자리 규칙.
 - 여성 회원·VIP 테스트 계정·슈퍼 VIP는 제한 없음 (applies).
+
+2026-11-24 추가 (사용자 결정)
+- 이용권이 끝난 사람: 맨 앞 맛보기 = 조건이 맞는 사람 중 **내가 좋아요를 가장 많이 보낸 사람 1명** (2번 이상, REC_TEASER_MIN_SENT).
+  추첨에 뽑혔는지와 상관없이 전체에서 고른다 (pick_teaser). 결제를 유도하려는 것.
+- 이번 이용권 기간에 매칭이 REC_HEAVY_MATCHES회(5) 이상인 사람(heavy_matcher):
+  · 좋아요 3번 쌓인 사람은 뽑힐 확률 × REC_HEAVY_THREE_FACTOR(0.2) (matching_service.Weights.sent_three_factor)
+  · 좋아요 4번 쌓인 사람은 이용권 기간 동안 **1명, 자리를 받은 그날 하루만** 나온다.
+  이용권 기간 시작 = 마지막으로 이용권·VIP 입금이 확인된 때 (없으면 가입한 때).
 - 좋아요 3번 미만인 사람과 슈퍼 VIP 자리는 건드리지 않는다.
 """
 
@@ -21,8 +29,12 @@ import uuid
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from sqlalchemy import func, or_
+
 from app.core.config import get_settings
-from app.models.matching import RecQuotaSlot
+from app.core.time import as_utc, kst_today, utcnow
+from app.models.matching import Match, RecQuotaSlot
+from app.models.payment import Payment
 from app.models.user import User
 from app.services import vip_service
 
@@ -33,6 +45,42 @@ def applies(user: User) -> bool:
     if vip_service.is_vip_tester(user):  # VIP 테스트 계정·슈퍼 VIP
         return False
     return vip_service.gender_of(user) != "FEMALE"
+
+
+def period_start(db: Session, user: User):
+    """이번 이용권 기간이 시작된 때: 마지막으로 이용권·VIP 입금이 확인된 시각 (슈퍼 라이크 제외). 없으면 가입한 때."""
+    last = (
+        db.query(func.max(Payment.processed_at))
+        .filter(Payment.user_id == user.id, Payment.status == "CONFIRMED", Payment.kind != "SUPER_LIKE")
+        .scalar()
+    )
+    return last or user.created_at
+
+
+def heavy_matcher(db: Session, user: User) -> bool:
+    """이번 이용권 기간에 매칭이 REC_HEAVY_MATCHES회 이상 (2026-11-24). 제한 대상(applies)인 사람만."""
+    n = get_settings().rec_heavy_matches
+    if n <= 0 or not applies(user):
+        return False
+    start = period_start(db, user)
+    count = (
+        db.query(func.count(Match.id))
+        .filter(or_(Match.user_a_id == user.id, Match.user_b_id == user.id), Match.created_at >= start)
+        .scalar()
+    )
+    return (count or 0) >= n
+
+
+def pick_teaser(people: list, sent_counts: dict[uuid.UUID, int], is_ok, seed: str):
+    """이용권이 끝난 사람의 맨 앞 맛보기: 좋아요를 가장 많이 보낸 사람 (REC_TEASER_MIN_SENT번 이상). 없으면 None.
+    같은 횟수면 날마다 정해진 순서(seed)로 고른다. is_ok(person) = 서로 조건이 맞는지."""
+    least = max(get_settings().rec_teaser_min_sent, 1)
+    best = [p for p in people if sent_counts.get(p.user_id, 0) >= least and is_ok(p)]
+    if not best:
+        return None
+    from app.services.matching_service import seeded_uniform
+
+    return max(best, key=lambda p: (sent_counts.get(p.user_id, 0), seeded_uniform(seed, p.user_id)))
 
 
 def _level(count: int) -> int | None:
@@ -49,7 +97,17 @@ def extra_candidates(sent_counts: dict[uuid.UUID, int]) -> int:
     return sum(1 for c in sent_counts.values() if _level(c) is not None)
 
 
-def apply(db: Session, user: User, ranked: list, sent_counts: dict[uuid.UUID, int], limit: int, *, can_like: bool) -> list:
+def apply(
+    db: Session,
+    user: User,
+    ranked: list,
+    sent_counts: dict[uuid.UUID, int],
+    limit: int,
+    *,
+    can_like: bool,
+    teaser=None,
+    heavy: bool = False,
+) -> list:
     """가중치 추첨 결과(ranked, limit보다 넉넉히 뽑은 것)에서 자리 없는 사람을 빼고 limit명으로 자른다.
 
     ranked의 각 항목은 user_id 속성이 있으면 된다 (matching_service.Person).
@@ -59,26 +117,37 @@ def apply(db: Session, user: User, ranked: list, sent_counts: dict[uuid.UUID, in
         return ranked[:limit]
     s = get_settings()
     caps = {3: max(s.rec_quota_level3, 0), 4: max(s.rec_quota_level4, 0)}
-    have = {
-        (t, lv)
-        for t, lv in db.query(RecQuotaSlot.target_user_id, RecQuotaSlot.level).filter(RecQuotaSlot.user_id == user.id)
-    }
+    if heavy:
+        caps[4] = min(caps[4], 1)  # 매칭이 많은 사람: 4번 쌓인 사람은 기간 동안 1명만 (2026-11-24)
+    rows = db.query(RecQuotaSlot.target_user_id, RecQuotaSlot.level, RecQuotaSlot.created_at).filter(
+        RecQuotaSlot.user_id == user.id
+    )
+    today = kst_today(utcnow())
+    have: set[tuple[uuid.UUID, int]] = set()
+    expired: set[tuple[uuid.UUID, int]] = set()  # 매칭이 많은 사람: 4번 자리는 받은 그날 하루만
+    for t, lv, at in rows:
+        have.add((t, lv))
+        if heavy and lv == 4 and kst_today(as_utc(at)) != today:
+            expired.add((t, lv))
     used = {3: sum(1 for _, lv in have if lv == 3), 4: sum(1 for _, lv in have if lv == 4)}
 
-    teasers: list = []
+    # 이용권이 끝남: 맨 앞 맛보기 1명 = 좋아요를 가장 많이 보낸 사람 (2026-11-24, pick_teaser). 자리는 쓰지 않는다
+    teasers: list = [teaser] if (teaser is not None and not can_like and s.rec_quota_teaser > 0) else []
+    teaser_id = teasers[0].user_id if teasers else None
     page: list = []
     new_slots: set[tuple[uuid.UUID, int]] = set()
     for p in ranked:
+        if p.user_id == teaser_id:
+            continue
         level = _level(sent_counts.get(p.user_id, 0))
         if level is None:
             page.append(p)
             continue
         if level == 4 and not can_like:
-            # 이용권이 끝남: 4번 보낸 사람은 맛보기로 맨 앞에 몇 명만 (자리는 쓰지 않는다)
-            if len(teasers) < max(s.rec_quota_teaser, 0):
-                teasers.append(p)
-            continue
+            continue  # 이용권이 끝남: 4번 보낸 다른 사람은 안 나온다
         key = (p.user_id, level)
+        if key in expired:
+            continue
         if key in have:
             page.append(p)
         elif used[level] < caps[level]:

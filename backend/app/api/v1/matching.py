@@ -1,5 +1,6 @@
 """/api/v1 — 추천(discover), LIKE/PASS, 매칭, 채팅."""
 
+import dataclasses
 import uuid
 from datetime import timedelta
 
@@ -119,10 +120,17 @@ def discover(
     sent = profile_service.sent_like_counts(db, current.id, list(by_user))
     # 가중치 추첨 (2026-10-24): 등급 × 활동 × 나를 좋아요한 횟수 × 취향 × 정성 × 내가 보낸 횟수 → matching_service.rank
     page_size = limit or settings.discover_page_size
+    people = profile_service.people_from_profiles(db, profiles)
+    weights = profile_service.matching_weights()
+    # 이번 이용권 기간 매칭이 많은 사람(5회+): 좋아요 3번 쌓인 사람 확률 × 0.2, 4번은 기간 동안 1명·하루만 (2026-11-24, 내부 규칙)
+    heavy = access != "none" and rec_quota_service.heavy_matcher(db, current.user)
+    if heavy:
+        weights = dataclasses.replace(weights, sent_three_factor=settings.rec_heavy_three_factor)
+    seed = f"{current.id}:{kst_today().isoformat()}"
     ranked = matching_service.rank(
         viewer,
-        profile_service.people_from_profiles(db, profiles),
-        profile_service.matching_weights(),
+        people,
+        weights,
         # 좋아요 3·4번 쌓인 사람은 자리가 없으면 빠지므로(아래) 그만큼 더 뽑아 둔다
         page_size + rec_quota_service.extra_candidates(sent),
         liked_counts=profile_service.liked_counts(db, current.id),
@@ -130,11 +138,19 @@ def discover(
         super_vip_slots=settings.super_vip_slots,  # 슈퍼 VIP는 페이지 맨 앞 (2026-10-12)
         # 하루 동안 고정 (2026-11-09): 같은 사람·같은 한국 날짜면 새로고침해도 같은 순서. 자정에 새로 뽑는다.
         # 좋아요·넘기기한 사람은 빠지고 그다음 사람이 채워진다 (다른 사람 순서는 그대로)
-        seed=f"{current.id}:{kst_today().isoformat()}",
+        seed=seed,
+    )
+    # 이용권이 끝난 사람: 맨 앞 = 조건이 맞는 사람 중 좋아요를 가장 많이 보낸 사람(2번 이상) → 결제 유도 (2026-11-24)
+    teaser = (
+        rec_quota_service.pick_teaser(people, sent, lambda p: matching_service.mutually_compatible(viewer, p), seed)
+        if access == "none"
+        else None
     )
     # 좋아요 3·4번 쌓인 사람 노출 제한 (2026-11-13, 내부 규칙 — 응답에 아무 표시도 없다): 이용권 기간마다 3번 4명·4번 2명,
     # 이용권이 끝났으면 4번 보낸 사람 1명만 맨 앞에 (맛보기). 여성·테스트 계정은 제한 없음 → rec_quota_service
-    ranked = rec_quota_service.apply(db, current.user, ranked, sent, page_size, can_like=access != "none")
+    ranked = rec_quota_service.apply(
+        db, current.user, ranked, sent, page_size, can_like=access != "none", teaser=teaser, heavy=heavy
+    )
     rec_quota_service.save(db)
     # 카드에는 외모 등급도, "나를 LIKE했는지"도 들어가지 않는다 (build_cards가 보내는 항목만 나감)
     cards = profile_service.build_cards(db, [by_user[p.user_id] for p in ranked])

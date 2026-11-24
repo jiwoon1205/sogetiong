@@ -83,6 +83,9 @@ class Weights:
     # ⑥ 내가 좋아요를 sent_many_count번 이상 보낸 사람 → sent_many_factor배 (2026-11-09, 기본 4번 이상이면 절반)
     sent_many_count: int = 4
     sent_many_factor: float = 0.5
+    # ⑦ 내가 좋아요를 정확히 3번 보낸 사람 → 이 배수 (2026-11-24). 기본 1(그대로).
+    #    이번 이용권 기간에 매칭이 많은(5회+) 사람만 0.2로 낮춘다 → api/v1/matching.discover, rec_quota_service
+    sent_three_factor: float = 1.0
 
 
 # ---------- Stage 1: 조건 확인 ----------
@@ -282,6 +285,8 @@ def weight(viewer: Person, candidate: Person, weights: Weights, liked_count: int
     care = 1 + (weights.effort_max - 1) * effort(candidate)
     # ⑥ 내가 이미 좋아요를 많이 보낸 사람 (다음 좋아요면 바로 매칭) → 덜 나오게 (2026-11-09)
     sent = weights.sent_many_factor if weights.sent_many_count > 0 and sent_count >= weights.sent_many_count else 1.0
+    if sent_count == 3:
+        sent *= weights.sent_three_factor
     return max(tier, 0.01) * max(activity, 0.01) * max(liked, 0.01) * max(pref, 0.01) * max(care, 0.01) * max(sent, 0.01)
 
 

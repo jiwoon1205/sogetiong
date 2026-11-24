@@ -106,6 +106,12 @@ class Settings(BaseSettings):
     rec_quota_level3: int = 4
     rec_quota_level4: int = 2
     rec_quota_teaser: int = 1
+    # 매칭이 많은 사람 (2026-11-24): 이번 이용권 기간 매칭 REC_HEAVY_MATCHES회 이상이면
+    #   좋아요 3번 쌓인 사람 뽑힐 확률 × REC_HEAVY_THREE_FACTOR, 4번 쌓인 사람은 기간 동안 1명·하루만
+    rec_heavy_matches: int = 5
+    rec_heavy_three_factor: float = 0.2
+    # 이용권이 끝난 사람: 맨 앞 맛보기 = 좋아요를 가장 많이 보낸 사람 (이 횟수 이상 보낸 사람 중, 2026-11-24)
+    rec_teaser_min_sent: int = 2
     # ④ 취향 점수 안의 비중. 2026-10-24: 관심사 0.60→0.80, 완성도 0.25→0 (⑤ 프로필 정성으로 옮김), MBTI 0.15→0.20
     weight_interest: float = 0.80
     weight_completeness: float = 0.0

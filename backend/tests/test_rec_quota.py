@@ -130,3 +130,84 @@ def test_response_does_not_reveal_the_limit(sent_codes, db):
     _, me, _ = _world(sent_codes, db, n3=5, n4=3, n0=1)
     text = me.get("/api/v1/discover").text.lower()
     assert "quota" not in text and "slot" not in text and "teaser" not in text
+
+
+# ---------- 2026-11-24 ----------
+
+def _expire(monkeypatch):
+    s = get_settings()
+    monkeypatch.setattr(s, "membership_enabled", True)
+    monkeypatch.setattr(s, "vip_test_emails", "")
+    monkeypatch.setattr(s, "free_trial_likes", 0)
+
+
+def test_expired_teaser_is_most_liked_person(sent_codes, db, monkeypatch, new_draw_each_call):
+    """이용권이 끝난 사람: 맨 앞 = 좋아요를 가장 많이 보낸 사람 (2번 이상). 4번이 없어도 3번·2번 중 가장 많은 사람."""
+    admin = admin_login(db)
+    me = ready_user(sent_codes, db, admin, "me@hufs.ac.kr", gender="MALE", want="FEMALE")
+    people = {}
+    for n in (1, 2, 3, 0, 0):
+        reset_rate_limits()
+        p = ready_user(sent_codes, db, admin, f"w{len(people)}@hufs.ac.kr", gender="FEMALE", want="MALE")
+        people[p.profile_id] = n
+        if n:
+            _liked(db, me, p, n)
+    _expire(monkeypatch)
+    for _ in range(4):
+        data = _page(me)
+        assert data["like_access"] == "none"
+        assert people[data["profiles"][0]["profile_id"]] == 3
+
+    # 1번만 보낸 사람뿐이면 맛보기 없음 (그냥 추첨 순서)
+    db.query(Like).filter(Like.like_count >= 2).delete()
+    db.commit()
+    first = _page(me)["profiles"][0]["profile_id"]
+    assert first in people
+
+
+def _matches(db, me, n):
+    from app.models.matching import Match
+    from app.models.user import User
+
+    me_id = _uid(db, me)
+    base = db.get(User, me_id)
+    for i in range(n):
+        other = User(email=f"m{i}@x.test", status="ACTIVE", password_hash="x", university_id=base.university_id)
+        db.add(other)
+        db.flush()
+        a, b = sorted([me_id, other.id], key=str)
+        db.add(Match(user_a_id=a, user_b_id=b))
+    db.commit()
+
+
+def test_heavy_matcher_four_likes_one_person_one_day(sent_codes, db, monkeypatch):
+    """이번 이용권 기간 매칭 5회+: 4번 쌓인 사람은 1명만, 자리를 받은 그날 하루만 (2026-11-24)."""
+    from app.services import rec_quota_service
+
+    _, me, g = _world(sent_codes, db, n3=0, n4=3, n0=2)
+    _matches(db, me, 5)
+    from app.models.user import User
+
+    assert rec_quota_service.heavy_matcher(db, db.query(User).filter_by(email="me@hufs.ac.kr").one())
+    ids = set(discover_ids(me))
+    assert len(ids & g[4]) == 1
+    # 다음 날: 그 사람도 더 안 나온다
+    monkeypatch.setattr(rec_quota_service, "utcnow", lambda: utcnow() + timedelta(days=1))
+    assert not (set(discover_ids(me)) & g[4])
+
+
+def test_light_matcher_keeps_old_rule(sent_codes, db):
+    _, me, g = _world(sent_codes, db, n3=0, n4=3, n0=2)
+    _matches(db, me, 4)
+    assert len(set(discover_ids(me)) & g[4]) == 2
+
+
+def test_three_like_factor_lowers_weight():
+    import dataclasses
+
+    from app.services import matching_service, profile_service
+
+    w = profile_service.matching_weights()
+    low = dataclasses.replace(w, sent_three_factor=0.2)
+    assert matching_service.weight is not None
+    assert low.sent_three_factor == 0.2 and w.sent_three_factor == 1.0
